@@ -1,11 +1,19 @@
 import { Response } from 'express';
 
-export interface ApiResponse<T> {
-  success: boolean;
+export interface ApiSuccessResponse<T> {
+  success: true;
   message: string;
-  data?: T;
-  error?: unknown;
+  data: T;
 }
+
+export interface ApiErrorResponse {
+  success: false;
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+export type ApiResponse<T> = ApiSuccessResponse<T> | ApiErrorResponse;
 
 export const sendSuccess = <T>(
   res: Response,
@@ -17,18 +25,21 @@ export const sendSuccess = <T>(
     success: true,
     message,
     data,
-  } satisfies ApiResponse<T>);
+  });
 };
 
 export const sendError = (
   res: Response,
+  code: string,
   message = 'Đã có lỗi xảy ra',
   statusCode = 500,
-  error?: unknown,
+  details?: unknown,
 ) => {
-  return res.status(statusCode).json({
+  const responseBody: ApiErrorResponse = {
     success: false,
+    code,
     message,
-    error,
-  } satisfies ApiResponse<null>);
+    ...(details !== undefined ? { details } : {}),
+  };
+  return res.status(statusCode).json(responseBody);
 };

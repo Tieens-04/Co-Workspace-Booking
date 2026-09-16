@@ -9,6 +9,10 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "typecheck:tests": "tsc --project tsconfig.tests.json",
     "typecheck:prisma": "tsc --project prisma/tsconfig.json",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -22,20 +26,26 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "helmet": "^8.0.0",
-    "morgan": "^1.10.0"
+    "jsonwebtoken": "^9.0.3",
+    "morgan": "^1.10.0",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/morgan": "^1.9.9",
     "@types/node": "^22.13.9",
+    "@types/supertest": "^7.2.1",
     "@typescript-eslint/eslint-plugin": "^8.26.0",
     "@typescript-eslint/parser": "^8.26.0",
     "eslint": "^9.21.0",
     "prisma": "^6.19.3",
+    "supertest": "^7.2.2",
     "tsx": "^4.19.3",
-    "typescript": "^5.8.2"
+    "typescript": "^5.8.2",
+    "vitest": "^5.0.1"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"
