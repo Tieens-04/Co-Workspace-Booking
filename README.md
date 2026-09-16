@@ -111,6 +111,64 @@ Integration tests từ chối chạy nếu thiếu URL hoặc dùng schema khôn
 
 ---
 
+## 🛡️ Middleware Xác Thực & Phân Quyền Route (Auth & RBAC Middleware)
+
+Hệ thống bảo vệ các endpoint nội bộ thông qua middleware xác thực JWT `verifyToken` và phân quyền dựa trên vai trò `checkRole`.
+
+### 1. Chuẩn gửi Token
+
+Client gửi Access Token qua HTTP header:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+- **Scheme Bearer:** Không phân biệt chữ hoa/thường (`Bearer`, `bearer`, `BEARER` đều hợp lệ); giá trị token được giữ nguyên.
+- **Thuật toán & chữ ký:** Chỉ chấp nhận JWT sử dụng thuật toán `HS256`, chữ ký khớp với `JWT_SECRET` và token chưa hết hạn.
+- **Payload tối thiểu:** Token được kiểm tra runtime bắt buộc phải có `sub` (chuỗi ID không rỗng), `role` (`CUSTOMER` hoặc `ADMIN` theo enum Prisma), và `exp` (thời điểm hết hạn hợp lệ).
+- **Principal:** Middleware chỉ trích xuất và gán `{ sub, role }` vào `req.user`. Không nhận identity hay role từ request body/query để ngăn chặn tấn công giả mạo quyền hạn (privilege escalation).
+
+### 2. Bảng Phân Quyền Tuyến Đường
+
+| Nhóm Route        | Middleware Áp Dụng                        |  CUSTOMER  | ADMIN | Không Có Token |
+| ----------------- | ----------------------------------------- | :--------: | :---: | :------------: |
+| `/api/v1/auth/*`  | Không (Public)                            |     ✅     |  ✅   |       ✅       |
+| `/api/v1/health`  | Không (Public)                            |     ✅     |  ✅   |       ✅       |
+| `/api/v1/me/*`    | `verifyToken`                             |     ✅     |  ✅   |   ❌ (`401`)   |
+| `/api/v1/admin/*` | `verifyToken` → `checkRole([Role.ADMIN])` | ❌ (`403`) |  ✅   |   ❌ (`401`)   |
+
+> **Lưu ý về endpoint placeholder:** Nhóm `/api/v1/admin` và `/api/v1/me` hiện tại đã được dựng router và gắn middleware bảo vệ, nhưng chưa có endpoint nghiệp vụ cụ thể. Khi gửi request có quyền hợp lệ, hệ thống sẽ trả về mã `404 Not Found`.
+
+### 3. Quy Ước Mã Lỗi Xác Thực & Phân Quyền
+
+Tất cả các lỗi trả về theo chuẩn JSON nhất quán:
+
+- **`401 UNAUTHORIZED`:** Xảy ra khi thiếu header `Authorization`, header sai định dạng Bearer, payload JWT không phải JSON hợp lệ, token sai chữ ký, token hết hạn, bị tamper hoặc thiếu các claims hợp lệ (`sub`, `role`, `exp`).
+  ```json
+  {
+    "success": false,
+    "code": "UNAUTHORIZED",
+    "message": "Token không hợp lệ hoặc đã hết hạn"
+  }
+  ```
+- **`403 FORBIDDEN`:** Xảy ra khi người dùng đã xác thực thành công nhưng không có quyền truy cập route yêu cầu (ví dụ: tài khoản `CUSTOMER` truy cập nhóm `/api/v1/admin` hoặc `checkRole` với danh sách quyền rỗng).
+  ```json
+  {
+    "success": false,
+    "code": "FORBIDDEN",
+    "message": "Bạn không có quyền thực hiện thao tác này"
+  }
+  ```
+
+### 4. Hướng Dẫn Gắn Tuyến Đường Nghiệp Vụ Mới
+
+Khi xây dựng các tính năng tiếp theo (booking, quản lý phòng, profile), chỉ cần khai báo handler và gắn vào router tương ứng:
+
+- **Tuyến đường Admin:** Khai báo trong `apps/server/src/routes/admin.route.ts` (đã được bọc tự động bởi `verifyToken` và `checkRole([Role.ADMIN])`).
+- **Tuyến đường cá nhân (Customer/Admin):** Khai báo trong `apps/server/src/routes/me.route.ts` (đã được bọc tự động bởi `verifyToken`). Đối với tài nguyên cá nhân (như booking), service layer chịu trách nhiệm kiểm tra ownership (`resource.userId === req.user.sub`).
+
+---
+
 ## 📁 Cấu Trúc Thư Mục Backend (Clean Architecture)
 
 ```text
