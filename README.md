@@ -24,17 +24,13 @@ Dự án được tổ chức theo mô hình **Monorepo** với `npm workspaces`
 ## 🚀 Hướng Dẫn Cài Đặt & Khởi Chạy
 
 ### 1. Cài đặt toàn bộ dependencies
-
 Chạy lệnh duy nhất tại thư mục gốc:
-
 ```bash
 npm install
 ```
 
 ### 2. Cấu hình biến môi trường
-
 Tạo file `.env` cho backend:
-
 ```bash
 cp apps/server/.env.example apps/server/.env
 ```
@@ -42,7 +38,6 @@ cp apps/server/.env.example apps/server/.env
 ### 3. Khởi chạy dự án ở chế độ Development
 
 - **Chạy cả Frontend và Backend song song (Khuyến nghị):**
-
   ```bash
   npm run dev
   ```

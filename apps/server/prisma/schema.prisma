@@ -1,0 +1,142 @@
+datasource db {
+  provider          = "mysql"
+  url               = env("DATABASE_URL")
+  shadowDatabaseUrl = env("SHADOW_DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// -------------------------------------------------------------
+// ENUMS
+// -------------------------------------------------------------
+
+enum Role {
+  ADMIN
+  CUSTOMER
+}
+
+enum RoomStatus {
+  AVAILABLE
+  MAINTENANCE
+}
+
+enum BookingStatus {
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+}
+
+enum PaymentMethod {
+  CASH
+  QR
+}
+
+// -------------------------------------------------------------
+// MODELS
+// -------------------------------------------------------------
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  passwordHash String    @map("password_hash")
+  fullName     String    @map("full_name")
+  phoneNumber  String?   @map("phone_number")
+  role         Role      @default(CUSTOMER)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  bookings     Booking[]
+
+  @@map("users")
+}
+
+model Room {
+  id           String        @id @default(uuid())
+  name         String
+  description  String?       @db.Text
+  capacity     Int
+  pricePerHour Decimal       @map("price_per_hour") @db.Decimal(10, 2)
+  status       RoomStatus    @default(AVAILABLE)
+  createdAt    DateTime      @default(now()) @map("created_at")
+  updatedAt    DateTime      @updatedAt @map("updated_at")
+
+  images       RoomImage[]
+  amenities    RoomAmenity[]
+  bookings     Booking[]
+
+  @@map("rooms")
+}
+
+model Amenity {
+  id          String        @id @default(uuid())
+  name        String        @unique
+  icon        String?       // Tên icon (e.g. 'wifi', 'tv', 'coffee')
+  description String?
+  createdAt   DateTime      @default(now()) @map("created_at")
+  updatedAt   DateTime      @updatedAt @map("updated_at")
+
+  rooms       RoomAmenity[]
+
+  @@map("amenities")
+}
+
+// Bảng trung gian Room - Amenity (N - N)
+model RoomAmenity {
+  roomId    String   @map("room_id")
+  amenityId String   @map("amenity_id")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  amenity   Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+
+  @@id([roomId, amenityId])
+  @@index([amenityId])
+  @@map("room_amenities")
+}
+
+model RoomImage {
+  id        String   @id @default(uuid())
+  roomId    String   @map("room_id")
+  imageUrl  String   @map("image_url") @db.VarChar(500)
+  publicId  String?  @map("public_id") // Cloudinary public_id để xóa ảnh
+  isPrimary Boolean  @default(false) @map("is_primary")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@index([roomId])
+  @@map("room_images")
+}
+
+model Booking {
+  id                 String         @id @default(uuid())
+  bookingCode        String         @unique @map("booking_code") // e.g. CS-20260915-ABCD
+  userId             String         @map("user_id")
+  roomId             String         @map("room_id")
+  startTime          DateTime       @map("start_time")
+  endTime            DateTime       @map("end_time")
+  totalAmount        Decimal        @map("total_amount") @db.Decimal(12, 2)
+  note               String?        @db.Text
+  status             BookingStatus  @default(CONFIRMED)
+  paymentStatus      PaymentStatus  @default(UNPAID) @map("payment_status")
+  paymentMethod      PaymentMethod? @map("payment_method")
+  cancellationReason String?        @map("cancellation_reason") @db.Text
+  createdAt          DateTime       @default(now()) @map("created_at")
+  updatedAt          DateTime       @updatedAt @map("updated_at")
+
+  user               User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  room               Room           @relation(fields: [roomId], references: [id], onDelete: Restrict)
+
+  // Composite index cực kỳ quan trọng cho availability query (StartA < EndB AND EndA > StartB)
+  @@index([roomId, startTime, endTime, status])
+  @@index([userId])
+  @@map("bookings")
+}
