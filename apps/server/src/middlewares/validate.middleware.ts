@@ -17,3 +17,35 @@ export const validateBody = (schema: ZodSchema) => {
     return next();
   };
 };
+
+export const validateQuery = (schema: ZodSchema) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const result = schema.safeParse(req.query);
+    if (!result.success) {
+      const error = result.error as ZodError;
+      const details = error.issues.map((issue) => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      }));
+      return sendError(res, 'VALIDATION_ERROR', 'Dữ liệu đầu vào không hợp lệ', 400, details);
+    }
+    req.query = result.data as any;
+    return next();
+  };
+};
+
+export const validateParams = (schema: ZodSchema) => {
+  return (req: Request, res: Response, next: NextFunction) => {
+    const result = schema.safeParse(req.params);
+    if (!result.success) {
+      const error = result.error as ZodError;
+      const details = error.issues.map((issue) => ({
+        field: issue.path.join('.'),
+        message: issue.message,
+      }));
+      return sendError(res, 'VALIDATION_ERROR', 'Dữ liệu đầu vào không hợp lệ', 400, details);
+    }
+    req.params = result.data as any;
+    return next();
+  };
+};

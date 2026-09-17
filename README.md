@@ -185,6 +185,129 @@ Integration tests từ chối chạy nếu thiếu URL hoặc dùng schema khôn
 
 ---
 
+## 🚪 API Danh Sách & Chi Tiết Phòng (Room API)
+
+Cung cấp các endpoint công khai (không cần xác thực) phục vụ tìm kiếm, lọc và xem chi tiết phòng làm việc.
+
+### 1. Danh sách phòng: `GET /api/v1/rooms`
+
+Hỗ trợ phân trang và bộ lọc linh hoạt:
+
+- **Query Parameters**:
+  - `page` (tùy chọn): Số nguyên dương $\ge 1$, mặc định `1`; request tạo offset vượt giới hạn cơ sở dữ liệu sẽ bị từ chối.
+  - `limit` (tùy chọn): Số nguyên từ `1` đến `100`, mặc định `10`.
+  - `capacity` (tùy chọn): Sức chứa tối thiểu (lọc `capacity >= value`), trong phạm vi số nguyên của cột dữ liệu.
+  - `minPrice` (tùy chọn): Giá theo giờ tối thiểu (không âm, inclusive), tối đa 2 chữ số thập phân.
+  - `maxPrice` (tùy chọn): Giá theo giờ tối đa (không âm, inclusive), tối đa 2 chữ số thập phân. Giá phải nằm trong phạm vi `DECIMAL(10,2)`; `minPrice > maxPrice` sẽ trả về `400 VALIDATION_ERROR`.
+  - `amenityIds` (tùy chọn): Chuỗi danh sách UUID phân cách bằng dấu phẩy (ví dụ `uuid1,uuid2`). Tự động chuẩn hóa khoảng trắng và loại bỏ ID trùng lặp.
+- **Quy tắc lọc tiện ích (Amenity ALL Semantics)**:
+  - Phòng phải sở hữu **tất cả** các tiện ích trong `amenityIds` mới xuất hiện trong kết quả. Phòng chỉ có một phần hoặc không có tiện ích nào sẽ bị loại trừ.
+  - UUID hợp lệ nhưng không tồn tại trong hệ thống sẽ trả về danh sách rỗng (`total: 0`), không báo lỗi.
+- **Kiểm tra đầu vào (Strict Query Whitelisting)**:
+  - Bất kỳ query parameter nào không nằm trong danh sách cho phép (ví dụ `sort`, `order`) hoặc sai định dạng sẽ bị từ chối ngay lập tức với `400 VALIDATION_ERROR` trước khi truy cập cơ sở dữ liệu.
+- **Phân trang & Ảnh bìa (Pagination & Cover Fallback)**:
+  - `data.pagination`: Chứa `{ page, limit, total, totalPages }`. Trang vượt quá phạm vi dữ liệu sẽ trả danh sách `items: []` rỗng kèm metadata, không báo lỗi.
+  - `coverImage`: Lấy ảnh primary đầu tiên; nếu phòng không có ảnh primary thì lấy ảnh đầu tiên theo thứ tự tạo (`createdAt/id`); nếu phòng không có ảnh nào thì trả về `null`.
+  - `pricePerHour`: Luôn được định dạng chuỗi số thập phân 2 chữ số (ví dụ `"180000.00"`).
+  - Sắp xếp mặc định: Cố định theo `createdAt DESC`, sau đó `id ASC`.
+
+**Ví dụ phản hồi `200 OK`:**
+
+```json
+{
+  "success": true,
+  "message": "Lấy danh sách phòng thành công",
+  "data": {
+    "items": [
+      {
+        "id": "c1f72922-38ef-46c5-9276-88b1424df94a",
+        "name": "Meeting Room Creative 4P",
+        "capacity": 4,
+        "pricePerHour": "180000.00",
+        "status": "AVAILABLE",
+        "coverImage": "https://images.unsplash.com/photo-1517502884422-41eaead166d4?w=800",
+        "amenities": [
+          {
+            "id": "e89d5334-a1a7-47b7-b0a6-21822a76f2f3",
+            "name": "High-Speed Wi-Fi",
+            "icon": "wifi",
+            "description": "Kết nối Internet cáp quang tốc độ cao 300Mbps"
+          },
+          {
+            "id": "f51a4413-4357-4183-93d3-13e77864f7b2",
+            "name": "Monitor 4K",
+            "icon": "monitor",
+            "description": "Màn hình Dell UltraSharp 27 inch 4K Type-C"
+          }
+        ]
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "limit": 10,
+      "total": 1,
+      "totalPages": 1
+    }
+  }
+}
+```
+
+### 2. Chi tiết phòng: `GET /api/v1/rooms/:id`
+
+- **Path Parameters**:
+  - `id`: UUID hợp lệ của phòng. Nếu không đúng định dạng UUID, trả `400 VALIDATION_ERROR`.
+- **Hành vi & Dữ liệu trả về**:
+  - Trả về thông tin chi tiết: `id`, `name`, `description`, `capacity`, `pricePerHour`, `status`, toàn bộ `images` và toàn bộ `amenities`.
+  - Trong `images`: Ảnh primary được xếp lên đầu tiên.
+  - Trong `amenities`: Được sắp xếp theo thứ tự bảng chữ cái của tên tiện ích (`name ASC`).
+  - **Bảo mật dữ liệu**: Không làm lộ `publicId` (Cloudinary) hoặc dữ liệu bảng nối trung gian (`roomId`, `amenityId`).
+  - Khi `id` hợp lệ nhưng phòng không tồn tại trong hệ thống: Trả về mã lỗi `404 ROOM_NOT_FOUND`.
+
+**Ví dụ phản hồi `200 OK`:**
+
+```json
+{
+  "success": true,
+  "message": "Lấy thông tin chi tiết phòng thành công",
+  "data": {
+    "id": "c1f72922-38ef-46c5-9276-88b1424df94a",
+    "name": "Meeting Room Creative 4P",
+    "description": "Phòng họp nhóm 4 người với bàn tròn thảo luận, bảng viết kích thước lớn và màn hình trình chiếu.",
+    "capacity": 4,
+    "pricePerHour": "180000.00",
+    "status": "AVAILABLE",
+    "images": [
+      {
+        "id": "2b6b553e-53c8-4712-b06c-31fb8442a8b3",
+        "imageUrl": "https://images.unsplash.com/photo-1517502884422-41eaead166d4?w=800",
+        "isPrimary": true
+      },
+      {
+        "id": "8b9e69c1-8ce2-473d-82d2-8a90ecbb34d5",
+        "imageUrl": "https://images.unsplash.com/photo-1577495508048-b635879837f1?w=800",
+        "isPrimary": false
+      }
+    ],
+    "amenities": [
+      {
+        "id": "e89d5334-a1a7-47b7-b0a6-21822a76f2f3",
+        "name": "High-Speed Wi-Fi",
+        "icon": "wifi",
+        "description": "Kết nối Internet cáp quang tốc độ cao 300Mbps"
+      },
+      {
+        "id": "f51a4413-4357-4183-93d3-13e77864f7b2",
+        "name": "Monitor 4K",
+        "icon": "monitor",
+        "description": "Màn hình Dell UltraSharp 27 inch 4K Type-C"
+      }
+    ]
+  }
+}
+```
+
+---
+
 ## 🛡️ Middleware Xác Thực & Phân Quyền Route (Auth & RBAC Middleware)
 
 Hệ thống bảo vệ các endpoint nội bộ thông qua middleware xác thực JWT `verifyToken` và phân quyền dựa trên vai trò `checkRole`.
@@ -208,6 +331,7 @@ Authorization: Bearer <access_token>
 | ----------------- | ----------------------------------------- | :--------: | :---: | :------------: |
 | `/api/v1/auth/*`  | Không (Public)                            |     ✅     |  ✅   |       ✅       |
 | `/api/v1/health`  | Không (Public)                            |     ✅     |  ✅   |       ✅       |
+| `/api/v1/rooms/*` | Không (Public)                            |     ✅     |  ✅   |       ✅       |
 | `/api/v1/me/*`    | `verifyToken`                             |     ✅     |  ✅   |   ❌ (`401`)   |
 | `/api/v1/admin/*` | `verifyToken` → `checkRole([Role.ADMIN])` | ❌ (`403`) |  ✅   |   ❌ (`401`)   |
 
