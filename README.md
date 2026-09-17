@@ -8,8 +8,8 @@ Hệ thống quản lý và đặt chỗ làm việc (Co-Working Space Booking S
 
 Dự án được tổ chức theo mô hình **Monorepo** với `npm workspaces`:
 
-- **Frontend (`apps/client`)**: React 19, TypeScript, Vite, Axios.
-- **Backend (`apps/server`)**: Express.js, TypeScript, áp dụng **Clean Architecture** (Domain - Repository - Service - Controller).
+- **Frontend (`apps/client`)**: React 19, TypeScript, Vite, React Router v7, Zod v4, Axios, Vitest, React Testing Library.
+- **Backend (`apps/server`)**: Express.js, TypeScript, áp dụng **Clean Architecture** (Domain - Repository - Service - Controller), Prisma ORM, MySQL 8.
 - **Code Quality**: Prettier & ESLint cấu hình thống nhất toàn monorepo.
 
 ---
@@ -57,14 +57,22 @@ cp apps/server/.env.example apps/server/.env
 
 ---
 
-## 🔍 Kiểm Tra Chất Lượng Mã Nguồn (Lint & Format)
+## 🔍 Kiểm Tra Chất Lượng Mã Nguồn (Lint, Test & Build)
 
 ```bash
-# Kiểm tra lỗi cú pháp và conventions bằng ESLint
+# Kiểm tra lỗi cú pháp và conventions bằng ESLint toàn bộ workspaces
 npm run lint
 
-# Chạy automated tests (Vitest)
+# Chạy toàn bộ automated tests (Vitest) cho cả Client và Server
 npm test
+
+# Chạy riêng biệt từng ứng dụng:
+npm run test --workspace=apps/client  # Unit & integration tests frontend
+npm run test --workspace=apps/server  # Unit & API tests backend
+
+# Kiểm tra kiểu dữ liệu TypeScript (Typecheck):
+npm run typecheck --workspace=apps/client
+npm run typecheck:tests --workspace=apps/server
 
 # Tự động định dạng mã nguồn bằng Prettier
 npm run format
@@ -72,9 +80,75 @@ npm run format
 # Kiểm tra xem code đã được format đúng chuẩn chưa
 npm run format:check
 
-# Build kiểm tra kiểu dữ liệu TypeScript (Production Build)
+# Build kiểm tra kiểu dữ liệu TypeScript và đóng gói ứng dụng (Production Build)
 npm run build
 ```
+
+---
+
+## 🌐 Giao Diện & Xác Thực Phía Client (Frontend Auth, Navigation & Session)
+
+Ứng dụng React tại `apps/client` quản lý định tuyến bằng **React Router v7**, xác thực và phân quyền RBAC dựa trên JWT, giao diện thuần CSS với bảng màu xanh/xám nhất quán, và hỗ trợ đa thiết bị cùng các tiêu chuẩn trợ năng (a11y).
+
+### 1. Bảng Định Tuyến Tuyến Đường (Client Routes & Access Rules)
+
+| Tuyến đường    | Nội dung & Quyền truy cập                                                                                                                           | Hành vi điều hướng & Quy tắc hiển thị                                                                                                                                                                        |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/login`       | Form đăng nhập (Email, mật khẩu, nút ẩn/hiện mật khẩu, liên kết đăng ký).                                                                           | Người dùng đã đăng nhập tự động chuyển về trang đích theo role (`CUSTOMER` → `/`, `ADMIN` → `/admin`). Điền sẵn email và hiển thị thông báo thành công nếu nhận state từ trang Đăng ký.                      |
+| `/register`    | Form đăng ký tài khoản khách hàng (`fullName`, `email`, `phoneNumber` tùy chọn, `password`, `confirmPassword`, nút ẩn/hiện mật khẩu).               | Người dùng đã đăng nhập tự chuyển về trang đích theo role. Đăng ký thành công → `/login` kèm email điền sẵn và banner thông báo thành công (chưa cấp phiên).                                                 |
+| `/`            | Trang chào công khai: hiển thị trạng thái đăng nhập, nút Đăng xuất, liên kết Quản trị (nếu là `ADMIN`), và kiểm tra kết nối Backend (Health Check). | Truy cập công khai cho cả khách vãng lai và người dùng đã đăng nhập.                                                                                                                                         |
+| `/admin`       | Trang quản trị tối thiểu nghiệm thu quyền hạn, chỉ dành cho vai trò `ADMIN`, có nút Đăng xuất.                                                      | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login. |
+| Đường dẫn khác | Giao diện 404 Not Found thân thiện.                                                                                                                 | Cung cấp liên kết đưa người dùng quay trở về trang chủ `/`.                                                                                                                                                  |
+
+### 2. Quản Lý Phiên Làm Việc (Session Storage & Lifecycle)
+
+- **Lưu trữ Token:** JWT Access Token được lưu trữ tại `localStorage` dưới khóa định danh `cospace.accessToken`. Hệ thống **tuyệt đối không lưu mật khẩu** hay thông tin nhạy cảm ở client.
+- **Đọc phiên khi tải lại trang (Reload):** Ứng dụng giải mã an toàn các claims `sub`, `role`, `exp` từ payload JWT để hiển thị thông tin và định hướng route. Nếu token bị rỗng, hỏng cấu trúc, thiếu claim bắt buộc hoặc đã quá hạn (`exp * 1000 <= Date.now()`), token sẽ bị xóa khỏi `localStorage` và chuyển về trạng thái chưa đăng nhập.
+- **Tự động hủy phiên theo thời gian:** Hệ thống tự động thiết lập bộ đếm thời gian (`setTimeout`) dựa trên thời điểm hết hạn `exp`. Khi phiên hết hiệu lực, ứng dụng tự động đăng xuất và thông báo cho người dùng.
+- **Đồng bộ đa tab (Multi-tab Synchronization):** Thông qua sự kiện `window.addEventListener('storage')`, nếu người dùng thực hiện đăng xuất hoặc phiên bị thay đổi ở một tab khác, tất cả các tab đang mở sẽ ngay lập tức đồng bộ trạng thái đăng xuất.
+
+### 3. Tích Hợp API & Axios Interceptor
+
+Tất cả các lệnh gọi API được đóng gói qua `apiClient` tại `apps/client/src/services/api.ts` và module `authApi` tại `apps/client/src/services/auth.api.ts`:
+
+- **Request Interceptor:** Tự động đính kèm header `Authorization: Bearer <token>` nếu có token trong `localStorage`. Tự động bỏ qua việc gắn token đối với các endpoint xác thực công khai (`/auth/login`, `/auth/register`).
+- **Response Interceptor:**
+  - Bắt mã lỗi `401 Unauthorized`:
+    - Nếu là request đến `/auth/login`: Giữ nguyên dữ liệu và hiển thị lỗi _"Email hoặc mật khẩu không chính xác"_ ngay tại form.
+    - Nếu là request từ API nghiệp vụ có token: Kiểm tra token gửi đi có khớp với token phiên hiện tại hay không. Nếu khớp, xóa token trong `localStorage` và chuyển người dùng về `/login` với thông báo hết phiên làm việc.
+    - **Chống race condition phiên cũ:** Phản hồi `401` đến muộn từ request mang token cũ sẽ bị bỏ qua và không xóa token của phiên đăng nhập mới.
+  - Mã lỗi `403 Forbidden`: Giữ nguyên phiên làm việc, không tự động đăng xuất.
+
+### 4. Yêu Cầu Cấu Hình SPA Fallback Khi Triển Khai (Production Deployment)
+
+Vì ứng dụng sử dụng React Router với HTML5 History API (`BrowserRouter`), các yêu cầu HTTP truy cập trực tiếp hoặc khi người dùng refresh tại các đường dẫn như `/login`, `/register`, `/admin` cần phải được máy chủ web phục vụ file `index.html`.
+
+- **Nginx:**
+  ```nginx
+  location / {
+      try_files $uri $uri/ /index.html;
+  }
+  ```
+- **Apache (.htaccess):**
+  ```apache
+  <IfModule mod_rewrite.c>
+      RewriteEngine On
+      RewriteBase /
+      RewriteRule ^index\.html$ - [L]
+      RewriteCond %{REQUEST_FILENAME} !-f
+      RewriteCond %{REQUEST_FILENAME} !-d
+      RewriteRule . /index.html [L]
+  </IfModule>
+  ```
+- **Vercel / Netlify:** Đã có cấu hình mặc định hoặc thêm file `vercel.json` / `_redirects` (`/* /index.html 200`).
+
+### 5. Đánh Giá Bảo Mật & Giới Hạn Của `localStorage`
+
+- **Rủi ro XSS (Cross-Site Scripting):** Dữ liệu trong `localStorage` có thể bị truy cập bởi bất kỳ mã JavaScript nào thực thi trên cùng domain. Nếu ứng dụng có lỗ hổng XSS (chèn mã độc qua thư viện bên thứ ba hoặc nội dung chưa được khử khuẩn), mã độc có thể đánh cắp Access Token.
+- **Khuyến nghị cho môi trường Production cao cấp:**
+  1. Với các hệ thống yêu cầu bảo mật cao (như thanh toán, dữ liệu nhạy cảm), giải pháp tốt nhất là lưu JWT trong **`httpOnly`, `Secure`, `SameSite=Strict` Cookies**. Cookie `httpOnly` hoàn toàn không thể đọc bằng JavaScript phía client, qua đó vô hiệu hóa nguy cơ đánh cắp token qua XSS.
+  2. Triển khai cơ chế **Refresh Token Rotation** (kết hợp Access Token ngắn hạn ~15 phút và Refresh Token trong cookie) để giảm thiểu tối đa cửa sổ rủi ro.
+  3. Áp dụng Content Security Policy (CSP) chặt chẽ để ngăn chặn việc nạp script tùy tiện.
 
 ---
 
