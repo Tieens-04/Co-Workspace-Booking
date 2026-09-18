@@ -15,7 +15,7 @@ import {
 } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
 
-function formatPrice(price: unknown): string {
+export function formatPrice(price: unknown): string {
   if (
     price &&
     typeof price === 'object' &&
@@ -50,7 +50,7 @@ function resolveCoverImage(images: SelectedRoomImage[]): string | null {
   return sortedImages[0].imageUrl;
 }
 
-function mapAmenities(rawAmenities: SelectedRoomAmenity[]): AmenityDto[] {
+export function mapAmenities(rawAmenities: SelectedRoomAmenity[]): AmenityDto[] {
   return rawAmenities
     .map((ra) => ({
       id: ra.amenity.id,
@@ -61,7 +61,7 @@ function mapAmenities(rawAmenities: SelectedRoomAmenity[]): AmenityDto[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function mapImages(rawImages: SelectedRoomImage[]): RoomImageDto[] {
+export function mapImages(rawImages: SelectedRoomImage[]): RoomImageDto[] {
   const sorted = [...rawImages].sort((a, b) => {
     if (a.isPrimary !== b.isPrimary) {
       return a.isPrimary ? -1 : 1;

@@ -1,19 +1,402 @@
-import React from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { roomApi } from '../services/room.api';
+import { adminRoomApi } from '../services/admin-room.api';
+import { RoomListItem, Amenity, RoomStatus } from '../types/room';
+import { AdminRoomFormValues, AdminFormErrors } from '../types/admin-room';
+
+const initialFormValues: AdminRoomFormValues = {
+  name: '',
+  description: '',
+  capacity: '',
+  pricePerHour: '',
+  amenityIds: [],
+  images: [],
+};
 
 export const AdminPage: React.FC = () => {
   const { principal, logout } = useAuth();
 
+  // Room list state
+  const [rooms, setRooms] = useState<RoomListItem[]>([]);
+  const [availableAmenities, setAvailableAmenities] = useState<Amenity[]>([]);
+  const [isLoadingAmenities, setIsLoadingAmenities] = useState<boolean>(true);
+  const [amenitiesError, setAmenitiesError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [totalPages, setTotalPages] = useState<number>(1);
+  const [totalRooms, setTotalRooms] = useState<number>(0);
+  const [isLoadingRooms, setIsLoadingRooms] = useState<boolean>(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  // Shared create/edit form state
+  const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
+  const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
+  const [editingRoomStatus, setEditingRoomStatus] = useState<RoomStatus | null>(null);
+  const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
+  const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
+  const [formData, setFormData] = useState<AdminRoomFormValues>(initialFormValues);
+  const [formErrors, setFormErrors] = useState<AdminFormErrors>({});
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const amenitiesRequestRef = useRef<AbortController | null>(null);
+  const detailRequestRef = useRef<AbortController | null>(null);
+  const formHeadingRef = useRef<HTMLHeadingElement | null>(null);
+  const formTriggerRef = useRef<HTMLButtonElement | null>(null);
+
+  const fetchAmenities = useCallback(async () => {
+    amenitiesRequestRef.current?.abort();
+    const controller = new AbortController();
+    amenitiesRequestRef.current = controller;
+    setIsLoadingAmenities(true);
+    setAmenitiesError(null);
+
+    try {
+      const res = await roomApi.getAmenities(controller.signal);
+      if (controller.signal.aborted || amenitiesRequestRef.current !== controller) return;
+
+      if (res.success) {
+        setAvailableAmenities(res.data);
+      } else {
+        setAmenitiesError(res.message || 'Không thể tải danh sách tiện ích.');
+      }
+    } catch (err: any) {
+      if (controller.signal.aborted || amenitiesRequestRef.current !== controller) return;
+      setAmenitiesError(
+        err.response?.data?.message || 'Không thể tải danh sách tiện ích. Vui lòng thử lại.',
+      );
+    } finally {
+      if (amenitiesRequestRef.current === controller) {
+        amenitiesRequestRef.current = null;
+        setIsLoadingAmenities(false);
+      }
+    }
+  }, []);
+
+  // Fetch amenities once and cancel in-flight requests when leaving the page.
+  useEffect(() => {
+    fetchAmenities();
+
+    return () => {
+      amenitiesRequestRef.current?.abort();
+      detailRequestRef.current?.abort();
+    };
+  }, [fetchAmenities]);
+
+  useEffect(() => {
+    if (!isFormOpen) return;
+    window.requestAnimationFrame(() => formHeadingRef.current?.focus());
+  }, [isFormOpen]);
+
+  // Fetch rooms
+  const fetchRooms = useCallback(async (pageToLoad: number) => {
+    setIsLoadingRooms(true);
+    setLoadError(null);
+    try {
+      const res = await adminRoomApi.getAdminRooms({ page: pageToLoad, limit: 10 });
+      if (res.success) {
+        setRooms(res.data.items);
+        setCurrentPage(res.data.pagination.page);
+        setTotalPages(res.data.pagination.totalPages);
+        setTotalRooms(res.data.pagination.total);
+      }
+    } catch (err: any) {
+      setLoadError(
+        err.response?.data?.message || 'Không thể tải danh sách phòng. Vui lòng thử lại.',
+      );
+    } finally {
+      setIsLoadingRooms(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchRooms(currentPage);
+  }, [fetchRooms, currentPage]);
+
+  // Open Create Form
+  const handleOpenCreate = (trigger: HTMLButtonElement) => {
+    detailRequestRef.current?.abort();
+    detailRequestRef.current = null;
+    setLoadingDetailId(null);
+    setDetailLoadError(null);
+    formTriggerRef.current = trigger;
+    setEditingRoomId(null);
+    setEditingRoomStatus(null);
+    setFormData(initialFormValues);
+    setFormErrors({});
+    setIsFormOpen(true);
+  };
+
+  // Open Edit Form
+  const handleOpenEdit = async (roomId: string, trigger: HTMLButtonElement) => {
+    detailRequestRef.current?.abort();
+    const controller = new AbortController();
+    detailRequestRef.current = controller;
+    formTriggerRef.current = trigger;
+    setIsFormOpen(false);
+    setLoadingDetailId(roomId);
+    setDetailLoadError(null);
+    setFormErrors({});
+    try {
+      const res = await roomApi.getRoomById(roomId, controller.signal);
+      if (res.success && !controller.signal.aborted && detailRequestRef.current === controller) {
+        const room = res.data;
+        setEditingRoomId(room.id);
+        setEditingRoomStatus(room.status);
+        setFormData({
+          name: room.name,
+          description: room.description || '',
+          capacity: String(room.capacity),
+          pricePerHour: room.pricePerHour,
+          amenityIds: room.amenities.map((a) => a.id),
+          images: room.images.map((img) => ({
+            imageUrl: img.imageUrl,
+            isPrimary: img.isPrimary,
+          })),
+        });
+        setIsFormOpen(true);
+      }
+    } catch (err: any) {
+      if (controller.signal.aborted || detailRequestRef.current !== controller) return;
+      setDetailLoadError(err.response?.data?.message || 'Không thể tải thông tin phòng để sửa.');
+    } finally {
+      if (detailRequestRef.current === controller) {
+        detailRequestRef.current = null;
+        setLoadingDetailId(null);
+      }
+    }
+  };
+
+  // Close & Reset Form
+  const handleCloseForm = () => {
+    setIsFormOpen(false);
+    setEditingRoomId(null);
+    setEditingRoomStatus(null);
+    setFormData(initialFormValues);
+    setFormErrors({});
+    const trigger = formTriggerRef.current;
+    formTriggerRef.current = null;
+    window.requestAnimationFrame(() => trigger?.focus());
+  };
+
+  // Form field handlers
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+    if (formErrors[name as keyof AdminFormErrors]) {
+      setFormErrors((prev) => ({ ...prev, [name]: undefined }));
+    }
+  };
+
+  const handleAmenityToggle = (amenityId: string) => {
+    setFormData((prev) => {
+      const exists = prev.amenityIds.includes(amenityId);
+      const updated = exists
+        ? prev.amenityIds.filter((id) => id !== amenityId)
+        : [...prev.amenityIds, amenityId];
+      return { ...prev, amenityIds: updated };
+    });
+    if (formErrors.amenityIds) {
+      setFormErrors((prev) => ({ ...prev, amenityIds: undefined }));
+    }
+  };
+
+  const handleAddImage = () => {
+    setFormData((prev) => {
+      const isFirst = prev.images.length === 0;
+      return {
+        ...prev,
+        images: [...prev.images, { imageUrl: '', isPrimary: isFirst }],
+      };
+    });
+    if (formErrors.images) {
+      setFormErrors((prev) => ({ ...prev, images: undefined }));
+    }
+  };
+
+  const handleRemoveImage = (indexToRemove: number) => {
+    setFormData((prev) => {
+      const wasPrimary = prev.images[indexToRemove]?.isPrimary;
+      const remaining = prev.images.filter((_, i) => i !== indexToRemove);
+      if (wasPrimary && remaining.length > 0) {
+        remaining[0].isPrimary = true;
+      }
+      return { ...prev, images: remaining };
+    });
+    if (formErrors.images) {
+      setFormErrors((prev) => ({ ...prev, images: undefined }));
+    }
+  };
+
+  const handleSetPrimaryImage = (index: number) => {
+    setFormData((prev) => ({
+      ...prev,
+      images: prev.images.map((img, i) => ({
+        ...img,
+        isPrimary: i === index,
+      })),
+    }));
+    if (formErrors.images) {
+      setFormErrors((prev) => ({ ...prev, images: undefined }));
+    }
+  };
+
+  const handleImageUrlChange = (index: number, value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      images: prev.images.map((img, i) => (i === index ? { ...img, imageUrl: value } : img)),
+    }));
+    if (formErrors.images) {
+      setFormErrors((prev) => ({ ...prev, images: undefined }));
+    }
+  };
+
+  // Form submit handler
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormErrors({});
+
+    if (isLoadingAmenities || amenitiesError) {
+      setFormErrors({
+        general: amenitiesError || 'Vui lòng chờ tải xong danh sách tiện ích trước khi lưu phòng.',
+      });
+      return;
+    }
+
+    // Client-side validations
+    const errors: AdminFormErrors = {};
+    const trimmedName = formData.name.trim();
+    if (!trimmedName) {
+      errors.name = 'Tên phòng không được để trống';
+    } else if (trimmedName.length > 191) {
+      errors.name = 'Tên phòng tối đa 191 ký tự';
+    }
+
+    const capacityNum = Number(formData.capacity);
+    if (!formData.capacity || !Number.isInteger(capacityNum) || capacityNum <= 0) {
+      errors.capacity = 'Sức chứa phải là số nguyên dương';
+    }
+
+    const priceStr = formData.pricePerHour.toString().trim();
+    if (!priceStr || !/^\d+(\.\d{1,2})?$/.test(priceStr)) {
+      errors.pricePerHour = 'Đơn giá phải là số tiền không âm với tối đa 2 chữ số thập phân';
+    }
+
+    if (formData.images.length > 0) {
+      for (let i = 0; i < formData.images.length; i++) {
+        const img = formData.images[i];
+        const trimmedUrl = img.imageUrl.trim();
+        if (!trimmedUrl) {
+          errors.images = 'URL ảnh không được để trống';
+          break;
+        }
+        if (!/^https?:\/\//i.test(trimmedUrl)) {
+          errors.images = 'URL ảnh phải bắt đầu bằng http:// hoặc https://';
+          break;
+        }
+        if (trimmedUrl.length > 500) {
+          errors.images = 'URL ảnh không được vượt quá 500 ký tự';
+          break;
+        }
+      }
+
+      if (!errors.images) {
+        const urls = formData.images.map((img) => img.imageUrl.trim());
+        if (new Set(urls).size !== urls.length) {
+          errors.images = 'Danh sách ảnh không được chứa URL trùng lặp';
+        } else {
+          const primaryCount = formData.images.filter((img) => img.isPrimary).length;
+          if (primaryCount !== 1) {
+            errors.images = 'Nếu phòng có ảnh, phải có duy nhất một ảnh chính (isPrimary = true)';
+          }
+        }
+      }
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const normalizedDescription =
+        formData.description.trim() === '' ? null : formData.description.trim();
+      const payloadImages = formData.images.map((img) => ({
+        imageUrl: img.imageUrl.trim(),
+        isPrimary: img.isPrimary,
+      }));
+
+      if (editingRoomId) {
+        await adminRoomApi.updateRoom(editingRoomId, {
+          name: trimmedName,
+          description: normalizedDescription,
+          capacity: capacityNum,
+          pricePerHour: priceStr,
+          amenityIds: formData.amenityIds,
+          images: payloadImages,
+        });
+
+        setSuccessMessage('Cập nhật thông tin phòng thành công!');
+        handleCloseForm();
+        fetchRooms(currentPage);
+      } else {
+        await adminRoomApi.createRoom({
+          name: trimmedName,
+          description: normalizedDescription,
+          capacity: capacityNum,
+          pricePerHour: priceStr,
+          amenityIds: formData.amenityIds,
+          images: payloadImages,
+        });
+
+        setSuccessMessage('Tạo phòng mới thành công!');
+        handleCloseForm();
+        setCurrentPage(1);
+        fetchRooms(1);
+      }
+    } catch (err: any) {
+      const serverDetails = err.response?.data?.details;
+      const serverMessage = err.response?.data?.message || 'Đã có lỗi xảy ra khi lưu phòng.';
+      const mapped: AdminFormErrors = { general: serverMessage };
+
+      if (Array.isArray(serverDetails)) {
+        for (const item of serverDetails) {
+          if (item.field === 'name') mapped.name = item.message;
+          else if (item.field === 'capacity') mapped.capacity = item.message;
+          else if (item.field === 'pricePerHour') mapped.pricePerHour = item.message;
+          else if (item.field === 'description') mapped.description = item.message;
+          else if (item.field?.startsWith('images') || item.field === 'images')
+            mapped.images = item.message;
+          else if (item.field?.startsWith('amenityIds') || item.field === 'amenityIds')
+            mapped.amenityIds = item.message;
+          else mapped.general = item.message;
+        }
+      }
+      setFormErrors(mapped);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
-    <main className="page-container">
+    <main className="page-container admin-page-container">
+      {/* App Header */}
       <header className="app-header">
         <div className="brand-section">
-          <h1>🏢 Co-Space Working — Quản Trị Hệ Thống</h1>
-          <p>Khu vực dành riêng cho Quản trị viên (ADMIN)</p>
+          <h1>🏢 Co-Space Working — Quản Trị Phòng</h1>
+          <p>Quản trị viên: {principal?.fullName || principal?.email}</p>
         </div>
 
         <nav className="nav-actions">
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={(event) => handleOpenCreate(event.currentTarget)}
+            data-testid="admin-add-room-btn"
+          >
+            + Thêm phòng mới
+          </button>
           <Link to="/" className="btn btn-outline">
             Về trang chủ
           </Link>
@@ -27,49 +410,489 @@ export const AdminPage: React.FC = () => {
         </nav>
       </header>
 
-      <section className="card" style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.25rem', marginTop: 0, color: 'var(--color-primary)' }}>
-          Trang Quản Trị Tối Thiểu (Admin Acceptance)
-        </h2>
-        <p style={{ color: 'var(--color-text-muted)', lineHeight: '1.6' }}>
-          Bạn đang truy cập với quyền hạn cao nhất của hệ thống. Trang này dùng để nghiệm thu phân
-          quyền RBAC theo hợp đồng (Task 2005). Các bảng điều khiển quản lý phòng, đặt chỗ và thống
-          kê sẽ được hoàn thiện ở các tác vụ tiếp theo.
-        </p>
-
-        <div className="alert alert-success">
-          <strong>Thông tin phiên quản trị:</strong>
-          <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.2rem' }}>
-            <li>
-              <strong>ID Quản trị viên:</strong> {principal?.id}
-            </li>
-            <li>
-              <strong>Vai trò:</strong> <span className="badge badge-admin">{principal?.role}</span>
-            </li>
-            {principal?.email && (
-              <li>
-                <strong>Email:</strong> {principal.email}
-              </li>
-            )}
-            {principal?.fullName && (
-              <li>
-                <strong>Họ tên:</strong> {principal.fullName}
-              </li>
-            )}
-          </ul>
+      {/* Success Notification */}
+      {successMessage && (
+        <div className="alert alert-success admin-success-banner" role="status">
+          <span>{successMessage}</span>
+          <button
+            type="button"
+            className="btn-link"
+            style={{ marginLeft: 'auto', fontWeight: 'bold' }}
+            onClick={() => setSuccessMessage(null)}
+            aria-label="Đóng thông báo thành công"
+          >
+            ✕
+          </button>
         </div>
+      )}
+
+      {detailLoadError && (
+        <div className="alert alert-danger admin-error-box" role="alert">
+          <span>{detailLoadError}</span>
+          <button
+            type="button"
+            className="btn-link"
+            onClick={() => setDetailLoadError(null)}
+            aria-label="Đóng thông báo lỗi"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Room List Section */}
+      <section className="card admin-table-card">
+        <div className="results-header-row">
+          <h2 className="results-title">
+            Danh sách phòng làm việc <span className="results-count">({totalRooms} phòng)</span>
+          </h2>
+        </div>
+
+        {/* Loading state */}
+        {isLoadingRooms && (
+          <div className="loading-container" data-testid="admin-loading-state">
+            <p>Đang tải danh sách phòng...</p>
+          </div>
+        )}
+
+        {/* Error state */}
+        {!isLoadingRooms && loadError && (
+          <div className="alert alert-danger admin-error-box" role="alert">
+            <p>{loadError}</p>
+            <button
+              type="button"
+              className="btn btn-outline"
+              onClick={() => fetchRooms(currentPage)}
+            >
+              Thử lại
+            </button>
+          </div>
+        )}
+
+        {/* Empty state */}
+        {!isLoadingRooms && !loadError && rooms.length === 0 && (
+          <div className="empty-state-card" data-testid="admin-empty-state">
+            <div className="state-icon">🏢</div>
+            <h3 className="empty-title">Chưa có phòng nào</h3>
+            <p className="empty-description">
+              Hệ thống hiện tại chưa có phòng nào. Nhấn vào nút "+ Thêm phòng mới" ở trên để tạo
+              phòng đầu tiên.
+            </p>
+          </div>
+        )}
+
+        {/* Room Table / List */}
+        {!isLoadingRooms && !loadError && rooms.length > 0 && (
+          <div className="table-responsive">
+            <table className="admin-room-table" data-testid="admin-room-table">
+              <thead>
+                <tr>
+                  <th>Ảnh</th>
+                  <th>Tên phòng</th>
+                  <th>Sức chứa</th>
+                  <th>Đơn giá / giờ</th>
+                  <th>Trạng thái</th>
+                  <th>Tiện ích</th>
+                  <th style={{ textAlign: 'right' }}>Thao tác</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rooms.map((room) => (
+                  <tr key={room.id} data-testid={`admin-room-row-${room.id}`}>
+                    <td className="admin-room-img-col">
+                      {room.coverImage ? (
+                        <img src={room.coverImage} alt={room.name} className="admin-room-thumb" />
+                      ) : (
+                        <div className="admin-room-no-img">Không ảnh</div>
+                      )}
+                    </td>
+                    <td className="admin-room-name-col">
+                      <strong>{room.name}</strong>
+                    </td>
+                    <td>{room.capacity} người</td>
+                    <td className="admin-price-text">
+                      {Number(room.pricePerHour).toLocaleString('vi-VN')} đ/h
+                    </td>
+                    <td>
+                      <span
+                        className={`badge ${
+                          room.status === 'AVAILABLE' ? 'badge-available' : 'badge-maintenance'
+                        }`}
+                      >
+                        {room.status}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="admin-amenities-tags">
+                        {room.amenities.length > 0 ? (
+                          room.amenities.map((am) => (
+                            <span key={am.id} className="amenity-pill">
+                              {am.name}
+                            </span>
+                          ))
+                        ) : (
+                          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button
+                        type="button"
+                        className="btn btn-outline btn-sm"
+                        onClick={(event) => handleOpenEdit(room.id, event.currentTarget)}
+                        disabled={loadingDetailId === room.id}
+                        data-testid={`admin-edit-btn-${room.id}`}
+                      >
+                        {loadingDetailId === room.id ? 'Đang tải...' : 'Sửa'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Pagination controls */}
+        {!isLoadingRooms && !loadError && totalPages > 1 && (
+          <div className="pagination-container" data-testid="admin-pagination">
+            <button
+              type="button"
+              className="btn btn-outline pagination-btn"
+              disabled={currentPage <= 1}
+              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+            >
+              ← Trang trước
+            </button>
+            <span className="pagination-info">
+              Trang {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              className="btn btn-outline pagination-btn"
+              disabled={currentPage >= totalPages}
+              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Trang sau →
+            </button>
+          </div>
+        )}
       </section>
 
-      <footer
-        style={{
-          marginTop: '3rem',
-          fontSize: '0.875rem',
-          color: 'var(--color-text-muted)',
-          textAlign: 'center',
-        }}
-      >
-        Co-Space Working — Admin Dashboard Stub.
-      </footer>
+      {/* Shared inline Create / Edit Form */}
+      {isFormOpen && (
+        <section
+          className="card admin-room-form-card"
+          data-testid="admin-room-form"
+          aria-labelledby="admin-room-form-title"
+        >
+          <div className="admin-form-header">
+            <h2 id="admin-room-form-title" ref={formHeadingRef} tabIndex={-1}>
+              {editingRoomId ? 'Chỉnh Sửa Phòng' : 'Thêm Phòng Mới'}
+            </h2>
+            <button
+              type="button"
+              className="btn-close"
+              onClick={handleCloseForm}
+              disabled={isSubmitting}
+              aria-label="Đóng biểu mẫu phòng"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Read-only Status Notice */}
+          <div className="admin-status-notice">
+            {editingRoomId ? (
+              <p>
+                <strong>Trạng thái phòng:</strong>{' '}
+                <span
+                  className={`badge ${
+                    editingRoomStatus === 'AVAILABLE' ? 'badge-available' : 'badge-maintenance'
+                  }`}
+                >
+                  {editingRoomStatus}
+                </span>{' '}
+                <small style={{ color: 'var(--color-text-muted)' }}>
+                  (Chỉ xem - không thể thay đổi ở tác vụ này)
+                </small>
+              </p>
+            ) : (
+              <p>
+                <strong>Trạng thái ban đầu:</strong>{' '}
+                <span className="badge badge-available">AVAILABLE</span>{' '}
+                <small style={{ color: 'var(--color-text-muted)' }}>(Mặc định cho phòng mới)</small>
+              </p>
+            )}
+          </div>
+
+          {/* General form error banner */}
+          {formErrors.general && (
+            <div className="alert alert-danger" role="alert" data-testid="form-general-error">
+              {formErrors.general}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} noValidate aria-busy={isSubmitting}>
+            {/* Name */}
+            <div className="form-group">
+              <label htmlFor="room-name" className="form-label">
+                Tên phòng <span style={{ color: 'var(--color-error)' }}>*</span>
+              </label>
+              <input
+                id="room-name"
+                type="text"
+                name="name"
+                className={`form-control ${formErrors.name ? 'has-error' : ''}`}
+                value={formData.name}
+                onChange={handleInputChange}
+                placeholder="Ví dụ: Phòng Họp Sáng Tạo A"
+                maxLength={191}
+                disabled={isSubmitting}
+                aria-invalid={Boolean(formErrors.name)}
+                aria-describedby={formErrors.name ? 'error-name' : undefined}
+              />
+              {formErrors.name && (
+                <p id="error-name" className="field-error" data-testid="error-name">
+                  {formErrors.name}
+                </p>
+              )}
+            </div>
+
+            {/* Description */}
+            <div className="form-group">
+              <label htmlFor="room-description" className="form-label">
+                Mô tả phòng
+              </label>
+              <textarea
+                id="room-description"
+                name="description"
+                className={`form-control ${formErrors.description ? 'has-error' : ''}`}
+                value={formData.description}
+                onChange={handleInputChange}
+                rows={3}
+                placeholder="Mô tả các đặc điểm nổi bật, ánh sáng, thiết bị..."
+                disabled={isSubmitting}
+                aria-invalid={Boolean(formErrors.description)}
+                aria-describedby={formErrors.description ? 'error-description' : undefined}
+              />
+              {formErrors.description && (
+                <p id="error-description" className="field-error" data-testid="error-description">
+                  {formErrors.description}
+                </p>
+              )}
+            </div>
+
+            {/* Capacity & Price Per Hour */}
+            <div className="admin-form-row">
+              <div className="form-group" style={{ flex: 1 }}>
+                <label htmlFor="room-capacity" className="form-label">
+                  Sức chứa (người) <span style={{ color: 'var(--color-error)' }}>*</span>
+                </label>
+                <input
+                  id="room-capacity"
+                  type="number"
+                  name="capacity"
+                  min="1"
+                  className={`form-control ${formErrors.capacity ? 'has-error' : ''}`}
+                  value={formData.capacity}
+                  onChange={handleInputChange}
+                  placeholder="Ví dụ: 8"
+                  disabled={isSubmitting}
+                  aria-invalid={Boolean(formErrors.capacity)}
+                  aria-describedby={formErrors.capacity ? 'error-capacity' : undefined}
+                />
+                {formErrors.capacity && (
+                  <p id="error-capacity" className="field-error" data-testid="error-capacity">
+                    {formErrors.capacity}
+                  </p>
+                )}
+              </div>
+
+              <div className="form-group" style={{ flex: 1 }}>
+                <label htmlFor="room-price" className="form-label">
+                  Đơn giá mỗi giờ (VNĐ) <span style={{ color: 'var(--color-error)' }}>*</span>
+                </label>
+                <input
+                  id="room-price"
+                  type="text"
+                  name="pricePerHour"
+                  className={`form-control ${formErrors.pricePerHour ? 'has-error' : ''}`}
+                  value={formData.pricePerHour}
+                  onChange={handleInputChange}
+                  placeholder="Ví dụ: 150000.00"
+                  disabled={isSubmitting}
+                  aria-invalid={Boolean(formErrors.pricePerHour)}
+                  aria-describedby={formErrors.pricePerHour ? 'error-pricePerHour' : undefined}
+                />
+                {formErrors.pricePerHour && (
+                  <p
+                    id="error-pricePerHour"
+                    className="field-error"
+                    data-testid="error-pricePerHour"
+                  >
+                    {formErrors.pricePerHour}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Amenities Checklist */}
+            <div className="form-group">
+              <span id="room-amenities-label" className="form-label">
+                Tiện ích phòng
+              </span>
+              <div
+                className="admin-amenities-checklist"
+                role="group"
+                aria-labelledby="room-amenities-label"
+                aria-busy={isLoadingAmenities}
+                aria-describedby={formErrors.amenityIds ? 'error-amenityIds' : undefined}
+              >
+                {isLoadingAmenities ? (
+                  <p className="admin-amenities-message">Đang tải danh sách tiện ích...</p>
+                ) : amenitiesError ? (
+                  <div className="admin-amenity-error-box" role="alert">
+                    <p>{amenitiesError}</p>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      onClick={fetchAmenities}
+                    >
+                      Thử tải lại
+                    </button>
+                  </div>
+                ) : availableAmenities.length > 0 ? (
+                  availableAmenities.map((amenity) => (
+                    <label
+                      key={amenity.id}
+                      className="amenity-checkbox-item"
+                      data-testid={`amenity-item-${amenity.id}`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="amenity-checkbox"
+                        checked={formData.amenityIds.includes(amenity.id)}
+                        onChange={() => handleAmenityToggle(amenity.id)}
+                        disabled={isSubmitting || isLoadingAmenities || Boolean(amenitiesError)}
+                      />
+                      <span>{amenity.name}</span>
+                    </label>
+                  ))
+                ) : (
+                  <p className="admin-amenities-message">Chưa có tiện ích nào trong hệ thống.</p>
+                )}
+              </div>
+              {formErrors.amenityIds && (
+                <p id="error-amenityIds" className="field-error" data-testid="error-amenityIds">
+                  {formErrors.amenityIds}
+                </p>
+              )}
+            </div>
+
+            {/* Image URLs Dynamic List */}
+            <div className="form-group">
+              <div className="admin-images-header">
+                <span className="form-label" style={{ margin: 0 }}>
+                  Danh sách URL ảnh
+                </span>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={handleAddImage}
+                  disabled={isSubmitting}
+                  data-testid="admin-add-image-btn"
+                >
+                  + Thêm URL ảnh
+                </button>
+              </div>
+              <small
+                style={{
+                  display: 'block',
+                  color: 'var(--color-text-muted)',
+                  marginBottom: '0.75rem',
+                }}
+              >
+                Nhập URL ảnh (HTTP/HTTPS). Nếu có ảnh, phải chọn đúng 1 ảnh chính.
+              </small>
+
+              {formErrors.images && (
+                <p
+                  id="error-images"
+                  className="field-error"
+                  style={{ marginBottom: '0.75rem' }}
+                  data-testid="error-images"
+                >
+                  {formErrors.images}
+                </p>
+              )}
+
+              <div className="admin-images-list">
+                {formData.images.map((img, idx) => (
+                  <div key={idx} className="admin-image-row" data-testid={`admin-image-row-${idx}`}>
+                    <label htmlFor={`room-image-url-${idx}`} className="sr-only">
+                      URL ảnh {idx + 1}
+                    </label>
+                    <input
+                      id={`room-image-url-${idx}`}
+                      type="url"
+                      className="form-control admin-image-url-input"
+                      placeholder="https://example.com/image.jpg"
+                      value={img.imageUrl}
+                      onChange={(e) => handleImageUrlChange(idx, e.target.value)}
+                      disabled={isSubmitting}
+                      maxLength={500}
+                      aria-invalid={Boolean(formErrors.images)}
+                      aria-describedby={formErrors.images ? 'error-images' : undefined}
+                      data-testid={`admin-image-input-${idx}`}
+                    />
+                    <label className="admin-primary-radio-label">
+                      <input
+                        type="radio"
+                        name="primaryImage"
+                        checked={img.isPrimary}
+                        onChange={() => handleSetPrimaryImage(idx)}
+                        disabled={isSubmitting}
+                        data-testid={`admin-primary-radio-${idx}`}
+                      />
+                      <span>Ảnh chính</span>
+                    </label>
+                    <button
+                      type="button"
+                      className="btn btn-danger-outline btn-sm"
+                      onClick={() => handleRemoveImage(idx)}
+                      disabled={isSubmitting}
+                      data-testid={`admin-remove-image-${idx}`}
+                    >
+                      Xóa
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Form Action Buttons */}
+            <div className="admin-form-actions">
+              <button
+                type="button"
+                className="btn btn-outline"
+                onClick={handleCloseForm}
+                disabled={isSubmitting}
+              >
+                Hủy
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary"
+                disabled={isSubmitting || isLoadingAmenities || Boolean(amenitiesError)}
+                data-testid="admin-submit-room-btn"
+              >
+                {isSubmitting ? 'Đang lưu...' : editingRoomId ? 'Lưu thay đổi' : 'Tạo phòng'}
+              </button>
+            </div>
+          </form>
+        </section>
+      )}
     </main>
   );
 };

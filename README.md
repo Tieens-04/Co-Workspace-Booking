@@ -92,13 +92,13 @@ npm run build
 
 ### 1. Bảng Định Tuyến Tuyến Đường (Client Routes & Access Rules)
 
-| Tuyến đường    | Nội dung & Quyền truy cập                                                                                                                           | Hành vi điều hướng & Quy tắc hiển thị                                                                                                                                                                        |
-| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/login`       | Form đăng nhập (Email, mật khẩu, nút ẩn/hiện mật khẩu, liên kết đăng ký).                                                                           | Người dùng đã đăng nhập tự động chuyển về trang đích theo role (`CUSTOMER` → `/`, `ADMIN` → `/admin`). Điền sẵn email và hiển thị thông báo thành công nếu nhận state từ trang Đăng ký.                      |
-| `/register`    | Form đăng ký tài khoản khách hàng (`fullName`, `email`, `phoneNumber` tùy chọn, `password`, `confirmPassword`, nút ẩn/hiện mật khẩu).               | Người dùng đã đăng nhập tự chuyển về trang đích theo role. Đăng ký thành công → `/login` kèm email điền sẵn và banner thông báo thành công (chưa cấp phiên).                                                 |
-| `/`            | Trang chào công khai: hiển thị trạng thái đăng nhập, nút Đăng xuất, liên kết Quản trị (nếu là `ADMIN`), và kiểm tra kết nối Backend (Health Check). | Truy cập công khai cho cả khách vãng lai và người dùng đã đăng nhập.                                                                                                                                         |
-| `/admin`       | Trang quản trị tối thiểu nghiệm thu quyền hạn, chỉ dành cho vai trò `ADMIN`, có nút Đăng xuất.                                                      | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login. |
-| Đường dẫn khác | Giao diện 404 Not Found thân thiện.                                                                                                                 | Cung cấp liên kết đưa người dùng quay trở về trang chủ `/`.                                                                                                                                                  |
+| Tuyến đường    | Nội dung & Quyền truy cập                                                                                                                                                                | Hành vi điều hướng & Quy tắc hiển thị                                                                                                                                                                        |
+| -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/login`       | Form đăng nhập (Email, mật khẩu, nút ẩn/hiện mật khẩu, liên kết đăng ký).                                                                                                                | Người dùng đã đăng nhập tự động chuyển về trang đích theo role (`CUSTOMER` → `/`, `ADMIN` → `/admin`). Điền sẵn email và hiển thị thông báo thành công nếu nhận state từ trang Đăng ký.                      |
+| `/register`    | Form đăng ký tài khoản khách hàng (`fullName`, `email`, `phoneNumber` tùy chọn, `password`, `confirmPassword`, nút ẩn/hiện mật khẩu).                                                    | Người dùng đã đăng nhập tự chuyển về trang đích theo role. Đăng ký thành công → `/login` kèm email điền sẵn và banner thông báo thành công (chưa cấp phiên).                                                 |
+| `/`            | Trang chào công khai: hiển thị trạng thái đăng nhập, nút Đăng xuất, liên kết Quản trị (nếu là `ADMIN`), và kiểm tra kết nối Backend (Health Check).                                      | Truy cập công khai cho cả khách vãng lai và người dùng đã đăng nhập.                                                                                                                                         |
+| `/admin`       | Trang quản trị phòng làm việc dành cho vai trò `ADMIN`: danh sách phòng phân trang, xem tiện ích/ảnh, form inline tạo và chỉnh sửa phòng dùng chung, quản lý danh sách URL ảnh thủ công. | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login. |
+| Đường dẫn khác | Giao diện 404 Not Found thân thiện.                                                                                                                                                      | Cung cấp liên kết đưa người dùng quay trở về trang chủ `/`.                                                                                                                                                  |
 
 ### 2. Quản Lý Phiên Làm Việc (Session Storage & Lifecycle)
 
@@ -340,6 +340,51 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
 
 ---
 
+## 🏢 API Quản Trị Phòng (Admin Room API)
+
+Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh sách, tạo mới và cập nhật thông tin phòng làm việc. Toàn bộ endpoint được bảo vệ bởi middleware `verifyToken` và `checkRole([Role.ADMIN])`.
+
+### 1. Danh sách phòng quản trị: `GET /api/v1/admin/rooms`
+
+- **Quyền truy cập**: Bắt buộc đăng nhập với vai trò `ADMIN`. Không có token trả về `401 UNAUTHORIZED`; vai trò `CUSTOMER` trả về `403 FORBIDDEN`.
+- **Query Parameters**: Tái sử dụng query schema của danh sách công khai (`page`, `limit`, `capacity`, `minPrice`, `maxPrice`, `amenityIds`).
+- **Phản hồi**: `200 OK` kèm danh sách phòng, phân trang và thông tin trạng thái đầy đủ.
+
+### 2. Tạo phòng mới: `POST /api/v1/admin/rooms`
+
+- **Quyền truy cập**: `ADMIN`.
+- **Payload Request (`application/json`)**:
+  - `name` (bắt buộc): Chuỗi ký tự từ 1 đến 191 ký tự (được trim khoảng trắng).
+  - `description` (tùy chọn): Chuỗi mô tả phòng; chuỗi rỗng được chuẩn hóa thành `null`.
+  - `capacity` (bắt buộc): Số nguyên dương $\ge 1$ và $\le 2,147,483,647$ (MySQL `INT`).
+  - `pricePerHour` (bắt buộc): Số hoặc chuỗi số thập phân không âm với tối đa 2 chữ số thập phân, không vượt quá giới hạn `DECIMAL(10,2)` (`99,999,999.99`). Chuẩn hóa thành chuỗi 2 chữ số thập phân khi lưu và trả về.
+  - `amenityIds` (tùy chọn, mặc định `[]`): Mảng UUID tiện ích không trùng lặp. Toàn bộ tiện ích phải tồn tại trong cơ sở dữ liệu.
+  - `images` (tùy chọn, mặc định `[]`): Mảng các đối tượng `{ imageUrl, isPrimary }`. `imageUrl` là URL HTTP/HTTPS hợp lệ $\le 500$ ký tự, không trùng lặp URL. Nếu mảng có phần tử, bắt buộc phải có **đúng 1 ảnh** có `isPrimary: true`. Phòng không có ảnh (`images: []`) vẫn hợp lệ.
+  - _Chặn Mass Assignment_: Schema sử dụng `.strict()`, từ chối bất kỳ trường lạ nào như `status`, `id`, `createdAt`, `updatedAt`. Phòng mới tạo luôn có trạng thái mặc định là `AVAILABLE`.
+- **Transaction & Đồng bộ dữ liệu**:
+  - Thực thi trong một Database Transaction duy nhất.
+  - Kiểm tra tính tồn tại của tất cả tiện ích trong `amenityIds`; nếu thiếu ID ném lỗi `400 INVALID_AMENITY_IDS` kèm danh sách `missingIds` và rollback toàn bộ.
+  - Lưu ảnh URL thủ công với `public_id = null` (tính năng upload file lên Cloudinary sẽ được mở rộng trong Task 2009).
+- **Phản hồi `201 Created`**: Trả về `RoomDetail` hoàn chỉnh.
+
+### 3. Cập nhật một phần phòng: `PATCH /api/v1/admin/rooms/:id`
+
+- **Quyền truy cập**: `ADMIN`.
+- **Path Parameter**: `id` là UUID hợp lệ của phòng.
+- **Payload Request (`application/json`)**:
+  - Chấp nhận các trường tùy chọn: `name`, `description`, `capacity`, `pricePerHour`, `amenityIds`, `images`.
+  - Từ chối body rỗng (`{}`) với `400 VALIDATION_ERROR`.
+  - Quy tắc Partial Update & Quan hệ:
+    - Các trường scalar hoặc relation bị bỏ qua (omitted) thì giữ nguyên dữ liệu hiện tại.
+    - Nếu gửi `amenityIds` hoặc `images`, mảng mới sẽ **thay thế toàn bộ** tập hợp hiện tại của phòng. Gửi mảng rỗng `[]` sẽ xóa toàn bộ liên kết tiện ích hoặc ảnh tương ứng.
+- **Xử lý lỗi**:
+  - `404 ROOM_NOT_FOUND`: Nếu phòng với `id` cung cấp không tồn tại.
+  - `400 INVALID_AMENITY_IDS`: Nếu có bất kỳ amenity ID nào không tồn tại trong cơ sở dữ liệu.
+  - Giao dịch thực thi nguyên tử (atomic transaction): nếu xảy ra bất kỳ lỗi nào, toàn bộ thay đổi scalar và relations đều bị rollback.
+- **Phản hồi `200 OK`**: Trả về `RoomDetail` sau cập nhật.
+
+---
+
 ## 🛡️ Middleware Xác Thực & Phân Quyền Route (Auth & RBAC Middleware)
 
 Hệ thống bảo vệ các endpoint nội bộ thông qua middleware xác thực JWT `verifyToken` và phân quyền dựa trên vai trò `checkRole`.
@@ -368,7 +413,7 @@ Authorization: Bearer <access_token>
 | `/api/v1/me/*`      | `verifyToken`                             |     ✅     |  ✅   |   ❌ (`401`)   |
 | `/api/v1/admin/*`   | `verifyToken` → `checkRole([Role.ADMIN])` | ❌ (`403`) |  ✅   |   ❌ (`401`)   |
 
-> **Lưu ý về endpoint placeholder:** Nhóm `/api/v1/admin` và `/api/v1/me` hiện tại đã được dựng router và gắn middleware bảo vệ, nhưng chưa có endpoint nghiệp vụ cụ thể. Khi gửi request có quyền hợp lệ, hệ thống sẽ trả về mã `404 Not Found`.
+> **Lưu ý về endpoint nghiệp vụ Admin:** Nhóm `/api/v1/admin` hiện đã cung cấp các endpoint quản lý phòng (`/api/v1/admin/rooms`). Nhóm `/api/v1/me` hiện tại đã được dựng router và gắn middleware bảo vệ, nhưng chưa có endpoint nghiệp vụ cụ thể (trả về mã `404 Not Found`).
 
 ### 3. Quy Ước Mã Lỗi Xác Thực & Phân Quyền
 

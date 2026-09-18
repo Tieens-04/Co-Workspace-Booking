@@ -1,9 +1,9 @@
 import { z } from 'zod';
 
-const MYSQL_INT_MAX = 2_147_483_647;
-const ROOM_PRICE_MAX_CENTS = 9_999_999_999;
+export const MYSQL_INT_MAX = 2_147_483_647;
+export const ROOM_PRICE_MAX_CENTS = 9_999_999_999;
 
-const positiveIntSchema = (field: string) =>
+export const positiveIntSchema = (field: string) =>
   z
     .string()
     .regex(/^[1-9]\d*$/, `${field} phải là số nguyên dương`)
@@ -13,12 +13,12 @@ const positiveIntSchema = (field: string) =>
     }, `${field} vượt quá giới hạn cho phép`)
     .transform(Number);
 
-const moneyToCents = (value: string): number => {
+export const moneyToCents = (value: string): number => {
   const [whole, fraction = ''] = value.split('.');
   return Number(whole) * 100 + Number(fraction.padEnd(2, '0'));
 };
 
-const normalizeMoney = (value: string): string => {
+export const normalizeMoney = (value: string): string => {
   const [whole, fraction = ''] = value.split('.');
   const normalizedWhole = whole.replace(/^0+(?=\d)/, '');
   return `${normalizedWhole}.${fraction.padEnd(2, '0')}`;
