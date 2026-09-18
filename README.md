@@ -306,6 +306,38 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
 }
 ```
 
+### 3. Danh mục tiện ích: `GET /api/v1/amenities`
+
+- **Quyền truy cập**: Công khai (không yêu cầu xác thực).
+- **Tham số truy vấn (Query Parameters)**: Không nhận bất kỳ query parameter nào. Bất kỳ query parameter nào được truyền vào đều bị từ chối với `400 VALIDATION_ERROR`.
+- **Hành vi & Dữ liệu trả về**:
+  - Trả về toàn bộ danh mục tiện ích công khai trong hệ thống để phục vụ bộ lọc tìm kiếm.
+  - Danh sách được sắp xếp theo tên tăng dần (`name ASC`).
+  - Chỉ bao gồm các trường: `id`, `name`, `icon`, `description`. Không làm lộ các trường nội bộ như `createdAt`, `updatedAt` hay quan hệ dữ liệu.
+
+**Ví dụ phản hồi `200 OK`:**
+
+```json
+{
+  "success": true,
+  "message": "Lấy danh sách tiện ích thành công",
+  "data": [
+    {
+      "id": "e89d5334-a1a7-47b7-b0a6-21822a76f2f3",
+      "name": "High-Speed Wi-Fi",
+      "icon": "wifi",
+      "description": "Kết nối Internet cáp quang tốc độ cao 300Mbps"
+    },
+    {
+      "id": "f51a4413-4357-4183-93d3-13e77864f7b2",
+      "name": "Monitor 4K",
+      "icon": "monitor",
+      "description": "Màn hình Dell UltraSharp 27 inch 4K Type-C"
+    }
+  ]
+}
+```
+
 ---
 
 ## 🛡️ Middleware Xác Thực & Phân Quyền Route (Auth & RBAC Middleware)
@@ -327,13 +359,14 @@ Authorization: Bearer <access_token>
 
 ### 2. Bảng Phân Quyền Tuyến Đường
 
-| Nhóm Route        | Middleware Áp Dụng                        |  CUSTOMER  | ADMIN | Không Có Token |
-| ----------------- | ----------------------------------------- | :--------: | :---: | :------------: |
-| `/api/v1/auth/*`  | Không (Public)                            |     ✅     |  ✅   |       ✅       |
-| `/api/v1/health`  | Không (Public)                            |     ✅     |  ✅   |       ✅       |
-| `/api/v1/rooms/*` | Không (Public)                            |     ✅     |  ✅   |       ✅       |
-| `/api/v1/me/*`    | `verifyToken`                             |     ✅     |  ✅   |   ❌ (`401`)   |
-| `/api/v1/admin/*` | `verifyToken` → `checkRole([Role.ADMIN])` | ❌ (`403`) |  ✅   |   ❌ (`401`)   |
+| Nhóm Route          | Middleware Áp Dụng                        |  CUSTOMER  | ADMIN | Không Có Token |
+| ------------------- | ----------------------------------------- | :--------: | :---: | :------------: |
+| `/api/v1/auth/*`    | Không (Public)                            |     ✅     |  ✅   |       ✅       |
+| `/api/v1/health`    | Không (Public)                            |     ✅     |  ✅   |       ✅       |
+| `/api/v1/rooms/*`   | Không (Public)                            |     ✅     |  ✅   |       ✅       |
+| `/api/v1/amenities` | Không (Public)                            |     ✅     |  ✅   |       ✅       |
+| `/api/v1/me/*`      | `verifyToken`                             |     ✅     |  ✅   |   ❌ (`401`)   |
+| `/api/v1/admin/*`   | `verifyToken` → `checkRole([Role.ADMIN])` | ❌ (`403`) |  ✅   |   ❌ (`401`)   |
 
 > **Lưu ý về endpoint placeholder:** Nhóm `/api/v1/admin` và `/api/v1/me` hiện tại đã được dựng router và gắn middleware bảo vệ, nhưng chưa có endpoint nghiệp vụ cụ thể. Khi gửi request có quyền hợp lệ, hệ thống sẽ trả về mã `404 Not Found`.
 

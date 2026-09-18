@@ -1,32 +1,296 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import { Link, useSearchParams, useLocation } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { getHealthCheck, HealthCheckData } from '../services/api';
+import { roomApi } from '../services/room.api';
+import { RoomListItem, Amenity, PaginationMeta } from '../types/room';
+import { formatVnd } from '../utils/format';
+import { useDebounce } from '../hooks/useDebounce';
+import { ROOM_PLACEHOLDER_IMAGE } from './RoomDetailPage';
+import {
+  MYSQL_INT_MAX,
+  normalizeRoomSearchParams,
+  RoomFilterFieldErrors,
+  validateRoomFilterInputs,
+} from '../utils/roomFilters';
+
+const PAGE_LIMIT = 10;
 
 export const HomePage: React.FC = () => {
   const { isAuthenticated, principal, logout } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
 
-  const [health, setHealth] = useState<HealthCheckData | null>(null);
-  const [loadingHealth, setLoadingHealth] = useState<boolean>(true);
-  const [healthError, setHealthError] = useState<string | null>(null);
+  // URL is the committed filter state. Invalid values are removed before any API request.
+  const normalizedSearch = useMemo(
+    () => normalizeRoomSearchParams(searchParams, PAGE_LIMIT),
+    [searchParams],
+  );
+  const urlPage = normalizedSearch.page;
+  const urlCapacity = normalizedSearch.capacity?.toString() ?? '';
+  const urlMinPrice = normalizedSearch.minPrice ?? '';
+  const urlMaxPrice = normalizedSearch.maxPrice ?? '';
+  const urlAmenityIds = normalizedSearch.amenityIds;
+  const urlAmenityIdsParam = urlAmenityIds.join(',');
 
   useEffect(() => {
-    getHealthCheck()
+    if (normalizedSearch.changed) {
+      setSearchParams(normalizedSearch.searchParams, { replace: true });
+    }
+  }, [normalizedSearch, setSearchParams]);
+
+  // --- Local Input States for Debouncing ---
+  const [capacityInput, setCapacityInput] = useState<string>(urlCapacity);
+  const [minPriceInput, setMinPriceInput] = useState<string>(urlMinPrice);
+  const [maxPriceInput, setMaxPriceInput] = useState<string>(urlMaxPrice);
+
+  // Sync inputs when URL changes from browser back/forward
+  useEffect(() => {
+    setCapacityInput(urlCapacity);
+  }, [urlCapacity]);
+
+  useEffect(() => {
+    setMinPriceInput(urlMinPrice);
+  }, [urlMinPrice]);
+
+  useEffect(() => {
+    setMaxPriceInput(urlMaxPrice);
+  }, [urlMaxPrice]);
+
+  // Debounced input values
+  const debouncedCapacity = useDebounce(capacityInput, 300);
+  const debouncedMinPrice = useDebounce(minPriceInput, 300);
+  const debouncedMaxPrice = useDebounce(maxPriceInput, 300);
+
+  // --- Validation State ---
+  const [errors, setErrors] = useState<RoomFilterFieldErrors>({});
+
+  // Run validation whenever inputs change
+  useEffect(() => {
+    const currentErrors = validateRoomFilterInputs(capacityInput, minPriceInput, maxPriceInput);
+    setErrors(currentErrors);
+  }, [capacityInput, minPriceInput, maxPriceInput]);
+
+  // Refs let this effect react only to debounced input, not to browser navigation.
+  const searchParamsRef = useRef(searchParams);
+  const setSearchParamsRef = useRef(setSearchParams);
+  const committedNumericFiltersRef = useRef({
+    capacity: urlCapacity,
+    minPrice: urlMinPrice,
+    maxPrice: urlMaxPrice,
+  });
+  searchParamsRef.current = searchParams;
+  setSearchParamsRef.current = setSearchParams;
+  committedNumericFiltersRef.current = {
+    capacity: urlCapacity,
+    minPrice: urlMinPrice,
+    maxPrice: urlMaxPrice,
+  };
+
+  // Update URL searchParams when debounced local input changes (if valid).
+  useEffect(() => {
+    const currentErrors = validateRoomFilterInputs(
+      debouncedCapacity,
+      debouncedMinPrice,
+      debouncedMaxPrice,
+    );
+
+    if (Object.keys(currentErrors).length > 0) {
+      // Do not sync invalid values to URL
+      return;
+    }
+
+    const trimmedCap = debouncedCapacity.trim();
+    const trimmedMin = debouncedMinPrice.trim();
+    const trimmedMax = debouncedMaxPrice.trim();
+
+    const committedFilters = committedNumericFiltersRef.current;
+    const hasChanged =
+      trimmedCap !== committedFilters.capacity ||
+      trimmedMin !== committedFilters.minPrice ||
+      trimmedMax !== committedFilters.maxPrice;
+
+    if (hasChanged) {
+      const nextParams = new URLSearchParams(searchParamsRef.current);
+
+      if (trimmedCap) nextParams.set('capacity', trimmedCap);
+      else nextParams.delete('capacity');
+
+      if (trimmedMin) nextParams.set('minPrice', trimmedMin);
+      else nextParams.delete('minPrice');
+
+      if (trimmedMax) nextParams.set('maxPrice', trimmedMax);
+      else nextParams.delete('maxPrice');
+
+      // Reset page to 1 on filter change
+      nextParams.delete('page');
+
+      setSearchParamsRef.current(nextParams, { replace: true });
+    }
+  }, [debouncedCapacity, debouncedMinPrice, debouncedMaxPrice]);
+
+  // --- Amenities State & Independent Fetching ---
+  const [amenities, setAmenities] = useState<Amenity[]>([]);
+  const [loadingAmenities, setLoadingAmenities] = useState<boolean>(true);
+  const [amenitiesError, setAmenitiesError] = useState<string | null>(null);
+
+  const fetchAmenities = (signal?: AbortSignal) => {
+    setLoadingAmenities(true);
+    setAmenitiesError(null);
+
+    roomApi
+      .getAmenities(signal)
       .then((res) => {
-        setHealth(res.data);
-        setLoadingHealth(false);
+        setAmenities(res.data);
+        setLoadingAmenities(false);
       })
       .catch((err) => {
-        setHealthError(err.message || 'Không thể kết nối đến Backend');
-        setLoadingHealth(false);
+        if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+        setAmenitiesError(
+          err.response?.data?.message || err.message || 'Lỗi tải danh mục tiện ích',
+        );
+        setLoadingAmenities(false);
       });
+  };
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAmenities(controller.signal);
+    return () => {
+      controller.abort();
+    };
   }, []);
 
+  // --- Room List State & Fetching with AbortController ---
+  const [rooms, setRooms] = useState<RoomListItem[] | null>(null);
+  const [pagination, setPagination] = useState<PaginationMeta>({
+    page: 1,
+    limit: PAGE_LIMIT,
+    total: 0,
+    totalPages: 0,
+  });
+  const [isInitialLoading, setIsInitialLoading] = useState<boolean>(true);
+  const [isFetching, setIsFetching] = useState<boolean>(false);
+  const [roomsError, setRoomsError] = useState<string | null>(null);
+  const [imageErrorMap, setImageErrorMap] = useState<Record<string, boolean>>({});
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const hasLoadedOnceRef = useRef<boolean>(false);
+
+  const fetchRooms = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    if (!hasLoadedOnceRef.current) {
+      setIsInitialLoading(true);
+    } else {
+      setIsFetching(true);
+    }
+    setRoomsError(null);
+
+    const params: {
+      page: number;
+      limit: number;
+      capacity?: number;
+      minPrice?: string;
+      maxPrice?: string;
+      amenityIds?: string;
+    } = {
+      page: urlPage,
+      limit: PAGE_LIMIT,
+    };
+
+    if (urlCapacity) params.capacity = parseInt(urlCapacity, 10);
+    if (urlMinPrice) params.minPrice = urlMinPrice;
+    if (urlMaxPrice) params.maxPrice = urlMaxPrice;
+    if (urlAmenityIdsParam) params.amenityIds = urlAmenityIdsParam;
+
+    roomApi
+      .getRooms(params, controller.signal)
+      .then((res) => {
+        hasLoadedOnceRef.current = true;
+        setRooms(res.data.items);
+        setPagination(res.data.pagination);
+        setIsInitialLoading(false);
+        setIsFetching(false);
+      })
+      .catch((err) => {
+        if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+        setRoomsError(
+          err.response?.data?.message || err.message || 'Không thể tải danh sách phòng',
+        );
+        setIsInitialLoading(false);
+        setIsFetching(false);
+      });
+  }, [urlPage, urlCapacity, urlMinPrice, urlMaxPrice, urlAmenityIdsParam]);
+
+  useEffect(() => {
+    fetchRooms();
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+      }
+    };
+  }, [fetchRooms]);
+
+  // --- Handlers ---
+  const handleAmenityToggle = (amenityId: string) => {
+    const nextParams = new URLSearchParams(searchParams);
+    let updated: string[];
+
+    if (urlAmenityIds.includes(amenityId)) {
+      updated = urlAmenityIds.filter((id) => id !== amenityId);
+    } else {
+      updated = [...urlAmenityIds, amenityId];
+    }
+
+    if (updated.length > 0) {
+      nextParams.set('amenityIds', updated.join(','));
+    } else {
+      nextParams.delete('amenityIds');
+    }
+
+    // Reset to page 1
+    nextParams.delete('page');
+    setSearchParams(nextParams);
+  };
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage < 1 || (pagination.totalPages > 0 && newPage > pagination.totalPages)) {
+      return;
+    }
+    const nextParams = new URLSearchParams(searchParams);
+    if (newPage === 1) {
+      nextParams.delete('page');
+    } else {
+      nextParams.set('page', newPage.toString());
+    }
+    setSearchParams(nextParams);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleClearFilters = () => {
+    setCapacityInput('');
+    setMinPriceInput('');
+    setMaxPriceInput('');
+    setErrors({});
+    setSearchParams(new URLSearchParams());
+  };
+
+  const handleCardImageError = (roomId: string) => {
+    setImageErrorMap((prev) => ({ ...prev, [roomId]: true }));
+  };
+
   return (
-    <main className="page-container">
+    <main className="page-container discovery-page-container">
+      {/* App Header */}
       <header className="app-header">
         <div className="brand-section">
-          <h1>🏢 Co-Space Working</h1>
+          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
+            <h1>🏢 Co-Space Working</h1>
+          </Link>
           <p>Hệ thống đặt chỗ làm việc thông minh (Co-Workspace Booking)</p>
         </div>
 
@@ -67,67 +331,339 @@ export const HomePage: React.FC = () => {
         </nav>
       </header>
 
-      <section className="card" style={{ marginBottom: '2rem' }}>
-        <h2 style={{ fontSize: '1.25rem', marginTop: 0, color: 'var(--color-primary)' }}>
-          Trang Chào Công Khai — Nghiệm Thu Xác Thực
-        </h2>
-        <p style={{ color: 'var(--color-text-muted)', lineHeight: '1.6' }}>
-          Hệ thống đã triển khai hoàn thiện luồng Xác thực và Phân quyền người dùng (Task 2005). Các
-          tính năng tìm kiếm và đặt phòng sẽ tiếp tục được tích hợp ở các bước tiếp theo.
-        </p>
-
-        {isAuthenticated && principal ? (
-          <div className="alert alert-success" style={{ marginTop: '1rem' }}>
-            Bạn đang đăng nhập với vai trò: <strong>{principal.role}</strong> (ID: {principal.id}).
+      {/* Main Discovery Layout */}
+      <div className="discovery-layout">
+        {/* Sidebar Filters */}
+        <aside className="filter-sidebar card" aria-label="Bộ lọc tìm kiếm phòng">
+          <div className="filter-header-row">
+            <h2 className="filter-title">🔍 Bộ lọc tìm kiếm</h2>
+            {(urlCapacity || urlMinPrice || urlMaxPrice || urlAmenityIds.length > 0) && (
+              <button
+                type="button"
+                className="btn-link clear-filter-btn"
+                onClick={handleClearFilters}
+              >
+                Xóa tất cả
+              </button>
+            )}
           </div>
-        ) : (
-          <div className="alert alert-danger" style={{ marginTop: '1rem' }}>
-            Bạn chưa đăng nhập. Vui lòng đăng nhập để trải nghiệm đầy đủ các tính năng.
+
+          {/* Sức chứa */}
+          <div className="form-group filter-group">
+            <label htmlFor="capacity-filter" className="form-label">
+              Sức chứa tối thiểu (người)
+            </label>
+            <input
+              id="capacity-filter"
+              type="number"
+              min="1"
+              max={MYSQL_INT_MAX}
+              className={`form-control ${errors.capacity ? 'has-error' : ''}`}
+              placeholder="VD: 4"
+              value={capacityInput}
+              onChange={(e) => setCapacityInput(e.target.value)}
+              aria-describedby={errors.capacity ? 'capacity-error' : undefined}
+            />
+            {errors.capacity && (
+              <div id="capacity-error" className="field-error" role="alert">
+                {errors.capacity}
+              </div>
+            )}
           </div>
-        )}
-      </section>
 
-      <section className="card">
-        <h3 style={{ fontSize: '1.125rem', marginTop: 0 }}>
-          Kiểm tra trạng thái Backend (Health Check)
-        </h3>
-
-        {loadingHealth && <p>⏳ Đang kết nối tới Backend...</p>}
-
-        {healthError && (
-          <div className="health-box health-box-error">❌ Lỗi kết nối: {healthError}</div>
-        )}
-
-        {health && (
-          <div className="health-box health-box-success">
-            <p style={{ margin: 0, fontWeight: 'bold' }}>✅ Kết nối Backend thành công!</p>
-            <ul style={{ margin: '0.5rem 0 0 0', paddingLeft: '1.2rem', color: '#1f2937' }}>
-              <li>
-                <strong>Trạng thái:</strong> {health.status}
-              </li>
-              <li>
-                <strong>Dịch vụ:</strong> {health.service}
-              </li>
-              <li>
-                <strong>Uptime:</strong> {health.uptime.toFixed(1)} giây
-              </li>
-              <li>
-                <strong>Thời gian server:</strong> {health.timestamp}
-              </li>
-            </ul>
+          {/* Khoảng giá */}
+          <div className="form-group filter-group">
+            <span className="form-label">Khoảng giá (VND/giờ)</span>
+            <div className="price-inputs-row">
+              <div className="price-col">
+                <label htmlFor="min-price-filter" className="sr-only">
+                  Giá tối thiểu
+                </label>
+                <input
+                  id="min-price-filter"
+                  type="text"
+                  inputMode="decimal"
+                  className={`form-control ${errors.minPrice || errors.priceRange ? 'has-error' : ''}`}
+                  placeholder="Từ..."
+                  value={minPriceInput}
+                  onChange={(e) => setMinPriceInput(e.target.value)}
+                  aria-describedby={
+                    errors.minPrice
+                      ? 'min-price-error'
+                      : errors.priceRange
+                        ? 'price-range-error'
+                        : undefined
+                  }
+                />
+              </div>
+              <span className="price-separator">-</span>
+              <div className="price-col">
+                <label htmlFor="max-price-filter" className="sr-only">
+                  Giá tối đa
+                </label>
+                <input
+                  id="max-price-filter"
+                  type="text"
+                  inputMode="decimal"
+                  className={`form-control ${errors.maxPrice || errors.priceRange ? 'has-error' : ''}`}
+                  placeholder="Đến..."
+                  value={maxPriceInput}
+                  onChange={(e) => setMaxPriceInput(e.target.value)}
+                  aria-describedby={
+                    errors.maxPrice
+                      ? 'max-price-error'
+                      : errors.priceRange
+                        ? 'price-range-error'
+                        : undefined
+                  }
+                />
+              </div>
+            </div>
+            {errors.minPrice && (
+              <div id="min-price-error" className="field-error" role="alert">
+                {errors.minPrice}
+              </div>
+            )}
+            {errors.maxPrice && (
+              <div id="max-price-error" className="field-error" role="alert">
+                {errors.maxPrice}
+              </div>
+            )}
+            {errors.priceRange && (
+              <div id="price-range-error" className="field-error" role="alert">
+                {errors.priceRange}
+              </div>
+            )}
           </div>
-        )}
-      </section>
 
-      <footer
-        style={{
-          marginTop: '3rem',
-          fontSize: '0.875rem',
-          color: 'var(--color-text-muted)',
-          textAlign: 'center',
-        }}
-      >
-        Co-Space Working Platform — Auth & RBAC Verification.
+          {/* Tiện ích */}
+          <div className="form-group filter-group">
+            <span className="form-label">Tiện ích yêu cầu (Khớp tất cả)</span>
+
+            {loadingAmenities && <div className="loading-small">⏳ Đang tải tiện ích...</div>}
+
+            {amenitiesError && (
+              <div className="amenity-error-box" role="alert">
+                <p className="field-error" style={{ margin: 0 }}>
+                  ❌ {amenitiesError}
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  style={{ marginTop: '0.5rem', fontSize: '0.75rem' }}
+                  onClick={() => fetchAmenities()}
+                >
+                  Thử lại
+                </button>
+              </div>
+            )}
+
+            {!loadingAmenities && !amenitiesError && amenities.length > 0 && (
+              <div className="amenity-checkbox-list" role="group" aria-label="Danh sách tiện ích">
+                {amenities.map((amenity) => {
+                  const isChecked = urlAmenityIds.includes(amenity.id);
+                  return (
+                    <label key={amenity.id} className="amenity-checkbox-item">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => handleAmenityToggle(amenity.id)}
+                        className="amenity-checkbox"
+                      />
+                      <span className="amenity-name">
+                        <span className="amenity-icon" aria-hidden="true">
+                          {amenity.icon === 'wifi'
+                            ? '📶'
+                            : amenity.icon === 'coffee'
+                              ? '☕'
+                              : amenity.icon === 'monitor' || amenity.icon === 'tv'
+                                ? '🖥️'
+                                : amenity.icon === 'board'
+                                  ? '📋'
+                                  : '✨'}
+                        </span>{' '}
+                        {amenity.name}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        {/* Room Results Section */}
+        <section
+          className="rooms-content-section"
+          aria-label="Danh sách phòng làm việc"
+          aria-busy={isFetching}
+        >
+          {/* Header & Updating indicator */}
+          <div className="results-header-row">
+            <h2 className="results-title">
+              Không gian làm việc{' '}
+              {!isInitialLoading && pagination.total > 0 && (
+                <span className="results-count">({pagination.total} phòng)</span>
+              )}
+            </h2>
+
+            {isFetching && (
+              <div className="updating-badge" role="status" aria-live="polite">
+                🔄 Đang cập nhật...
+              </div>
+            )}
+          </div>
+
+          {/* Initial Loading Skeletons */}
+          {isInitialLoading && (
+            <div className="room-grid" aria-busy="true" aria-label="Đang nạp danh sách phòng">
+              {[1, 2, 3, 4, 5, 6].map((n) => (
+                <div key={n} className="card room-card skeleton-card">
+                  <div className="skeleton skeleton-img" />
+                  <div className="room-card-body">
+                    <div className="skeleton skeleton-title" />
+                    <div className="skeleton skeleton-text" />
+                    <div className="skeleton skeleton-text" style={{ width: '60%' }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Error State */}
+          {!isInitialLoading && roomsError && (
+            <div className="card error-state-card" role="alert">
+              <div className="state-icon">⚠️</div>
+              <h3 className="error-title">Không thể tải danh sách phòng</h3>
+              <p className="error-description">{roomsError}</p>
+              <button type="button" className="btn btn-primary" onClick={() => fetchRooms()}>
+                Thử lại
+              </button>
+            </div>
+          )}
+
+          {/* Empty State */}
+          {!isInitialLoading && !roomsError && rooms && rooms.length === 0 && (
+            <div className="card empty-state-card">
+              <div className="state-icon">🏢</div>
+              <h3 className="empty-title">Không tìm thấy phòng phù hợp</h3>
+              <p className="empty-description">
+                Không có không gian làm việc nào đáp ứng tiêu chí tìm kiếm hiện tại của bạn. Vui
+                lòng điều chỉnh hoặc xóa bớt bộ lọc.
+              </p>
+              <button type="button" className="btn btn-primary" onClick={handleClearFilters}>
+                Xóa bộ lọc
+              </button>
+            </div>
+          )}
+
+          {/* Room Cards Grid */}
+          {!isInitialLoading && !roomsError && rooms && rooms.length > 0 && (
+            <>
+              <div className="room-grid">
+                {rooms.map((room) => {
+                  const hasImgError = imageErrorMap[room.id];
+                  const imgSrc = hasImgError
+                    ? ROOM_PLACEHOLDER_IMAGE
+                    : room.coverImage || ROOM_PLACEHOLDER_IMAGE;
+
+                  return (
+                    <article key={room.id} className="card room-card">
+                      <Link
+                        to={`/rooms/${room.id}`}
+                        state={{ from: location.pathname + location.search }}
+                        className="room-card-link"
+                      >
+                        <div className="room-card-image-wrapper">
+                          <img
+                            src={imgSrc}
+                            alt={room.name}
+                            className="room-card-image"
+                            onError={() => handleCardImageError(room.id)}
+                            loading="lazy"
+                          />
+                          <span
+                            className={`badge room-status-badge ${
+                              room.status === 'MAINTENANCE'
+                                ? 'badge-maintenance'
+                                : 'badge-available'
+                            }`}
+                          >
+                            {room.status === 'MAINTENANCE' ? 'Bảo trì' : 'Sẵn sàng'}
+                          </span>
+                        </div>
+
+                        <div className="room-card-body">
+                          <h3 className="room-card-title">{room.name}</h3>
+
+                          <div className="room-card-info-row">
+                            <span className="room-card-price">{formatVnd(room.pricePerHour)}</span>
+                            <span className="room-card-capacity">👥 {room.capacity} người</span>
+                          </div>
+
+                          {room.amenities.length > 0 && (
+                            <div className="room-card-amenities" aria-label="Tiện ích phòng">
+                              {room.amenities.slice(0, 3).map((amenity) => (
+                                <span key={amenity.id} className="amenity-pill">
+                                  {amenity.icon === 'wifi'
+                                    ? '📶 '
+                                    : amenity.icon === 'coffee'
+                                      ? '☕ '
+                                      : amenity.icon === 'monitor' || amenity.icon === 'tv'
+                                        ? '🖥️ '
+                                        : '✨ '}
+                                  {amenity.name}
+                                </span>
+                              ))}
+                              {room.amenities.length > 3 && (
+                                <span className="amenity-pill-more">
+                                  +{room.amenities.length - 3}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </Link>
+                    </article>
+                  );
+                })}
+              </div>
+
+              {/* Pagination Controls */}
+              {pagination.totalPages > 1 && (
+                <nav className="pagination-container" aria-label="Điều hướng phân trang">
+                  <button
+                    type="button"
+                    className="btn btn-outline pagination-btn"
+                    disabled={pagination.page <= 1}
+                    onClick={() => handlePageChange(pagination.page - 1)}
+                    aria-label="Trang trước"
+                  >
+                    ← Trang trước
+                  </button>
+
+                  <span className="pagination-info">
+                    Trang <strong>{pagination.page}</strong> / {pagination.totalPages}
+                  </span>
+
+                  <button
+                    type="button"
+                    className="btn btn-outline pagination-btn"
+                    disabled={pagination.page >= pagination.totalPages}
+                    onClick={() => handlePageChange(pagination.page + 1)}
+                    aria-label="Trang sau"
+                  >
+                    Trang sau →
+                  </button>
+                </nav>
+              )}
+            </>
+          )}
+        </section>
+      </div>
+
+      <footer className="app-footer">
+        Co-Space Working Platform — Hệ thống đặt chỗ làm việc thông minh.
       </footer>
     </main>
   );
