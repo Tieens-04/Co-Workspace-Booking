@@ -4,6 +4,7 @@ import { roomApi } from '../services/room.api';
 import { RoomDetail } from '../types/room';
 import { formatVnd } from '../utils/format';
 import { useAuth } from '../hooks/useAuth';
+import { BookingForm } from '../components/BookingForm';
 
 export const ROOM_PLACEHOLDER_IMAGE =
   'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="600" height="400" viewBox="0 0 600 400" fill="%23f3f4f6"><rect width="600" height="400"/><path d="M260 170a30 30 0 1 0 0-60 30 30 0 0 0 0 60zm-90 130h360l-110-140-90 110-50-60-110 90z" fill="%23cbd5e1"/><text x="50%" y="85%" dominant-baseline="middle" text-anchor="middle" font-family="sans-serif" font-size="20" fill="%239ca3af">Co-Space</text></svg>';
@@ -268,6 +269,16 @@ export const RoomDetailPage: React.FC = () => {
                 <p className="text-muted">Phòng này hiện chưa có danh sách tiện ích bổ sung.</p>
               )}
             </div>
+
+            {/* Customer Booking Section (AC2) */}
+            <BookingForm
+              roomId={room.id}
+              roomName={room.name}
+              roomStatus={room.status}
+              pricePerHour={room.pricePerHour}
+              isAuthenticated={isAuthenticated}
+              userRole={principal?.role}
+            />
           </section>
         </article>
       )}

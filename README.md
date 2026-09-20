@@ -383,14 +383,22 @@ Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh s�
 - **Quyền truy cập**: `ADMIN`.
 - **Path Parameter**: `id` là UUID hợp lệ của phòng.
 - **Payload Request (`application/json`)**:
-  - Chấp nhận các trường tùy chọn: `name`, `description`, `capacity`, `pricePerHour`, `amenityIds`, `images`.
+  - Chấp nhận các trường tùy chọn: `name`, `description`, `capacity`, `pricePerHour`, `amenityIds`, `images`, `status`, `acknowledgeFutureBookings`.
   - Từ chối body rỗng (`{}`) với `400 VALIDATION_ERROR`.
+  - `status` (tùy chọn): Trạng thái phòng (`AVAILABLE` hoặc `MAINTENANCE`).
+  - `acknowledgeFutureBookings` (tùy chọn, boolean, mặc định `false`): Cờ xác nhận của Admin cho phép chuyển sang `MAINTENANCE` khi phòng có lịch đặt trước trong tương lai.
   - Quy tắc Partial Update & Quan hệ:
     - Các trường scalar hoặc relation bị bỏ qua (omitted) thì giữ nguyên dữ liệu hiện tại.
     - Nếu gửi `amenityIds` hoặc `images`, mảng mới sẽ **thay thế toàn bộ** tập hợp hiện tại của phòng. Gửi mảng rỗng `[]` sẽ xóa toàn bộ liên kết tiện ích hoặc ảnh tương ứng. Nếu cập nhật danh sách ảnh loại bỏ ảnh Cloudinary cũ, hệ thống tự động xóa tài nguyên tương ứng trên Cloudinary sau khi commit transaction thành công.
+  - **Quy tắc chuyển trạng thái Bảo trì & Cảnh báo lịch tương lai (AC1)**:
+    - Khóa hàng MySQL `SELECT id, name, status, price_per_hour FROM rooms WHERE id = ? FOR UPDATE` trong transaction để đảm bảo tính tuần tự.
+    - Khi chuyển từ `AVAILABLE` sang `MAINTENANCE`: Kiểm tra các booking ở trạng thái `CONFIRMED` có `startTime > now`.
+    - Nếu tồn tại booking tương lai và request **không có** `acknowledgeFutureBookings: true`, transaction hủy ngay lập tức trước khi ghi dữ liệu và trả về `409 ROOM_HAS_FUTURE_BOOKINGS` kèm cấu trúc `details` chứa danh sách mã đặt chỗ và thời gian tương ứng.
+    - Khi gửi lại với `acknowledgeFutureBookings: true`: Cập nhật trạng thái phòng sang `MAINTENANCE` thành công. **Bảo toàn bất biến nghiệp vụ**: Mọi lịch đặt phòng hiện có **giữ nguyên trạng thái và KHÔNG tự động bị hủy**.
 - **Xử lý lỗi**:
   - `404 ROOM_NOT_FOUND`: Nếu phòng với `id` cung cấp không tồn tại.
   - `400 INVALID_AMENITY_IDS`: Nếu có bất kỳ amenity ID nào không tồn tại trong cơ sở dữ liệu.
+  - `409 ROOM_HAS_FUTURE_BOOKINGS`: Khi chuyển sang bảo trì có lịch đặt chỗ tương lai mà chưa xác nhận.
   - Giao dịch thực thi nguyên tử (atomic transaction): nếu xảy ra bất kỳ lỗi nào, toàn bộ thay đổi scalar và relations đều bị rollback.
 - **Phản hồi `200 OK`**: Trả về `RoomDetail` sau cập nhật.
 
@@ -436,14 +444,15 @@ Authorization: Bearer <access_token>
 
 ### 2. Bảng Phân Quyền Tuyến Đường
 
-| Nhóm Route          | Middleware Áp Dụng                        |  CUSTOMER  | ADMIN | Không Có Token |
-| ------------------- | ----------------------------------------- | :--------: | :---: | :------------: |
-| `/api/v1/auth/*`    | Không (Public)                            |     ✅     |  ✅   |       ✅       |
-| `/api/v1/health`    | Không (Public)                            |     ✅     |  ✅   |       ✅       |
-| `/api/v1/rooms/*`   | Không (Public)                            |     ✅     |  ✅   |       ✅       |
-| `/api/v1/amenities` | Không (Public)                            |     ✅     |  ✅   |       ✅       |
-| `/api/v1/me/*`      | `verifyToken`                             |     ✅     |  ✅   |   ❌ (`401`)   |
-| `/api/v1/admin/*`   | `verifyToken` → `checkRole([Role.ADMIN])` | ❌ (`403`) |  ✅   |   ❌ (`401`)   |
+| Nhóm Route          | Middleware Áp Dụng                           |  CUSTOMER  |   ADMIN    | Không Có Token |
+| ------------------- | -------------------------------------------- | :--------: | :--------: | :------------: |
+| `/api/v1/auth/*`    | Không (Public)                               |     ✅     |     ✅     |       ✅       |
+| `/api/v1/health`    | Không (Public)                               |     ✅     |     ✅     |       ✅       |
+| `/api/v1/rooms/*`   | Không (Public)                               |     ✅     |     ✅     |       ✅       |
+| `/api/v1/amenities` | Không (Public)                               |     ✅     |     ✅     |       ✅       |
+| `/api/v1/me/*`      | `verifyToken`                                |     ✅     |     ✅     |   ❌ (`401`)   |
+| `/api/v1/bookings`  | `verifyToken` → `checkRole([Role.CUSTOMER])` |     ✅     | ❌ (`403`) |   ❌ (`401`)   |
+| `/api/v1/admin/*`   | `verifyToken` → `checkRole([Role.ADMIN])`    | ❌ (`403`) |     ✅     |   ❌ (`401`)   |
 
 > **Lưu ý về endpoint nghiệp vụ Admin:** Nhóm `/api/v1/admin` hiện đã cung cấp các endpoint quản lý phòng (`/api/v1/admin/rooms`). Nhóm `/api/v1/me` hiện tại đã được dựng router và gắn middleware bảo vệ, nhưng chưa có endpoint nghiệp vụ cụ thể (trả về mã `404 Not Found`).
 
@@ -474,6 +483,72 @@ Khi xây dựng các tính năng tiếp theo (booking, quản lý phòng, profil
 
 - **Tuyến đường Admin:** Khai báo trong `apps/server/src/routes/admin.route.ts` (đã được bọc tự động bởi `verifyToken` và `checkRole([Role.ADMIN])`).
 - **Tuyến đường cá nhân (Customer/Admin):** Khai báo trong `apps/server/src/routes/me.route.ts` (đã được bọc tự động bởi `verifyToken`). Đối với tài nguyên cá nhân (như booking), service layer chịu trách nhiệm kiểm tra ownership (`resource.userId === req.user.sub`).
+
+---
+
+## 📅 API Đặt Chỗ Làm Việc (Customer Booking API)
+
+Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt phòng làm việc theo khung giờ với cơ chế kiểm tra slot trống và chống xung đột đặt phòng đồng thời (anti-double-booking concurrency lock).
+
+### 1. Tạo đặt phòng mới: `POST /api/v1/bookings`
+
+- **Quyền truy cập**: Bắt buộc đăng nhập với vai trò `CUSTOMER`. Thiếu token trả về `401 UNAUTHORIZED`; tài khoản `ADMIN` trả về `403 FORBIDDEN`.
+- **Payload Request (`application/json`)**:
+  - `roomId` (bắt buộc): Chuỗi UUID hợp lệ của phòng làm việc.
+  - `startTime` (bắt buộc): Chuỗi thời gian chuẩn ISO 8601 (ví dụ: `2026-10-25T10:00:00.000Z`).
+  - `endTime` (bắt buộc): Chuỗi thời gian chuẩn ISO 8601 (ví dụ: `2026-10-25T12:00:00.000Z`).
+  - `note` (tùy chọn): Ghi chú của khách hàng (tối đa 500 ký tự). Chuỗi rỗng hoặc chỉ có khoảng trắng được chuẩn hóa thành `null`.
+  - _Chặn Mass Assignment_: Schema sử dụng `.strict()`, từ chối bất kỳ trường client nào cố gắng can thiệp giá trị hệ thống như `userId`, `role`, `status`, `paymentStatus`, `pricePerHour`, `totalAmount`, `bookingCode`.
+- **Các Quy Tắc Nghiệp Vụ Thời Gian (Time Business Rules)**:
+  - **Căn chỉnh slot 30 phút**: Phút của `startTime` và `endTime` bắt buộc phải là `00` hoặc `30`; giây và mili-giây bằng 0 (`:00.000Z`).
+  - **Giới hạn thời lượng**: Thời lượng đặt tối thiểu là 1 giờ (60 phút) và tối đa là 4 giờ (240 phút).
+  - **Thời gian bắt đầu hợp lệ**: `startTime` không được ở trong quá khứ và phải cách thời điểm hiện tại của máy chủ tối thiểu 30 phút (`startTime >= now + 30m`).
+  - **Thứ tự thời gian**: Bắt buộc `endTime > startTime`.
+- **Trạng thái Phòng & Chống Trùng Lịch (Availability, Overlap & Concurrency)**:
+  - **Chặn phòng Bảo trì (AC2)**: Thực hiện khóa hàng MySQL `SELECT id, name, status, price_per_hour FROM rooms WHERE id = ? FOR UPDATE` trong transaction. Nếu trạng thái phòng là `MAINTENANCE`, request bị từ chối ngay lập tức với mã `409 ROOM_NOT_AVAILABLE`.
+  - **Quy tắc Overlap chuẩn**: Slot yêu cầu bị coi là trùng lịch nếu tồn tại booking có trạng thái thuộc danh sách chặn (`CONFIRMED`) thỏa mãn điều kiện:
+    $$\text{existing.startTime} < \text{requested.endTime} \quad\land\quad \text{existing.endTime} > \text{requested.startTime}$$
+    Cho phép chạm mốc biên (boundary touching): một booking kết thúc lúc `10:00` và booking tiếp theo bắt đầu lúc `10:00` không bị coi là trùng lặp.
+  - **Bảo vệ Concurrency / Double-booking**: Toàn bộ thao tác kiểm tra phòng, kiểm tra overlap và chèn dữ liệu được thực thi trong một `prisma.$transaction` kết hợp khóa hàng MySQL `FOR UPDATE`. Hai request đồng thời cho cùng một phòng/khung giờ sẽ được serialize; request thứ hai sẽ phát hiện overlap và trả về `409 BOOKING_CONFLICT`.
+- **Định Giá & Tạo Mã Đặt Chỗ Phía Server**:
+  - **Tính tổng tiền Authoritative**: Server tính toán tổng tiền dựa trên giá trị `price_per_hour` đọc từ database tại thời điểm giao dịch và thời lượng thực tế (`pricePerHour * durationMinutes / 60`). Sử dụng `Prisma.Decimal` với chế độ làm tròn `ROUND_HALF_UP` 2 chữ số thập phân, tuyệt đối không dùng số thực dấu phẩy động (floating-point) của JavaScript để chống sai lệch tiền tệ.
+  - **Định dạng mã đặt phòng**: Tạo mã duy nhất theo định dạng `CS-YYYYMMDD-XXXX` (với ngày theo múi giờ `Asia/Ho_Chi_Minh` và chuỗi ngẫu nhiên cryptographic 4 ký tự in hoa/chữ số). Hệ thống có cơ chế retry tối đa 5 lần nếu xảy ra xung đột unique constraint `bookingCode`.
+  - **Trạng thái ban đầu**: Booking tạo mới luôn có `status: "CONFIRMED"`, `paymentStatus: "UNPAID"`, `paymentMethod: null`.
+- **Xử lý lỗi**:
+  - `400 VALIDATION_ERROR`: Sai định dạng request body, UUID phòng không hợp lệ, chuỗi thời gian không đúng chuẩn ISO 8601, hoặc ghi chú vượt quá 500 ký tự.
+  - `400 INVALID_SLOT`: Thời gian bắt đầu hoặc kết thúc không đúng mốc 30 phút (`:00` hoặc `:30`), giây/mili-giây khác 0, hoặc `endTime <= startTime`.
+  - `400 MIN_DURATION`: Thời lượng đặt phòng nhỏ hơn 1 giờ (60 phút).
+  - `400 MAX_DURATION`: Thời lượng đặt phòng vượt quá 4 giờ (240 phút).
+  - `400 PAST_TIME`: Thời gian bắt đầu ở trong quá khứ (`startTime <= now`).
+  - `400 ADVANCE_NOTICE`: Thời gian đặt trước không đủ 30 phút (`startTime - now < 30m`).
+  - `401 UNAUTHORIZED`: Thiếu hoặc sai token JWT.
+  - `403 FORBIDDEN`: Đăng nhập với vai trò không phải `CUSTOMER` (ví dụ `ADMIN`).
+  - `404 ROOM_NOT_FOUND`: Phòng không tồn tại trong hệ thống.
+  - `409 ROOM_NOT_AVAILABLE`: Phòng đang ở trạng thái `MAINTENANCE`.
+  - `409 BOOKING_CONFLICT`: Khung giờ yêu cầu đã bị trùng lặp với lịch đặt phòng khác.
+  - `409 BOOKING_CODE_CONFLICT`: Xung đột mã đặt phòng sau số lần thử tối đa.
+- **Phản hồi `201 Created`**:
+  ```json
+  {
+    "success": true,
+    "message": "Đặt phòng thành công",
+    "data": {
+      "id": "c1f19672-005d-4f81-a6ce-ca039b36ebc0",
+      "bookingCode": "CS-20261025-ABCD",
+      "room": {
+        "id": "room-uuid",
+        "name": "Phòng Hội Thảo Alpha"
+      },
+      "startTime": "2026-10-25T03:00:00.000Z",
+      "endTime": "2026-10-25T05:00:00.000Z",
+      "totalAmount": "500000.00",
+      "note": "Chuẩn bị thêm 2 ghế phụ",
+      "status": "CONFIRMED",
+      "paymentStatus": "UNPAID",
+      "paymentMethod": null
+    }
+  }
+  ```
 
 ---
 

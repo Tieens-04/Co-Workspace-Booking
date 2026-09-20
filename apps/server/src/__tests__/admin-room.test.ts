@@ -520,5 +520,107 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       expect(res.body.code).toBe('INVALID_AMENITY_IDS');
       expect(res.body.details).toEqual({ missingIds: [validUuid1] });
     });
+
+    it('updates room status to MAINTENANCE and passes it to repository', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'MAINTENANCE' });
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(
+        roomId1,
+        expect.objectContaining({ status: RoomStatus.MAINTENANCE }),
+      );
+    });
+
+    it('updates room status to AVAILABLE and passes it to repository', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'AVAILABLE' });
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(
+        roomId1,
+        expect.objectContaining({ status: RoomStatus.AVAILABLE }),
+      );
+    });
+
+    it('accepts acknowledgeFutureBookings along with status MAINTENANCE', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'MAINTENANCE', acknowledgeFutureBookings: true });
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(
+        roomId1,
+        expect.objectContaining({
+          status: RoomStatus.MAINTENANCE,
+          acknowledgeFutureBookings: true,
+        }),
+      );
+    });
+
+    it('rejects acknowledgeFutureBookings when status is not MAINTENANCE', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'New Name', acknowledgeFutureBookings: true });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+
+      const resAvailable = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'AVAILABLE', acknowledgeFutureBookings: true });
+
+      expect(resAvailable.status).toBe(400);
+      expect(resAvailable.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects invalid status enum values', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'OUT_OF_SERVICE' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 409 ROOM_HAS_FUTURE_BOOKINGS when repository throws warning error with details', async () => {
+      const warningDetails = {
+        futureBookingCount: 1,
+        bookings: [
+          {
+            bookingCode: 'CS-20260921-ABCD',
+            startTime: '2026-09-21T02:00:00.000Z',
+            endTime: '2026-09-21T04:00:00.000Z',
+          },
+        ],
+      };
+
+      vi.mocked(roomRepository.updateWithRelations).mockRejectedValueOnce(
+        new AppError(
+          'ROOM_HAS_FUTURE_BOOKINGS',
+          'Phòng có booking sắp tới; các booking phải được xử lý thủ công',
+          409,
+          warningDetails,
+        ),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'MAINTENANCE' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe('ROOM_HAS_FUTURE_BOOKINGS');
+      expect(res.body.details).toEqual(warningDetails);
+    });
   });
 });

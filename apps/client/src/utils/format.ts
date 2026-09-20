@@ -5,3 +5,11 @@ export function formatVnd(price: string | number): string {
   }
   return `${new Intl.NumberFormat('vi-VN').format(num)} đ/giờ`;
 }
+
+export function formatCurrency(amount: string | number): string {
+  const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+  if (isNaN(num)) {
+    return '0 đ';
+  }
+  return `${new Intl.NumberFormat('vi-VN').format(num)} đ`;
+}

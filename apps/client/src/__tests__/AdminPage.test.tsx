@@ -456,9 +456,10 @@ describe('AdminPage - Room Management & Form', () => {
       const priceInput = screen.getByLabelText(/Đơn giá mỗi giờ/i) as HTMLInputElement;
       expect(priceInput.value).toBe('250000.00');
 
-      // Status is read-only notice
-      expect(screen.getByText('Trạng thái phòng:')).toBeInTheDocument();
-      expect(screen.getByText('(Chỉ xem - không thể thay đổi ở tác vụ này)')).toBeInTheDocument();
+      // Status is editable dropdown in edit mode
+      const statusSelect = screen.getByTestId('admin-room-status-select') as HTMLSelectElement;
+      expect(statusSelect).toBeInTheDocument();
+      expect(statusSelect.value).toBe('AVAILABLE');
 
       // Preloaded images
       expect(screen.getByTestId('admin-image-row-0')).toBeInTheDocument();
@@ -498,12 +499,209 @@ describe('AdminPage - Room Management & Form', () => {
           'room-uuid-1',
           expect.objectContaining({
             name: 'Phòng Ban Giám Đốc VIP',
+            status: 'AVAILABLE',
           }),
         );
       });
 
       expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
       expect(screen.getByText('Cập nhật thông tin phòng thành công!')).toBeInTheDocument();
+    });
+
+    it('allows changing status to MAINTENANCE and passes status in update payload', async () => {
+      vi.mocked(adminRoomApi.updateRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Cập nhật thành công',
+        data: { ...mockRoomDetail, status: 'MAINTENANCE' },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-uuid-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      const statusSelect = screen.getByTestId('admin-room-status-select');
+      fireEvent.change(statusSelect, { target: { value: 'MAINTENANCE' } });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(adminRoomApi.updateRoom).toHaveBeenCalledWith(
+          'room-uuid-1',
+          expect.objectContaining({
+            status: 'MAINTENANCE',
+          }),
+        );
+      });
+
+      expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+      expect(screen.getByText('Cập nhật thông tin phòng thành công!')).toBeInTheDocument();
+    });
+
+    it('displays accessible warning dialog when 409 ROOM_HAS_FUTURE_BOOKINGS is returned (AC1)', async () => {
+      const warningDetails = {
+        futureBookingCount: 2,
+        bookings: [
+          {
+            bookingCode: 'CS-20261001-ABCD',
+            startTime: '2026-10-01T02:00:00.000Z',
+            endTime: '2026-10-01T04:00:00.000Z',
+          },
+          {
+            bookingCode: 'CS-20261002-EFGH',
+            startTime: '2026-10-02T05:00:00.000Z',
+            endTime: '2026-10-02T07:00:00.000Z',
+          },
+        ],
+      };
+
+      vi.mocked(adminRoomApi.updateRoom).mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            code: 'ROOM_HAS_FUTURE_BOOKINGS',
+            message: 'Phòng có booking sắp tới',
+            details: warningDetails,
+          },
+        },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-uuid-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      fireEvent.change(screen.getByTestId('admin-room-status-select'), {
+        target: { value: 'MAINTENANCE' },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      // Warning dialog should appear
+      await waitFor(() => {
+        expect(screen.getByTestId('admin-future-booking-warning')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText(/Cảnh báo: Phòng có 2 booking sắp tới/i)).toBeInTheDocument();
+      expect(screen.getByText(/không tự động hủy/i)).toBeInTheDocument();
+      expect(screen.getByText(/CS-20261001-ABCD/)).toBeInTheDocument();
+      expect(screen.getByText(/CS-20261002-EFGH/)).toBeInTheDocument();
+
+      // Form remains open
+      expect(screen.getByTestId('admin-room-form')).toBeInTheDocument();
+
+      // Dismiss warning
+      fireEvent.click(screen.getByTestId('admin-warning-cancel-btn'));
+      expect(screen.queryByTestId('admin-future-booking-warning')).not.toBeInTheDocument();
+      expect(screen.getByTestId('admin-room-form')).toBeInTheDocument();
+    });
+
+    it('confirms warning, sends acknowledgeFutureBookings: true, and uploads pending images in correct order (AC1)', async () => {
+      const warningDetails = {
+        futureBookingCount: 1,
+        bookings: [
+          {
+            bookingCode: 'CS-20261001-XYZ1',
+            startTime: '2026-10-01T02:00:00.000Z',
+            endTime: '2026-10-01T04:00:00.000Z',
+          },
+        ],
+      };
+
+      // First submit fails with 409
+      vi.mocked(adminRoomApi.updateRoom).mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            success: false,
+            code: 'ROOM_HAS_FUTURE_BOOKINGS',
+            message: 'Phòng có booking sắp tới',
+            details: warningDetails,
+          },
+        },
+      });
+
+      // Second submit (confirmed with acknowledgement) succeeds
+      vi.mocked(adminRoomApi.updateRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Cập nhật thành công',
+        data: { ...mockRoomDetail, status: 'MAINTENANCE' },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-uuid-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      fireEvent.change(screen.getByTestId('admin-room-status-select'), {
+        target: { value: 'MAINTENANCE' },
+      });
+
+      // Select a pending image file
+      const file = new File(['img_content'], 'new_photo.jpg', { type: 'image/jpeg' });
+      fireEvent.change(screen.getByTestId('admin-room-files-input'), {
+        target: { files: [file] },
+      });
+
+      // Submit form
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      // Warning appears; image upload must NOT have been called yet!
+      await waitFor(() => {
+        expect(screen.getByTestId('admin-future-booking-warning')).toBeInTheDocument();
+      });
+      expect(adminRoomApi.uploadRoomImages).not.toHaveBeenCalled();
+
+      // Click "Vẫn chuyển sang bảo trì" (Confirm)
+      fireEvent.click(screen.getByTestId('admin-warning-confirm-btn'));
+
+      await waitFor(() => {
+        expect(adminRoomApi.updateRoom).toHaveBeenCalledTimes(2);
+        expect(adminRoomApi.updateRoom).toHaveBeenLastCalledWith(
+          'room-uuid-1',
+          expect.objectContaining({
+            status: 'MAINTENANCE',
+            acknowledgeFutureBookings: true,
+          }),
+        );
+      });
+
+      // Only AFTER updateRoom succeeds with acknowledgement does image upload get called
+      await waitFor(() => {
+        expect(adminRoomApi.uploadRoomImages).toHaveBeenCalledWith(
+          'room-uuid-1',
+          [file],
+          expect.any(AbortSignal),
+        );
+      });
+
+      // Form closes and success message displays
+      await waitFor(() => {
+        expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+        expect(screen.getByText('Cập nhật thông tin phòng thành công!')).toBeInTheDocument();
+      });
     });
   });
 
