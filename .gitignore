@@ -29,3 +29,9 @@ Thumbs.db
 Co-Space_Jira_IMPORT_READY.csv
 AGENTS.md
 .agents/
+
+# AI workflow execution artifacts
+.ai-workflow/tasks/*
+
+# Keep directory
+!.ai-workflow/tasks/.gitkeep
