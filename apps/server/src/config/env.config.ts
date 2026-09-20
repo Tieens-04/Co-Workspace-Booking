@@ -23,6 +23,21 @@ if (!Number.isSafeInteger(jwtExpiresInSeconds) || jwtExpiresInSeconds <= 0) {
   throw new Error('JWT_EXPIRES_IN must be a positive integer duration with s, m, h or d units.');
 }
 
+const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
+if (!cloudinaryCloudName) {
+  throw new Error('CLOUDINARY_CLOUD_NAME is required.');
+}
+
+const cloudinaryApiKey = process.env.CLOUDINARY_API_KEY?.trim();
+if (!cloudinaryApiKey) {
+  throw new Error('CLOUDINARY_API_KEY is required.');
+}
+
+const cloudinaryApiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
+if (!cloudinaryApiSecret) {
+  throw new Error('CLOUDINARY_API_SECRET is required.');
+}
+
 export const ENV = {
   PORT: process.env.PORT ? Number(process.env.PORT) : 5000,
   NODE_ENV: process.env.NODE_ENV || 'development',
@@ -30,4 +45,7 @@ export const ENV = {
   JWT_SECRET: jwtSecret,
   JWT_EXPIRES_IN_SECONDS: jwtExpiresInSeconds,
   BCRYPT_SALT_ROUNDS: saltRounds,
+  CLOUDINARY_CLOUD_NAME: cloudinaryCloudName,
+  CLOUDINARY_API_KEY: cloudinaryApiKey,
+  CLOUDINARY_API_SECRET: cloudinaryApiSecret,
 };

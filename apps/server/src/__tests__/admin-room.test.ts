@@ -63,7 +63,10 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
     vi.spyOn(roomRepository, 'findManyAndCount').mockResolvedValue([1, [mockRoomFixture()]]);
     vi.spyOn(roomRepository, 'findById').mockResolvedValue(mockRoomFixture());
     vi.spyOn(roomRepository, 'createWithRelations').mockResolvedValue(mockRoomFixture());
-    vi.spyOn(roomRepository, 'updateWithRelations').mockResolvedValue(mockRoomFixture());
+    vi.spyOn(roomRepository, 'updateWithRelations').mockResolvedValue({
+      record: mockRoomFixture(),
+      removedPublicIds: [],
+    });
   });
 
   afterEach(() => {

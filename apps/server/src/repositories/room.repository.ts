@@ -93,11 +93,22 @@ export interface UpdateRoomRepoInput {
   images?: CreateRoomImageInput[];
 }
 
+export interface AppendRoomImageItem {
+  imageUrl: string;
+  publicId: string;
+}
+
+export interface UpdateRoomRepoResult {
+  record: RoomDetailRecord;
+  removedPublicIds: string[];
+}
+
 export interface RoomRepositoryContract {
   findManyAndCount(filter: FindRoomsFilter): Promise<[number, RoomListRecord[]]>;
   findById(id: string): Promise<RoomDetailRecord | null>;
   createWithRelations(data: CreateRoomRepoInput): Promise<RoomDetailRecord>;
-  updateWithRelations(id: string, data: UpdateRoomRepoInput): Promise<RoomDetailRecord>;
+  updateWithRelations(id: string, data: UpdateRoomRepoInput): Promise<UpdateRoomRepoResult>;
+  appendImages(id: string, images: AppendRoomImageItem[]): Promise<RoomDetailRecord>;
 }
 
 export class RoomRepository implements RoomRepositoryContract {
@@ -199,13 +210,13 @@ export class RoomRepository implements RoomRepositoryContract {
     });
   }
 
-  async updateWithRelations(id: string, data: UpdateRoomRepoInput): Promise<RoomDetailRecord> {
+  async updateWithRelations(id: string, data: UpdateRoomRepoInput): Promise<UpdateRoomRepoResult> {
     return prisma.$transaction(async (tx) => {
-      const existing = await tx.room.findUnique({
-        where: { id },
-        select: { id: true },
-      });
-      if (!existing) {
+      // Lock room row in MySQL with FOR UPDATE to serialize with appendImages and other concurrent room updates
+      const lockedRooms = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`SELECT id FROM rooms WHERE id = ${id} FOR UPDATE`,
+      );
+      if (!lockedRooms || lockedRooms.length === 0) {
         throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
       }
 
@@ -252,13 +263,47 @@ export class RoomRepository implements RoomRepositoryContract {
         }
       }
 
+      let removedPublicIds: string[] = [];
       if (data.images !== undefined) {
-        await tx.roomImage.deleteMany({
+        const existingImages = await tx.roomImage.findMany({
           where: { roomId: id },
+          select: { id: true, imageUrl: true, publicId: true, isPrimary: true },
         });
-        if (data.images.length > 0) {
+
+        const newImages = data.images;
+        const newUrlSet = new Set(newImages.map((img) => img.imageUrl));
+
+        // 1. Delete images that are no longer in newImages
+        const toDelete = existingImages.filter((img) => !newUrlSet.has(img.imageUrl));
+        removedPublicIds = toDelete
+          .map((img) => img.publicId)
+          .filter((pid): pid is string => Boolean(pid));
+
+        if (toDelete.length > 0) {
+          await tx.roomImage.deleteMany({
+            where: { id: { in: toDelete.map((img) => img.id) } },
+          });
+        }
+
+        // 2. For retained images, update isPrimary if it changed
+        for (const existingImg of existingImages) {
+          if (newUrlSet.has(existingImg.imageUrl)) {
+            const target = newImages.find((img) => img.imageUrl === existingImg.imageUrl)!;
+            if (existingImg.isPrimary !== target.isPrimary) {
+              await tx.roomImage.update({
+                where: { id: existingImg.id },
+                data: { isPrimary: target.isPrimary },
+              });
+            }
+          }
+        }
+
+        // 3. For newly added images (URL not in existingImages), insert with publicId: null
+        const existingUrlSet = new Set(existingImages.map((img) => img.imageUrl));
+        const toInsert = newImages.filter((img) => !existingUrlSet.has(img.imageUrl));
+        if (toInsert.length > 0) {
           await tx.roomImage.createMany({
-            data: data.images.map((img) => ({
+            data: toInsert.map((img) => ({
               roomId: id,
               imageUrl: img.imageUrl,
               isPrimary: img.isPrimary,
@@ -267,6 +312,53 @@ export class RoomRepository implements RoomRepositoryContract {
           });
         }
       }
+
+      const updated = await tx.room.findUnique({
+        where: { id },
+        select: roomDetailSelect,
+      });
+
+      return {
+        record: updated!,
+        removedPublicIds,
+      };
+    });
+  }
+
+  async appendImages(id: string, images: AppendRoomImageItem[]): Promise<RoomDetailRecord> {
+    if (!images || images.length === 0) {
+      const existing = await this.findById(id);
+      if (!existing) {
+        throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
+      }
+      return existing;
+    }
+
+    return prisma.$transaction(async (tx) => {
+      // Lock room row in MySQL with FOR UPDATE
+      const lockedRooms = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`SELECT id FROM rooms WHERE id = ${id} FOR UPDATE`,
+      );
+      if (!lockedRooms || lockedRooms.length === 0) {
+        throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
+      }
+
+      // Check if room already has a primary image
+      const existingPrimary = await tx.roomImage.findFirst({
+        where: { roomId: id, isPrimary: true },
+        select: { id: true },
+      });
+      const hasPrimary = Boolean(existingPrimary);
+
+      // Create new images batch
+      await tx.roomImage.createMany({
+        data: images.map((img, index) => ({
+          roomId: id,
+          imageUrl: img.imageUrl,
+          publicId: img.publicId,
+          isPrimary: !hasPrimary && index === 0,
+        })),
+      });
 
       const updated = await tx.room.findUnique({
         where: { id },

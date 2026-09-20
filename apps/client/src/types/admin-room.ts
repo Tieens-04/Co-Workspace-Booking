@@ -37,5 +37,11 @@ export interface AdminFormErrors {
   pricePerHour?: string;
   amenityIds?: string;
   images?: string;
+  imageUpload?: string;
   general?: string;
 }
+
+export const MAX_ROOM_IMAGE_FILES = 10;
+export const MAX_ROOM_IMAGE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+export const ALLOWED_IMAGE_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+export const ALLOWED_IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp'];

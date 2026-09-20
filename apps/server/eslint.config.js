@@ -9,7 +9,10 @@ export default [
     files: ['src/**/*.ts'],
     languageOptions: {
       parser: tsParser,
-      globals: globals.node,
+      globals: {
+        ...globals.node,
+        Express: 'readonly',
+      },
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
