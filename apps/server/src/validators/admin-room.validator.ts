@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { RoomStatus } from '@prisma/client';
 import {
   MYSQL_INT_MAX,
   ROOM_PRICE_MAX_CENTS,
@@ -179,11 +180,25 @@ export const updateRoomSchema = z
     pricePerHour: pricePerHourSchema.optional(),
     amenityIds: amenityIdsSchema.optional(),
     images: imagesSchema.optional(),
+    status: z.nativeEnum(RoomStatus).optional(),
+    acknowledgeFutureBookings: z.boolean().optional(),
   })
   .strict()
   .refine((data) => Object.keys(data).length > 0, {
     message: 'Dữ liệu cập nhật không được để trống',
-  });
+  })
+  .refine(
+    (data) => {
+      if (data.acknowledgeFutureBookings !== undefined && data.status !== RoomStatus.MAINTENANCE) {
+        return false;
+      }
+      return true;
+    },
+    {
+      message: 'acknowledgeFutureBookings chỉ được sử dụng khi cập nhật trạng thái MAINTENANCE',
+      path: ['acknowledgeFutureBookings'],
+    },
+  );
 
 export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type UpdateRoomInput = z.infer<typeof updateRoomSchema>;

@@ -2,6 +2,7 @@ import { Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { FindRoomsFilter } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
+import { BLOCKING_BOOKING_STATUSES } from '../types/booking.type.js';
 
 const amenitySelect = {
   id: true,
@@ -91,6 +92,41 @@ export interface UpdateRoomRepoInput {
   pricePerHour?: string;
   amenityIds?: string[];
   images?: CreateRoomImageInput[];
+  status?: RoomStatus;
+  acknowledgeFutureBookings?: boolean;
+}
+
+export interface LockedRoomRecord {
+  id: string;
+  name: string;
+  status: RoomStatus;
+  pricePerHour: Prisma.Decimal;
+}
+
+export async function lockRoomRow(
+  tx: Prisma.TransactionClient,
+  roomId: string,
+): Promise<LockedRoomRecord> {
+  const rows = await tx.$queryRaw<
+    Array<{
+      id: string;
+      name: string;
+      status: RoomStatus;
+      price_per_hour: Prisma.Decimal | string | number;
+    }>
+  >(Prisma.sql`SELECT id, name, status, price_per_hour FROM rooms WHERE id = ${roomId} FOR UPDATE`);
+
+  if (!rows || rows.length === 0) {
+    throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
+  }
+
+  const row = rows[0];
+  return {
+    id: row.id,
+    name: row.name,
+    status: row.status,
+    pricePerHour: new Prisma.Decimal(row.price_per_hour),
+  };
 }
 
 export interface AppendRoomImageItem {
@@ -213,11 +249,43 @@ export class RoomRepository implements RoomRepositoryContract {
   async updateWithRelations(id: string, data: UpdateRoomRepoInput): Promise<UpdateRoomRepoResult> {
     return prisma.$transaction(async (tx) => {
       // Lock room row in MySQL with FOR UPDATE to serialize with appendImages and other concurrent room updates
-      const lockedRooms = await tx.$queryRaw<Array<{ id: string }>>(
-        Prisma.sql`SELECT id FROM rooms WHERE id = ${id} FOR UPDATE`,
-      );
-      if (!lockedRooms || lockedRooms.length === 0) {
-        throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
+      const lockedRoom = await lockRoomRow(tx, id);
+
+      // Check transition to MAINTENANCE with future confirmed bookings
+      const isTransitionToMaintenance =
+        data.status === RoomStatus.MAINTENANCE && lockedRoom.status !== RoomStatus.MAINTENANCE;
+
+      if (isTransitionToMaintenance) {
+        const capturedNow = new Date();
+        const futureBookings = await tx.booking.findMany({
+          where: {
+            roomId: id,
+            status: { in: [...BLOCKING_BOOKING_STATUSES] },
+            startTime: { gt: capturedNow },
+          },
+          orderBy: { startTime: 'asc' },
+          select: {
+            bookingCode: true,
+            startTime: true,
+            endTime: true,
+          },
+        });
+
+        if (futureBookings.length > 0 && !data.acknowledgeFutureBookings) {
+          throw new AppError(
+            'ROOM_HAS_FUTURE_BOOKINGS',
+            'Phòng có booking sắp tới; các booking phải được xử lý thủ công',
+            409,
+            {
+              futureBookingCount: futureBookings.length,
+              bookings: futureBookings.map((b) => ({
+                bookingCode: b.bookingCode,
+                startTime: b.startTime.toISOString(),
+                endTime: b.endTime.toISOString(),
+              })),
+            },
+          );
+        }
       }
 
       if (data.amenityIds && data.amenityIds.length > 0) {
@@ -240,6 +308,9 @@ export class RoomRepository implements RoomRepositoryContract {
       if (data.capacity !== undefined) scalarUpdate.capacity = data.capacity;
       if (data.pricePerHour !== undefined) {
         scalarUpdate.pricePerHour = new Prisma.Decimal(data.pricePerHour);
+      }
+      if (data.status !== undefined) {
+        scalarUpdate.status = data.status;
       }
 
       if (Object.keys(scalarUpdate).length > 0) {
@@ -336,12 +407,7 @@ export class RoomRepository implements RoomRepositoryContract {
 
     return prisma.$transaction(async (tx) => {
       // Lock room row in MySQL with FOR UPDATE
-      const lockedRooms = await tx.$queryRaw<Array<{ id: string }>>(
-        Prisma.sql`SELECT id FROM rooms WHERE id = ${id} FOR UPDATE`,
-      );
-      if (!lockedRooms || lockedRooms.length === 0) {
-        throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
-      }
+      await lockRoomRow(tx, id);
 
       // Check if room already has a primary image
       const existingPrimary = await tx.roomImage.findFirst({

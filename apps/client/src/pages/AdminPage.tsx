@@ -10,6 +10,8 @@ import {
   MAX_ROOM_IMAGE_FILES,
   MAX_ROOM_IMAGE_SIZE_BYTES,
   ALLOWED_IMAGE_MIME_TYPES,
+  FutureBookingWarningDetails,
+  UpdateRoomPayload,
 } from '../types/admin-room';
 
 const initialFormValues: AdminRoomFormValues = {
@@ -19,6 +21,7 @@ const initialFormValues: AdminRoomFormValues = {
   pricePerHour: '',
   amenityIds: [],
   images: [],
+  status: 'AVAILABLE',
 };
 
 export const AdminPage: React.FC = () => {
@@ -38,7 +41,6 @@ export const AdminPage: React.FC = () => {
   // Shared create/edit form state
   const [isFormOpen, setIsFormOpen] = useState<boolean>(false);
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null);
-  const [editingRoomStatus, setEditingRoomStatus] = useState<RoomStatus | null>(null);
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
   const [formData, setFormData] = useState<AdminRoomFormValues>(initialFormValues);
@@ -53,6 +55,12 @@ export const AdminPage: React.FC = () => {
   const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
   const [createdRoomIdForRetry, setCreatedRoomIdForRetry] = useState<string | null>(null);
   const lastCommittedFormSnapshotRef = useRef<string | null>(null);
+
+  // Future booking warning state (AC1)
+  const [futureBookingWarning, setFutureBookingWarning] =
+    useState<FutureBookingWarningDetails | null>(null);
+  const [frozenUpdatePayload, setFrozenUpdatePayload] = useState<UpdateRoomPayload | null>(null);
+  const [isConfirmingMaintenance, setIsConfirmingMaintenance] = useState<boolean>(false);
 
   const amenitiesRequestRef = useRef<AbortController | null>(null);
   const detailRequestRef = useRef<AbortController | null>(null);
@@ -152,7 +160,6 @@ export const AdminPage: React.FC = () => {
     formTriggerRef.current = trigger;
     setFormMode('create');
     setEditingRoomId(null);
-    setEditingRoomStatus(null);
     setFormData(initialFormValues);
     setFormErrors({});
     setPendingImageFiles([]);
@@ -160,6 +167,9 @@ export const AdminPage: React.FC = () => {
     setImageUploadError(null);
     setCreatedRoomIdForRetry(null);
     lastCommittedFormSnapshotRef.current = null;
+    setFutureBookingWarning(null);
+    setFrozenUpdatePayload(null);
+    setIsConfirmingMaintenance(false);
     setIsFormOpen(true);
   };
 
@@ -181,12 +191,14 @@ export const AdminPage: React.FC = () => {
     setImageUploadError(null);
     setCreatedRoomIdForRetry(null);
     lastCommittedFormSnapshotRef.current = null;
+    setFutureBookingWarning(null);
+    setFrozenUpdatePayload(null);
+    setIsConfirmingMaintenance(false);
     try {
       const res = await roomApi.getRoomById(roomId, controller.signal);
       if (res.success && !controller.signal.aborted && detailRequestRef.current === controller) {
         const room = res.data;
         setEditingRoomId(room.id);
-        setEditingRoomStatus(room.status);
         setFormData({
           name: room.name,
           description: room.description || '',
@@ -197,6 +209,7 @@ export const AdminPage: React.FC = () => {
             imageUrl: img.imageUrl,
             isPrimary: img.isPrimary,
           })),
+          status: room.status,
         });
         setIsFormOpen(true);
       }
@@ -213,13 +226,12 @@ export const AdminPage: React.FC = () => {
 
   // Close & Reset Form
   const handleCloseForm = () => {
-    if (isSubmitting || isUploadingImages) return;
+    if (isSubmitting || isUploadingImages || isConfirmingMaintenance) return;
     uploadRequestRef.current?.abort();
     uploadRequestRef.current = null;
     setIsFormOpen(false);
     setFormMode('create');
     setEditingRoomId(null);
-    setEditingRoomStatus(null);
     setFormData(initialFormValues);
     setFormErrors({});
     setPendingImageFiles([]);
@@ -227,6 +239,9 @@ export const AdminPage: React.FC = () => {
     setImageUploadError(null);
     setCreatedRoomIdForRetry(null);
     lastCommittedFormSnapshotRef.current = null;
+    setFutureBookingWarning(null);
+    setFrozenUpdatePayload(null);
+    setIsConfirmingMaintenance(false);
     const trigger = formTriggerRef.current;
     formTriggerRef.current = null;
     window.requestAnimationFrame(() => trigger?.focus());
@@ -413,18 +428,17 @@ export const AdminPage: React.FC = () => {
 
     const isCreateFlow = formMode === 'create';
     let targetRoomId: string | null = isCreateFlow ? createdRoomIdForRetry : editingRoomId;
+    const normalizedDescription =
+      formData.description.trim() === '' ? null : formData.description.trim();
+    const payloadImages = formData.images.map((img) => ({
+      imageUrl: img.imageUrl.trim(),
+      isPrimary: img.isPrimary,
+    }));
 
     setIsSubmitting(true);
     setImageUploadError(null);
 
     try {
-      const normalizedDescription =
-        formData.description.trim() === '' ? null : formData.description.trim();
-      const payloadImages = formData.images.map((img) => ({
-        imageUrl: img.imageUrl.trim(),
-        isPrimary: img.isPrimary,
-      }));
-
       const currentFormSnapshot = JSON.stringify({
         name: trimmedName,
         description: normalizedDescription,
@@ -432,6 +446,7 @@ export const AdminPage: React.FC = () => {
         pricePerHour: priceStr,
         amenityIds: [...formData.amenityIds].sort(),
         images: payloadImages,
+        status: formMode === 'edit' ? formData.status : undefined,
       });
 
       const isMetadataCommitted =
@@ -446,6 +461,7 @@ export const AdminPage: React.FC = () => {
             pricePerHour: priceStr,
             amenityIds: formData.amenityIds,
             images: payloadImages,
+            status: formData.status,
           });
           lastCommittedFormSnapshotRef.current = currentFormSnapshot;
         } else {
@@ -464,6 +480,22 @@ export const AdminPage: React.FC = () => {
       }
     } catch (err: any) {
       setIsSubmitting(false);
+
+      if (err.response?.data?.code === 'ROOM_HAS_FUTURE_BOOKINGS') {
+        const details = err.response.data.details as FutureBookingWarningDetails;
+        setFutureBookingWarning(details);
+        setFrozenUpdatePayload({
+          name: trimmedName,
+          description: normalizedDescription,
+          capacity: capacityNum,
+          pricePerHour: priceStr,
+          amenityIds: formData.amenityIds,
+          images: payloadImages,
+          status: formData.status,
+        });
+        return;
+      }
+
       const serverDetails = err.response?.data?.details;
       const serverMessage = err.response?.data?.message || 'Đã có lỗi xảy ra khi lưu phòng.';
       const mapped: AdminFormErrors = { general: serverMessage };
@@ -537,6 +569,81 @@ export const AdminPage: React.FC = () => {
         setIsUploadingImages(false);
       }
     }
+  };
+
+  const handleConfirmMaintenance = async () => {
+    if (!editingRoomId || !frozenUpdatePayload || isConfirmingMaintenance) return;
+    setIsConfirmingMaintenance(true);
+    setImageUploadError(null);
+
+    try {
+      await adminRoomApi.updateRoom(editingRoomId, {
+        ...frozenUpdatePayload,
+        acknowledgeFutureBookings: true,
+      });
+      lastCommittedFormSnapshotRef.current = JSON.stringify({
+        name: frozenUpdatePayload.name,
+        description: frozenUpdatePayload.description,
+        capacity: frozenUpdatePayload.capacity,
+        pricePerHour: String(frozenUpdatePayload.pricePerHour),
+        amenityIds: [...(frozenUpdatePayload.amenityIds || [])].sort(),
+        images: frozenUpdatePayload.images,
+        status: frozenUpdatePayload.status,
+      });
+      setFutureBookingWarning(null);
+      setFrozenUpdatePayload(null);
+    } catch (err: any) {
+      setIsConfirmingMaintenance(false);
+      setFormErrors({
+        general: err.response?.data?.message || 'Không thể chuyển phòng sang bảo trì.',
+      });
+      return;
+    } finally {
+      setIsConfirmingMaintenance(false);
+    }
+
+    // If no pending image files to upload, complete immediately
+    if (pendingImageFiles.length === 0) {
+      setSuccessMessage('Cập nhật thông tin phòng thành công!');
+      handleCloseForm();
+      fetchRooms(currentPage);
+      return;
+    }
+
+    // Upload pending image files
+    setIsUploadingImages(true);
+    uploadRequestRef.current?.abort();
+    const uploadController = new AbortController();
+    uploadRequestRef.current = uploadController;
+
+    try {
+      await adminRoomApi.uploadRoomImages(
+        editingRoomId,
+        pendingImageFiles,
+        uploadController.signal,
+      );
+      if (uploadController.signal.aborted || uploadRequestRef.current !== uploadController) return;
+
+      setPendingImageFiles([]);
+      setSuccessMessage('Cập nhật thông tin phòng thành công!');
+      handleCloseForm();
+      fetchRooms(currentPage);
+    } catch (err: any) {
+      if (uploadController.signal.aborted || uploadRequestRef.current !== uploadController) return;
+      const serverMessage =
+        err.response?.data?.message || 'Không thể tải ảnh lên. Vui lòng thử lại.';
+      setImageUploadError(serverMessage);
+    } finally {
+      if (uploadRequestRef.current === uploadController) {
+        uploadRequestRef.current = null;
+        setIsUploadingImages(false);
+      }
+    }
+  };
+
+  const handleDismissWarning = () => {
+    setFutureBookingWarning(null);
+    setFrozenUpdatePayload(null);
   };
 
   return (
@@ -761,30 +868,90 @@ export const AdminPage: React.FC = () => {
             </button>
           </div>
 
-          {/* Read-only Status Notice */}
-          <div className="admin-status-notice">
-            {editingRoomId ? (
-              <p>
-                <strong>Trạng thái phòng:</strong>{' '}
-                <span
-                  className={`badge ${
-                    editingRoomStatus === 'AVAILABLE' ? 'badge-available' : 'badge-maintenance'
-                  }`}
-                >
-                  {editingRoomStatus}
-                </span>{' '}
-                <small style={{ color: 'var(--color-text-muted)' }}>
-                  (Chỉ xem - không thể thay đổi ở tác vụ này)
-                </small>
-              </p>
-            ) : (
+          {/* Status Control for Edit / Notice for Create */}
+          {editingRoomId ? (
+            <div className="form-group admin-status-control-group">
+              <label htmlFor="room-status-select" className="form-label">
+                Trạng thái phòng
+              </label>
+              <select
+                id="room-status-select"
+                name="status"
+                className="form-control"
+                value={formData.status}
+                onChange={(e) => {
+                  const val = e.target.value as RoomStatus;
+                  setFormData((prev) => ({ ...prev, status: val }));
+                  if (futureBookingWarning) {
+                    setFutureBookingWarning(null);
+                    setFrozenUpdatePayload(null);
+                  }
+                }}
+                disabled={isSubmitting || isUploadingImages || isConfirmingMaintenance}
+                data-testid="admin-room-status-select"
+              >
+                <option value="AVAILABLE">AVAILABLE (Sẵn sàng)</option>
+                <option value="MAINTENANCE">MAINTENANCE (Bảo trì)</option>
+              </select>
+            </div>
+          ) : (
+            <div className="admin-status-notice">
               <p>
                 <strong>Trạng thái ban đầu:</strong>{' '}
                 <span className="badge badge-available">AVAILABLE</span>{' '}
                 <small style={{ color: 'var(--color-text-muted)' }}>(Mặc định cho phòng mới)</small>
               </p>
-            )}
-          </div>
+            </div>
+          )}
+
+          {/* Future Booking Warning Dialog / Panel (AC1) */}
+          {futureBookingWarning && (
+            <div
+              className="alert alert-warning admin-future-booking-warning"
+              role="alertdialog"
+              aria-labelledby="future-booking-warning-title"
+              aria-describedby="future-booking-warning-desc"
+              data-testid="admin-future-booking-warning"
+            >
+              <h3 id="future-booking-warning-title" className="warning-title">
+                ⚠️ Cảnh báo: Phòng có {futureBookingWarning.futureBookingCount} booking sắp tới
+              </h3>
+              <p id="future-booking-warning-desc" className="warning-desc">
+                Chuyển phòng sang trạng thái <strong>Bảo trì</strong> sẽ{' '}
+                <strong>không tự động hủy</strong> các booking này. Quản trị viên cần liên hệ khách
+                hàng và xử lý hoặc hủy thủ công các booking dưới đây:
+              </p>
+              <ul className="future-booking-list" data-testid="admin-future-booking-list">
+                {futureBookingWarning.bookings.map((booking) => (
+                  <li key={booking.bookingCode} className="future-booking-item">
+                    <strong>{booking.bookingCode}</strong>:{' '}
+                    {new Date(booking.startTime).toLocaleString('vi-VN')} –{' '}
+                    {new Date(booking.endTime).toLocaleString('vi-VN')}
+                  </li>
+                ))}
+              </ul>
+              <div className="warning-actions">
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={handleDismissWarning}
+                  disabled={isConfirmingMaintenance}
+                  data-testid="admin-warning-cancel-btn"
+                >
+                  Quay lại
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-danger btn-sm"
+                  onClick={handleConfirmMaintenance}
+                  disabled={isConfirmingMaintenance}
+                  data-testid="admin-warning-confirm-btn"
+                >
+                  {isConfirmingMaintenance ? 'Đang chuyển...' : 'Vẫn chuyển sang bảo trì'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* General form error banner */}
           {formErrors.general && (
@@ -1126,7 +1293,7 @@ export const AdminPage: React.FC = () => {
                 type="button"
                 className="btn btn-outline"
                 onClick={handleCloseForm}
-                disabled={isSubmitting || isUploadingImages}
+                disabled={isSubmitting || isUploadingImages || isConfirmingMaintenance}
               >
                 Hủy
               </button>
@@ -1134,7 +1301,11 @@ export const AdminPage: React.FC = () => {
                 type="submit"
                 className="btn btn-primary"
                 disabled={
-                  isSubmitting || isUploadingImages || isLoadingAmenities || Boolean(amenitiesError)
+                  isSubmitting ||
+                  isUploadingImages ||
+                  isConfirmingMaintenance ||
+                  isLoadingAmenities ||
+                  Boolean(amenitiesError)
                 }
                 data-testid="admin-submit-room-btn"
               >

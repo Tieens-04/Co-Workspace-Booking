@@ -1,3 +1,5 @@
+import { RoomStatus } from './room';
+
 export interface AdminRoomImageItem {
   imageUrl: string;
   isPrimary: boolean;
@@ -19,6 +21,19 @@ export interface UpdateRoomPayload {
   pricePerHour?: string | number;
   amenityIds?: string[];
   images?: AdminRoomImageItem[];
+  status?: RoomStatus;
+  acknowledgeFutureBookings?: boolean;
+}
+
+export interface FutureBookingWarningItem {
+  bookingCode: string;
+  startTime: string;
+  endTime: string;
+}
+
+export interface FutureBookingWarningDetails {
+  futureBookingCount: number;
+  bookings: FutureBookingWarningItem[];
 }
 
 export interface AdminRoomFormValues {
@@ -28,6 +43,7 @@ export interface AdminRoomFormValues {
   pricePerHour: string;
   amenityIds: string[];
   images: AdminRoomImageItem[];
+  status: RoomStatus;
 }
 
 export interface AdminFormErrors {

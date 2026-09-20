@@ -47,6 +47,8 @@ export class AdminRoomService {
       pricePerHour: data.pricePerHour,
       amenityIds: data.amenityIds,
       images: data.images,
+      status: data.status,
+      acknowledgeFutureBookings: data.acknowledgeFutureBookings,
     });
 
     if (removedPublicIds && removedPublicIds.length > 0) {

@@ -1404,3 +1404,119 @@ body {
     padding: 1.25rem;
   }
 }
+
+/* Admin Status & Future Booking Warning (AC1) */
+.admin-status-control-group {
+  margin-bottom: 1.25rem;
+}
+
+.admin-future-booking-warning {
+  background-color: #fffbeb;
+  border: 1px solid #fde68a;
+  border-left: 4px solid #d97706;
+  border-radius: var(--radius-sm);
+  padding: 1rem 1.25rem;
+  margin-bottom: 1.5rem;
+  color: #92400e;
+}
+
+.admin-future-booking-warning .warning-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #b45309;
+}
+
+.admin-future-booking-warning .warning-desc {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.875rem;
+  line-height: 1.4;
+}
+
+.admin-future-booking-warning .future-booking-list {
+  margin: 0 0 1rem 1.25rem;
+  padding: 0;
+  font-size: 0.875rem;
+}
+
+.admin-future-booking-warning .future-booking-item {
+  margin-bottom: 0.25rem;
+}
+
+.admin-future-booking-warning .warning-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* Customer Booking Form (AC2) */
+.booking-form-card {
+  margin-top: 1.5rem;
+  background-color: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1.5rem;
+}
+
+.booking-form-header {
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.booking-form-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text-main);
+}
+
+.booking-price-preview {
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: var(--radius-sm);
+  font-size: 0.875rem;
+}
+
+.booking-price-row {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 0.25rem;
+}
+
+.booking-price-row:last-child {
+  margin-bottom: 0;
+}
+
+.booking-price-total {
+  font-weight: 700;
+  font-size: 1.05rem;
+  color: var(--color-primary);
+}
+
+.booking-success-box {
+  background-color: var(--color-success-bg);
+  border: 1px solid var(--color-success-border);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+  color: #166534;
+}
+
+.booking-success-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.booking-maintenance-alert {
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-sm);
+  padding: 1rem;
+  margin-bottom: 1rem;
+  color: #991b1b;
+}

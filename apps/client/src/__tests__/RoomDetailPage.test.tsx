@@ -206,4 +206,66 @@ describe('RoomDetailPage', () => {
     const backLink = screen.getByRole('link', { name: /← Quay lại danh sách phòng/i });
     expect(backLink).toHaveAttribute('href', '/');
   });
+
+  describe('Customer Booking Form Integration (AC2)', () => {
+    const createMockJwt = (role: 'CUSTOMER' | 'ADMIN', sub = 'user-uuid-1') => {
+      const header = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
+      const payload = btoa(
+        JSON.stringify({
+          sub,
+          role,
+          email: `${role.toLowerCase()}@example.com`,
+          fullName: `Test ${role}`,
+          exp: Math.floor(Date.now() / 1000) + 3600,
+        }),
+      );
+      return `${header}.${payload}.signature`;
+    };
+
+    it('renders guest login prompt within booking section when unauthenticated', async () => {
+      renderComponent();
+
+      expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-guest-prompt')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-login-link')).toBeInTheDocument();
+      expect(screen.queryByTestId('customer-booking-form')).not.toBeInTheDocument();
+    });
+
+    it('renders customer booking form when user is logged in as CUSTOMER and room is AVAILABLE', async () => {
+      localStorage.setItem('cospace.accessToken', createMockJwt('CUSTOMER'));
+      renderComponent();
+
+      expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
+      expect(screen.getByTestId('customer-booking-form')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-start-input')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-end-input')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-submit-btn')).toBeInTheDocument();
+    });
+
+    it('renders admin notice instead of booking form when user is logged in as ADMIN', async () => {
+      localStorage.setItem('cospace.accessToken', createMockJwt('ADMIN'));
+      renderComponent();
+
+      expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-admin-notice')).toBeInTheDocument();
+      expect(screen.queryByTestId('customer-booking-form')).not.toBeInTheDocument();
+    });
+
+    it('renders maintenance alert and disables booking when room status is MAINTENANCE', async () => {
+      localStorage.setItem('cospace.accessToken', createMockJwt('CUSTOMER'));
+      vi.mocked(roomApi.getRoomById).mockResolvedValueOnce(
+        mockRoomResponse({
+          ...mockRoomDetailData,
+          status: 'MAINTENANCE',
+        }),
+      );
+
+      renderComponent();
+
+      expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-maintenance-box')).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent(/Bảo trì/i);
+      expect(screen.queryByTestId('customer-booking-form')).not.toBeInTheDocument();
+    });
+  });
 });
