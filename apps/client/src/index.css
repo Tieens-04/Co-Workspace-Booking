@@ -1276,6 +1276,106 @@ body {
   cursor: pointer;
 }
 
+.admin-upload-section {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  border-top: 1px dashed var(--color-border);
+}
+
+.admin-upload-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.admin-upload-helptext {
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+  margin-top: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.admin-file-input-wrapper {
+  margin-bottom: 0.75rem;
+}
+
+.admin-file-input {
+  font-size: 0.875rem;
+  color: var(--color-text-main);
+}
+
+.admin-pending-files-list {
+  background-color: #f8fafc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.admin-pending-files-count {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem 0;
+  color: var(--color-text-main);
+}
+
+.admin-pending-files-items {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.admin-pending-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  padding: 0.25rem 0.5rem;
+  background-color: #fff;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+}
+
+.admin-pending-file-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+}
+
+.admin-pending-file-size {
+  color: var(--color-text-muted);
+  margin-left: auto;
+  margin-right: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.admin-remove-file-btn {
+  color: var(--color-error);
+  font-size: 0.875rem;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0 0.25rem;
+}
+
+.admin-uploading-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background-color: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: var(--radius-sm);
+  color: #1e40af;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
 .admin-form-actions {
   display: flex;
   justify-content: flex-end;

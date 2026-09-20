@@ -23,4 +23,26 @@ export const adminRoomApi = {
     const response = await apiClient.patch<ApiResponse<RoomDetail>>(`/admin/rooms/${id}`, payload);
     return response.data;
   },
+
+  uploadRoomImages: async (
+    roomId: string,
+    files: File[],
+    signal?: AbortSignal,
+  ): Promise<ApiResponse<RoomDetail>> => {
+    const formData = new FormData();
+    for (const file of files) {
+      formData.append('images', file);
+    }
+    const response = await apiClient.post<ApiResponse<RoomDetail>>(
+      `/admin/rooms/${roomId}/images`,
+      formData,
+      {
+        headers: {
+          'Content-Type': undefined,
+        },
+        signal,
+      },
+    );
+    return response.data;
+  },
 };

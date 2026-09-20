@@ -38,6 +38,7 @@ vi.mock('../services/admin-room.api', () => ({
     getAdminRooms: vi.fn(),
     createRoom: vi.fn(),
     updateRoom: vi.fn(),
+    uploadRoomImages: vi.fn(),
   },
 }));
 
@@ -130,6 +131,11 @@ describe('AdminPage - Room Management & Form', () => {
     vi.mocked(roomApi.getRoomById).mockResolvedValue({
       success: true,
       message: 'OK',
+      data: mockRoomDetail,
+    });
+    vi.mocked(adminRoomApi.uploadRoomImages).mockResolvedValue({
+      success: true,
+      message: 'Tải ảnh thành công',
       data: mockRoomDetail,
     });
   });
@@ -534,6 +540,423 @@ describe('AdminPage - Room Management & Form', () => {
         expect(screen.getByTestId('error-name')).toHaveTextContent('Tên phòng đã tồn tại');
         expect(screen.getByTestId('error-capacity')).toHaveTextContent('Sức chứa không hợp lệ');
         expect(screen.getByTestId('form-general-error')).toHaveTextContent('Dữ liệu không hợp lệ');
+      });
+    });
+  });
+
+  describe('Direct Room Image Upload to Cloudinary (CWB-17)', () => {
+    it('handles file selection, type/size validation, and pending file removal', async () => {
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+
+      const fileInput = screen.getByTestId('admin-room-files-input');
+
+      // 1. Select valid files
+      const validFile1 = new File(['content1'], 'photo1.jpg', { type: 'image/jpeg' });
+      const validFile2 = new File(['content2'], 'photo2.png', { type: 'image/png' });
+
+      fireEvent.change(fileInput, { target: { files: [validFile1, validFile2] } });
+
+      expect(screen.getByTestId('admin-pending-files-list')).toBeInTheDocument();
+      expect(screen.getByText(/Đã chọn 2 file chờ tải lên/i)).toBeInTheDocument();
+      expect(screen.getByText(/photo1.jpg/i)).toBeInTheDocument();
+      expect(screen.getByText(/photo2.png/i)).toBeInTheDocument();
+
+      // 2. Remove first pending file
+      fireEvent.click(screen.getByTestId('admin-remove-file-0'));
+
+      expect(screen.getByText(/Đã chọn 1 file chờ tải lên/i)).toBeInTheDocument();
+      expect(screen.queryByText(/photo1.jpg/i)).not.toBeInTheDocument();
+      expect(screen.getByText(/photo2.png/i)).toBeInTheDocument();
+
+      // 3. Validation: file size exceeds 5MB
+      const bigFile = new File(['x'.repeat(100)], 'huge.jpg', { type: 'image/jpeg' });
+      Object.defineProperty(bigFile, 'size', { value: 6 * 1024 * 1024 });
+
+      fireEvent.change(fileInput, { target: { files: [bigFile] } });
+      expect(screen.getByTestId('image-upload-error')).toHaveTextContent(
+        'vượt quá giới hạn cho phép (tối đa 5MB)',
+      );
+
+      // 4. Validation: invalid file type
+      const textFile = new File(['hello'], 'document.pdf', { type: 'application/pdf' });
+      fireEvent.change(fileInput, { target: { files: [textFile] } });
+      expect(screen.getByTestId('image-upload-error')).toHaveTextContent(
+        'Chỉ chấp nhận các định dạng ảnh JPEG, PNG, WebP',
+      );
+    });
+
+    it('AC3: shows loading state, aria-busy, and disables controls during image upload', async () => {
+      vi.mocked(adminRoomApi.createRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Tạo phòng thành công',
+        data: { ...mockRoomDetail, id: 'room-new-async' },
+      });
+
+      let resolveUpload!: (val: any) => void;
+      const uploadPromise = new Promise((resolve) => {
+        resolveUpload = resolve;
+      });
+      vi.mocked(adminRoomApi.uploadRoomImages).mockReturnValueOnce(uploadPromise as any);
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), {
+        target: { name: 'name', value: 'Phòng Họp Async' },
+      });
+      fireEvent.change(screen.getByLabelText(/Sức chứa/i), {
+        target: { name: 'capacity', value: '8' },
+      });
+      fireEvent.change(screen.getByLabelText(/Đơn giá mỗi giờ/i), {
+        target: { name: 'pricePerHour', value: '150000.00' },
+      });
+
+      const file = new File(['img'], 'test.jpg', { type: 'image/jpeg' });
+      fireEvent.change(screen.getByTestId('admin-room-files-input'), {
+        target: { files: [file] },
+      });
+
+      // Submit form
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      // Wait for createRoom to finish and image upload to be in progress
+      await waitFor(() => {
+        expect(adminRoomApi.createRoom).toHaveBeenCalled();
+        expect(adminRoomApi.uploadRoomImages).toHaveBeenCalled();
+      });
+
+      // Verify AC3 Loading State and aria-busy
+      const form = screen.getByTestId('admin-room-form');
+      const submitBtn = screen.getByTestId('admin-submit-room-btn');
+      expect(submitBtn).toHaveTextContent('Đang tải ảnh...');
+      expect(submitBtn).toBeDisabled();
+      expect(form.querySelector('form')).toHaveAttribute('aria-busy', 'true');
+      expect(screen.getByTestId('uploading-indicator')).toHaveTextContent('Đang tải ảnh...');
+      expect(screen.getByTestId('admin-room-files-input')).toBeDisabled();
+      expect(screen.getByRole('button', { name: 'Hủy' })).toBeDisabled();
+      expect(screen.getByLabelText('Đóng biểu mẫu phòng')).toBeDisabled();
+
+      // Resolve upload
+      resolveUpload({ success: true, message: 'Upload OK', data: mockRoomDetail });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+        expect(screen.getByText('Tạo phòng mới thành công!')).toBeInTheDocument();
+      });
+    });
+
+    it('creates room first, then uploads images with returned room ID and navigates to page 1', async () => {
+      vi.mocked(adminRoomApi.createRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Tạo phòng thành công',
+        data: { ...mockRoomDetail, id: 'new-room-123' },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), {
+        target: { name: 'name', value: 'Phòng Sáng Tạo B' },
+      });
+      fireEvent.change(screen.getByLabelText(/Sức chứa/i), {
+        target: { name: 'capacity', value: '10' },
+      });
+      fireEvent.change(screen.getByLabelText(/Đơn giá mỗi giờ/i), {
+        target: { name: 'pricePerHour', value: '200000.00' },
+      });
+
+      const file1 = new File(['1'], 'img1.jpg', { type: 'image/jpeg' });
+      const file2 = new File(['2'], 'img2.png', { type: 'image/png' });
+      fireEvent.change(screen.getByTestId('admin-room-files-input'), {
+        target: { files: [file1, file2] },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(adminRoomApi.createRoom).toHaveBeenCalledWith(
+          expect.objectContaining({ name: 'Phòng Sáng Tạo B' }),
+        );
+        expect(adminRoomApi.uploadRoomImages).toHaveBeenCalledWith(
+          'new-room-123',
+          [file1, file2],
+          expect.any(AbortSignal),
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+        expect(screen.getByText('Tạo phòng mới thành công!')).toBeInTheDocument();
+      });
+      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith({ page: 1, limit: 10 });
+    });
+
+    it('keeps form open on upload failure and retry does NOT call createRoom a second time', async () => {
+      vi.mocked(adminRoomApi.createRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Tạo phòng thành công',
+        data: { ...mockRoomDetail, id: 'room-retry-id' },
+      });
+
+      // Upload fails on first try
+      vi.mocked(adminRoomApi.uploadRoomImages).mockRejectedValueOnce({
+        response: { data: { message: 'Cloudinary storage quota exceeded' } },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), {
+        target: { name: 'name', value: 'Phòng Thử Nghiệm' },
+      });
+      fireEvent.change(screen.getByLabelText(/Sức chứa/i), {
+        target: { name: 'capacity', value: '6' },
+      });
+      fireEvent.change(screen.getByLabelText(/Đơn giá mỗi giờ/i), {
+        target: { name: 'pricePerHour', value: '90000.00' },
+      });
+
+      const file = new File(['data'], 'photo.jpg', { type: 'image/jpeg' });
+      fireEvent.change(screen.getByTestId('admin-room-files-input'), {
+        target: { files: [file] },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('image-upload-error')).toHaveTextContent(
+          'Cloudinary storage quota exceeded',
+        );
+      });
+
+      // Form remains open, pending file is preserved
+      expect(screen.getByTestId('admin-room-form')).toBeInTheDocument();
+      expect(screen.getByTestId('admin-pending-files-list')).toBeInTheDocument();
+
+      // Submit button offers retry
+      const retryBtn = screen.getByTestId('admin-submit-room-btn');
+      expect(retryBtn).toHaveTextContent('Thử lại tải ảnh');
+
+      // Setup success for retry
+      vi.mocked(adminRoomApi.uploadRoomImages).mockResolvedValueOnce({
+        success: true,
+        message: 'Upload OK',
+        data: mockRoomDetail,
+      });
+
+      // Click retry
+      fireEvent.click(retryBtn);
+
+      await waitFor(() => {
+        expect(adminRoomApi.uploadRoomImages).toHaveBeenCalledTimes(2);
+      });
+
+      // CRUCIAL: createRoom must only have been called ONCE!
+      expect(adminRoomApi.createRoom).toHaveBeenCalledTimes(1);
+
+      // Successfully closes
+      await waitFor(() => {
+        expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+        expect(screen.getByText('Tạo phòng mới thành công!')).toBeInTheDocument();
+      });
+    });
+
+    it('uploads pending files when editing an existing room and preserves current page', async () => {
+      vi.mocked(adminRoomApi.updateRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Cập nhật thành công',
+        data: mockRoomDetail,
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-uuid-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      const file = new File(['edit'], 'new_angle.webp', { type: 'image/webp' });
+      fireEvent.change(screen.getByTestId('admin-room-files-input'), {
+        target: { files: [file] },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(adminRoomApi.updateRoom).toHaveBeenCalledWith('room-uuid-1', expect.any(Object));
+        expect(adminRoomApi.uploadRoomImages).toHaveBeenCalledWith(
+          'room-uuid-1',
+          [file],
+          expect.any(AbortSignal),
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+        expect(screen.getByText('Cập nhật thông tin phòng thành công!')).toBeInTheDocument();
+      });
+      // Preserved current page (page 1)
+      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith({ page: 1, limit: 10 });
+    });
+
+    it('persists dirty form changes via updateRoom when user edits metadata after upload failure in create flow', async () => {
+      vi.mocked(adminRoomApi.createRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Tạo phòng thành công',
+        data: { ...mockRoomDetail, id: 'room-dirty-retry-id' },
+      });
+      vi.mocked(adminRoomApi.updateRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Cập nhật thành công',
+        data: { ...mockRoomDetail, id: 'room-dirty-retry-id', name: 'Phòng Đã Sửa Đổi' },
+      });
+
+      // Upload fails on first try
+      vi.mocked(adminRoomApi.uploadRoomImages).mockRejectedValueOnce({
+        response: { data: { message: 'Cloudinary temporary network error' } },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), {
+        target: { name: 'name', value: 'Phòng Ban Đầu' },
+      });
+      fireEvent.change(screen.getByLabelText(/Sức chứa/i), {
+        target: { name: 'capacity', value: '8' },
+      });
+      fireEvent.change(screen.getByLabelText(/Đơn giá mỗi giờ/i), {
+        target: { name: 'pricePerHour', value: '100000.00' },
+      });
+
+      const file = new File(['data'], 'pic.jpg', { type: 'image/jpeg' });
+      fireEvent.change(screen.getByTestId('admin-room-files-input'), {
+        target: { files: [file] },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('image-upload-error')).toHaveTextContent(
+          'Cloudinary temporary network error',
+        );
+      });
+
+      // User modifies name while form is still open
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), {
+        target: { name: 'name', value: 'Phòng Đã Sửa Đổi' },
+      });
+
+      // Setup success for retry
+      vi.mocked(adminRoomApi.uploadRoomImages).mockResolvedValueOnce({
+        success: true,
+        message: 'Upload OK',
+        data: mockRoomDetail,
+      });
+
+      // Submit retry
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        // updateRoom was called to persist the modified name!
+        expect(adminRoomApi.updateRoom).toHaveBeenCalledWith(
+          'room-dirty-retry-id',
+          expect.objectContaining({ name: 'Phòng Đã Sửa Đổi' }),
+        );
+        expect(adminRoomApi.uploadRoomImages).toHaveBeenCalledTimes(2);
+      });
+
+      // createRoom was still only called ONCE
+      expect(adminRoomApi.createRoom).toHaveBeenCalledTimes(1);
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+        expect(screen.getByText('Tạo phòng mới thành công!')).toBeInTheDocument();
+      });
+    });
+
+    it('handles upload failure during edit flow: shows edit success when pending files removed', async () => {
+      vi.mocked(adminRoomApi.updateRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Cập nhật thành công',
+        data: mockRoomDetail,
+      });
+
+      // Upload fails
+      vi.mocked(adminRoomApi.uploadRoomImages).mockRejectedValueOnce({
+        response: { data: { message: 'Upload service down' } },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-uuid-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      const file = new File(['edit'], 'angle.webp', { type: 'image/webp' });
+      fireEvent.change(screen.getByTestId('admin-room-files-input'), {
+        target: { files: [file] },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('image-upload-error')).toHaveTextContent('Upload service down');
+      });
+
+      // User decides to remove the failing file
+      expect(screen.getByTestId('admin-pending-files-list')).toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('admin-remove-file-0'));
+      expect(screen.queryByTestId('admin-pending-files-list')).not.toBeInTheDocument();
+
+      // Submit button should revert to "Lưu thay đổi"
+      const submitBtn = screen.getByTestId('admin-submit-room-btn');
+      expect(submitBtn).toHaveTextContent('Lưu thay đổi');
+
+      // Click submit
+      fireEvent.click(submitBtn);
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
+        // MUST display edit success message, NEVER create success!
+        expect(screen.getByText('Cập nhật thông tin phòng thành công!')).toBeInTheDocument();
       });
     });
   });
