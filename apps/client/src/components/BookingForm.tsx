@@ -217,8 +217,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           const durationMins = (end.getTime() - start.getTime()) / (60 * 1000);
           if (durationMins < 60) {
             newErrors.endTime = 'Thời lượng đặt phòng tối thiểu là 1 giờ';
-          } else if (durationMins > 240) {
-            newErrors.endTime = 'Thời lượng đặt phòng tối đa là 4 giờ';
+          } else if (durationMins > 480) {
+            newErrors.endTime = 'Thời lượng đặt phòng tối đa là 8 giờ';
           }
         }
 

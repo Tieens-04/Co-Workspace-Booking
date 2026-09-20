@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
@@ -23,6 +23,12 @@ describe('BookingForm', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date('2026-10-01T00:00:00.000Z'));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
   });
 
   const renderComponent = (props: Partial<BookingFormProps> = {}, route = '/rooms/room-uuid-1') => {
@@ -115,20 +121,61 @@ describe('BookingForm', () => {
       expect(bookingApi.createBooking).not.toHaveBeenCalled();
     });
 
-    it('validates maximum 4 hours duration', async () => {
-      const user = userEvent.setup();
+    it('allows booking of up to 8 hours (maximum duration) without client error', async () => {
+      vi.mocked(bookingApi.createBooking).mockResolvedValueOnce({
+        success: true,
+        message: 'Đặt phòng thành công',
+        data: {
+          id: 'booking-1',
+          bookingCode: 'CS-20261025-XXXX',
+          room: { id: 'room-uuid-1', name: 'Phòng Hội Thảo Alpha' },
+          startTime: '2026-10-25T03:00:00.000Z',
+          endTime: '2026-10-25T11:00:00.000Z',
+          totalAmount: '1600000.00',
+          status: 'CONFIRMED',
+          paymentStatus: 'UNPAID',
+          paymentMethod: null,
+          note: null,
+        },
+      });
+
       renderComponent();
 
       const startInput = screen.getByLabelText(/Thời gian bắt đầu/i);
       const endInput = screen.getByLabelText(/Thời gian kết thúc/i);
       const submitBtn = screen.getByRole('button', { name: /Xác nhận đặt phòng/i });
 
-      // 5 hours duration (10:00 -> 15:00)
-      await user.type(startInput, '2026-10-25T10:00');
-      await user.type(endInput, '2026-10-25T15:00');
-      await user.click(submitBtn);
+      // 8 hours duration (10:00 -> 18:00)
+      fireEvent.change(startInput, { target: { value: '2026-10-25T10:00' } });
+      fireEvent.change(endInput, { target: { value: '2026-10-25T18:00' } });
+      await act(async () => {
+        fireEvent.click(submitBtn);
+      });
 
-      expect(screen.getByText('Thời lượng đặt phòng tối đa là 4 giờ')).toBeInTheDocument();
+      expect(screen.queryByText(/Thời lượng đặt phòng tối đa/i)).not.toBeInTheDocument();
+      expect(bookingApi.createBooking).toHaveBeenCalledTimes(1);
+      expect(bookingApi.createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startTime: new Date('2026-10-25T10:00').toISOString(),
+          endTime: new Date('2026-10-25T18:00').toISOString(),
+        }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('validates maximum 8 hours duration', async () => {
+      renderComponent();
+
+      const startInput = screen.getByLabelText(/Thời gian bắt đầu/i);
+      const endInput = screen.getByLabelText(/Thời gian kết thúc/i);
+      const submitBtn = screen.getByRole('button', { name: /Xác nhận đặt phòng/i });
+
+      // 8.5 hours duration (10:00 -> 18:30)
+      fireEvent.change(startInput, { target: { value: '2026-10-25T10:00' } });
+      fireEvent.change(endInput, { target: { value: '2026-10-25T18:30' } });
+      fireEvent.click(submitBtn);
+
+      expect(screen.getByText('Thời lượng đặt phòng tối đa là 8 giờ')).toBeInTheDocument();
       expect(bookingApi.createBooking).not.toHaveBeenCalled();
     });
 

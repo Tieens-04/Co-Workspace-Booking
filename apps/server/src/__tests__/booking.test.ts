@@ -4,7 +4,7 @@ import { Prisma, Role, BookingStatus, PaymentStatus } from '@prisma/client';
 import app from '../app.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
-import { bookingService } from '../services/booking.service.js';
+import { bookingService, BookingService } from '../services/booking.service.js';
 import { BookingResponseDto } from '../types/booking.type.js';
 import { AppError } from '../utils/error.util.js';
 
@@ -56,6 +56,7 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   describe('Authentication & RBAC Controls', () => {
@@ -279,60 +280,156 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
       );
     });
 
-    it('returns 400 INVALID_SLOT when slot is not aligned to 30 minutes', async () => {
+    it('returns 400 INVALID_SLOT with clear message when slot is not aligned to 30 minutes', async () => {
+      const slot = getFutureSlot(2, 2);
+      const unalignedStart = new Date(slot.startDate.getTime() + 15 * 60 * 1000).toISOString();
+
       const res = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: validRoomId,
-          startTime: '2026-10-01T09:15:00Z',
-          endTime: '2026-10-01T11:15:00Z',
+          startTime: unalignedStart,
+          endTime: slot.endTime,
         });
 
       expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('INVALID_SLOT');
+      expect(res.body.message).toBe(
+        'Thời gian bắt đầu và kết thúc phải đúng mốc 30 phút (ví dụ: 09:00, 09:30) với giây bằng 0',
+      );
+      expect(bookingRepository.createBooking).not.toHaveBeenCalled();
     });
 
-    it('returns 400 MIN_DURATION when duration is less than 1 hour', async () => {
+    it('returns 400 MIN_DURATION with clear message when duration is less than 1 hour', async () => {
+      const slot = getFutureSlot(2, 0.5); // 30 minutes duration
+
       const res = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: validRoomId,
-          startTime: '2026-10-01T09:00:00Z',
-          endTime: '2026-10-01T09:30:00Z',
+          startTime: slot.startTime,
+          endTime: slot.endTime,
         });
 
       expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('MIN_DURATION');
+      expect(res.body.message).toBe('Thời lượng đặt phòng tối thiểu là 1 giờ (60 phút)');
+      expect(bookingRepository.createBooking).not.toHaveBeenCalled();
     });
 
-    it('returns 400 MAX_DURATION when duration exceeds 4 hours', async () => {
+    it('returns 400 MAX_DURATION with clear message when duration exceeds 8 hours (480 minutes)', async () => {
+      const slot = getFutureSlot(2, 8.5); // 8.5 hours duration
+
       const res = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: validRoomId,
-          startTime: '2026-10-01T09:00:00Z',
-          endTime: '2026-10-01T13:30:00Z',
+          startTime: slot.startTime,
+          endTime: slot.endTime,
         });
 
       expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('MAX_DURATION');
+      expect(res.body.message).toBe('Thời lượng đặt phòng tối đa là 8 giờ (480 phút)');
+      expect(bookingRepository.createBooking).not.toHaveBeenCalled();
     });
 
-    it('returns 400 PAST_TIME when start time is in the past', async () => {
+    it('returns 400 PAST_TIME with clear message when start time is in the past', async () => {
+      const base = new Date(Date.now() - 4 * 60 * 60 * 1000);
+      base.setUTCMinutes(0, 0, 0);
+      const pastStart = base.toISOString();
+      const pastEnd = new Date(base.getTime() + 2 * 60 * 60 * 1000).toISOString();
+
       const res = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: validRoomId,
-          startTime: '2020-01-01T09:00:00Z',
-          endTime: '2020-01-01T11:00:00Z',
+          startTime: pastStart,
+          endTime: pastEnd,
         });
 
       expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('PAST_TIME');
+      expect(res.body.message).toBe('Thời gian bắt đầu không được ở trong quá khứ');
+      expect(bookingRepository.createBooking).not.toHaveBeenCalled();
+    });
+
+    it('returns 400 ADVANCE_NOTICE with clear message when booking is made less than 30 minutes before start', async () => {
+      const slot = getFutureSlot(2, 1);
+      vi.spyOn(bookingService, 'createBooking').mockImplementationOnce((userId, input) => {
+        const simulatedNow = new Date(new Date(input.startTime).getTime() - 20 * 60 * 1000);
+        return BookingService.prototype.createBooking.call(
+          bookingService,
+          userId,
+          input,
+          simulatedNow,
+        );
+      });
+
+      const res = await request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          roomId: validRoomId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+
+      expect(res.status).toBe(400);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe('ADVANCE_NOTICE');
+      expect(res.body.message).toBe('Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút');
+      expect(bookingRepository.createBooking).not.toHaveBeenCalled();
+    });
+
+    it('successfully accepts booking of 4.5 hours (previously rejected by old 4-hour limit)', async () => {
+      const slot = getFutureSlot(2, 4.5);
+
+      const res = await request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          roomId: validRoomId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(bookingRepository.createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          durationMinutes: 270,
+        }),
+      );
+    });
+
+    it('successfully accepts booking of exactly 8 hours (maximum allowed duration)', async () => {
+      const slot = getFutureSlot(2, 8);
+
+      const res = await request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          roomId: validRoomId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.success).toBe(true);
+      expect(bookingRepository.createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          durationMinutes: 480,
+        }),
+      );
     });
 
     it('returns 404 ROOM_NOT_FOUND when repository throws ROOM_NOT_FOUND', async () => {

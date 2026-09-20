@@ -501,7 +501,7 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - _Chặn Mass Assignment_: Schema sử dụng `.strict()`, từ chối bất kỳ trường client nào cố gắng can thiệp giá trị hệ thống như `userId`, `role`, `status`, `paymentStatus`, `pricePerHour`, `totalAmount`, `bookingCode`.
 - **Các Quy Tắc Nghiệp Vụ Thời Gian (Time Business Rules)**:
   - **Căn chỉnh slot 30 phút**: Phút của `startTime` và `endTime` bắt buộc phải là `00` hoặc `30`; giây và mili-giây bằng 0 (`:00.000Z`).
-  - **Giới hạn thời lượng**: Thời lượng đặt tối thiểu là 1 giờ (60 phút) và tối đa là 4 giờ (240 phút).
+  - **Giới hạn thời lượng**: Thời lượng đặt tối thiểu là 1 giờ (60 phút) và tối đa là 8 giờ (480 phút).
   - **Thời gian bắt đầu hợp lệ**: `startTime` không được ở trong quá khứ và phải cách thời điểm hiện tại của máy chủ tối thiểu 30 phút (`startTime >= now + 30m`).
   - **Thứ tự thời gian**: Bắt buộc `endTime > startTime`.
 - **Trạng thái Phòng & Chống Trùng Lịch (Availability, Overlap & Concurrency)**:
@@ -518,7 +518,7 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - `400 VALIDATION_ERROR`: Sai định dạng request body, UUID phòng không hợp lệ, chuỗi thời gian không đúng chuẩn ISO 8601, hoặc ghi chú vượt quá 500 ký tự.
   - `400 INVALID_SLOT`: Thời gian bắt đầu hoặc kết thúc không đúng mốc 30 phút (`:00` hoặc `:30`), giây/mili-giây khác 0, hoặc `endTime <= startTime`.
   - `400 MIN_DURATION`: Thời lượng đặt phòng nhỏ hơn 1 giờ (60 phút).
-  - `400 MAX_DURATION`: Thời lượng đặt phòng vượt quá 4 giờ (240 phút).
+  - `400 MAX_DURATION`: Thời lượng đặt phòng vượt quá 8 giờ (480 phút).
   - `400 PAST_TIME`: Thời gian bắt đầu ở trong quá khứ (`startTime <= now`).
   - `400 ADVANCE_NOTICE`: Thời gian đặt trước không đủ 30 phút (`startTime - now < 30m`).
   - `401 UNAUTHORIZED`: Thiếu hoặc sai token JWT.

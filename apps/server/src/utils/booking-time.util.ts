@@ -2,7 +2,7 @@ import { Prisma } from '@prisma/client';
 import { AppError } from './error.util.js';
 
 export const MIN_DURATION_MINUTES = 60;
-export const MAX_DURATION_MINUTES = 240;
+export const MAX_DURATION_MINUTES = 480;
 export const ADVANCE_NOTICE_MINUTES = 30;
 
 export function isSlotAligned(date: Date): boolean {

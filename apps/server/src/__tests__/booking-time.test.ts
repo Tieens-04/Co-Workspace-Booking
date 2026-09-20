@@ -51,23 +51,39 @@ describe('Booking Time & Pricing Utilities', () => {
       expect(() => validateBookingTime(start, end, fixedNow)).not.toThrow();
     });
 
-    it('accepts valid 4-hour booking (maximum allowed duration)', () => {
+    it('accepts valid 4.5-hour booking (allowed under 8-hour maximum)', () => {
       const start = new Date('2026-09-21T02:00:00.000Z');
-      const end = new Date('2026-09-21T06:00:00.000Z'); // 4 hours
+      const end = new Date('2026-09-21T06:30:00.000Z'); // 4.5 hours
       expect(() => validateBookingTime(start, end, fixedNow)).not.toThrow();
     });
 
-    it('rejects unaligned start or end slot', () => {
+    it('accepts valid 8-hour booking (maximum allowed duration)', () => {
+      const start = new Date('2026-09-21T02:00:00.000Z');
+      const end = new Date('2026-09-21T10:00:00.000Z'); // 8 hours (480 minutes)
+      expect(() => validateBookingTime(start, end, fixedNow)).not.toThrow();
+    });
+
+    it('rejects unaligned start or end slot (INVALID_SLOT)', () => {
       const unalignedStart = new Date('2026-09-21T02:15:00.000Z');
       const end = new Date('2026-09-21T03:30:00.000Z');
       expect(() => validateBookingTime(unalignedStart, end, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'INVALID_SLOT' }),
+        expect.objectContaining({
+          code: 'INVALID_SLOT',
+          statusCode: 400,
+          message:
+            'Thời gian bắt đầu và kết thúc phải đúng mốc 30 phút (ví dụ: 09:00, 09:30) với giây bằng 0',
+        }),
       );
 
       const start = new Date('2026-09-21T02:00:00.000Z');
       const unalignedEnd = new Date('2026-09-21T03:45:00.000Z');
       expect(() => validateBookingTime(start, unalignedEnd, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'INVALID_SLOT' }),
+        expect.objectContaining({
+          code: 'INVALID_SLOT',
+          statusCode: 400,
+          message:
+            'Thời gian bắt đầu và kết thúc phải đúng mốc 30 phút (ví dụ: 09:00, 09:30) với giây bằng 0',
+        }),
       );
     });
 
@@ -75,12 +91,20 @@ describe('Booking Time & Pricing Utilities', () => {
       const start = new Date('2026-09-21T02:00:00.000Z');
       const sameEnd = new Date('2026-09-21T02:00:00.000Z');
       expect(() => validateBookingTime(start, sameEnd, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'INVALID_SLOT' }),
+        expect.objectContaining({
+          code: 'INVALID_SLOT',
+          statusCode: 400,
+          message: 'Thời gian kết thúc phải sau thời gian bắt đầu',
+        }),
       );
 
       const beforeEnd = new Date('2026-09-21T01:30:00.000Z');
       expect(() => validateBookingTime(start, beforeEnd, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'INVALID_SLOT' }),
+        expect.objectContaining({
+          code: 'INVALID_SLOT',
+          statusCode: 400,
+          message: 'Thời gian kết thúc phải sau thời gian bắt đầu',
+        }),
       );
     });
 
@@ -88,15 +112,23 @@ describe('Booking Time & Pricing Utilities', () => {
       const start = new Date('2026-09-21T02:00:00.000Z');
       const end = new Date('2026-09-21T02:30:00.000Z'); // 30 minutes
       expect(() => validateBookingTime(start, end, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'MIN_DURATION' }),
+        expect.objectContaining({
+          code: 'MIN_DURATION',
+          statusCode: 400,
+          message: 'Thời lượng đặt phòng tối thiểu là 1 giờ (60 phút)',
+        }),
       );
     });
 
-    it('rejects duration greater than 4 hours (MAX_DURATION)', () => {
+    it('rejects duration greater than 8 hours (MAX_DURATION)', () => {
       const start = new Date('2026-09-21T02:00:00.000Z');
-      const end = new Date('2026-09-21T06:30:00.000Z'); // 4.5 hours
+      const end = new Date('2026-09-21T10:30:00.000Z'); // 8.5 hours (510 minutes)
       expect(() => validateBookingTime(start, end, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'MAX_DURATION' }),
+        expect.objectContaining({
+          code: 'MAX_DURATION',
+          statusCode: 400,
+          message: 'Thời lượng đặt phòng tối đa là 8 giờ (480 phút)',
+        }),
       );
     });
 
@@ -104,12 +136,20 @@ describe('Booking Time & Pricing Utilities', () => {
       const pastStart = new Date('2026-09-21T00:30:00.000Z'); // before fixedNow
       const end = new Date('2026-09-21T02:00:00.000Z');
       expect(() => validateBookingTime(pastStart, end, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'PAST_TIME' }),
+        expect.objectContaining({
+          code: 'PAST_TIME',
+          statusCode: 400,
+          message: 'Thời gian bắt đầu không được ở trong quá khứ',
+        }),
       );
 
       const nowStart = new Date('2026-09-21T01:00:00.000Z'); // exactly now
       expect(() => validateBookingTime(nowStart, end, fixedNow)).toThrowError(
-        expect.objectContaining({ code: 'PAST_TIME' }),
+        expect.objectContaining({
+          code: 'PAST_TIME',
+          statusCode: 400,
+          message: 'Thời gian bắt đầu không được ở trong quá khứ',
+        }),
       );
     });
 
@@ -119,7 +159,11 @@ describe('Booking Time & Pricing Utilities', () => {
       // If now is 01:00:01 (29 mins 59 secs before start)
       const lateNow = new Date('2026-09-21T01:00:01.000Z');
       expect(() => validateBookingTime(start, end, lateNow)).toThrowError(
-        expect.objectContaining({ code: 'ADVANCE_NOTICE' }),
+        expect.objectContaining({
+          code: 'ADVANCE_NOTICE',
+          statusCode: 400,
+          message: 'Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút',
+        }),
       );
     });
   });

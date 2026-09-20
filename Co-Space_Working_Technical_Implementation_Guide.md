@@ -539,7 +539,7 @@ lai ngoài policy.
 **1. Mục tiêu (Objective)**
 
 Xây dựng module kiểm tra quy chuẩn thời gian đặt phòng: block 30 phút -
-tối thiểu 1h - tối đa 4h - cấm đặt quá khứ - đặt trước ít nhất 30 phút.
+tối thiểu 1h - tối đa 8h - cấm đặt quá khứ - đặt trước ít nhất 30 phút.
 
 **2. Các bước thực hiện chi tiết (Step-by-step Implementation)**
 
@@ -547,16 +547,16 @@ tối thiểu 1h - tối đa 4h - cấm đặt quá khứ - đặt trước ít 
   availability/create/admin guest booking.
 - Chuẩn hóa thời gian theo UTC trong DB/API; chuyển timezone chỉ ở
   boundary/UI. Kiểm tra start/end nằm trên mốc 30 phút.
-- Enforce `duration >= 60 phút`, `duration <= 240 phút`,
+- Enforce `duration >= 60 phút`, `duration <= 480 phút`,
   `start > now`, và `start >= now + 30 phút`.
 - Trả `400` với error code ổn định như `INVALID_SLOT`, `MIN_DURATION`,
   `MAX_DURATION`, `PAST_TIME`, `ADVANCE_NOTICE`.
 - Viết table-driven tests cho đúng mốc, lệch 1 phút, DST/timezone (nếu
-  áp dụng) và boundary 1h/4h.
+  áp dụng) và boundary 1h/8h.
 
 ```text
 Slot size = 30 phút
-60 phút <= duration <= 240 phút
+60 phút <= duration <= 480 phút
 startTime >= now + 30 phút
 startTime/endTime phải align theo mốc 30 phút
 ```
@@ -577,7 +577,7 @@ dụng.
 
 **5. Rủi ro & Lưu ý kỹ thuật (Gotchas & Edge Cases)**
 
-UTC/local mismatch, so sánh milliseconds, boundary đúng 30/60/240 phút.
+UTC/local mismatch, so sánh milliseconds, boundary đúng 30/60/480 phút.
 
 ### `2012` - Implement availability API and overlap query
 
