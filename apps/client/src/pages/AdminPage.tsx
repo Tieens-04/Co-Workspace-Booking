@@ -4,7 +4,13 @@ import { useAuth } from '../hooks/useAuth';
 import { roomApi } from '../services/room.api';
 import { adminRoomApi } from '../services/admin-room.api';
 import { RoomListItem, Amenity, RoomStatus } from '../types/room';
-import { AdminRoomFormValues, AdminFormErrors } from '../types/admin-room';
+import {
+  AdminRoomFormValues,
+  AdminFormErrors,
+  MAX_ROOM_IMAGE_FILES,
+  MAX_ROOM_IMAGE_SIZE_BYTES,
+  ALLOWED_IMAGE_MIME_TYPES,
+} from '../types/admin-room';
 
 const initialFormValues: AdminRoomFormValues = {
   name: '',
@@ -39,8 +45,18 @@ export const AdminPage: React.FC = () => {
   const [formErrors, setFormErrors] = useState<AdminFormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // File upload state (Cloudinary)
+  const [pendingImageFiles, setPendingImageFiles] = useState<File[]>([]);
+  const [isUploadingImages, setIsUploadingImages] = useState<boolean>(false);
+  const [imageUploadError, setImageUploadError] = useState<string | null>(null);
+  const [formMode, setFormMode] = useState<'create' | 'edit'>('create');
+  const [createdRoomIdForRetry, setCreatedRoomIdForRetry] = useState<string | null>(null);
+  const lastCommittedFormSnapshotRef = useRef<string | null>(null);
+
   const amenitiesRequestRef = useRef<AbortController | null>(null);
   const detailRequestRef = useRef<AbortController | null>(null);
+  const uploadRequestRef = useRef<AbortController | null>(null);
   const formHeadingRef = useRef<HTMLHeadingElement | null>(null);
   const formTriggerRef = useRef<HTMLButtonElement | null>(null);
 
@@ -80,12 +96,24 @@ export const AdminPage: React.FC = () => {
     return () => {
       amenitiesRequestRef.current?.abort();
       detailRequestRef.current?.abort();
+      uploadRequestRef.current?.abort();
     };
   }, [fetchAmenities]);
 
   useEffect(() => {
     if (!isFormOpen) return;
-    window.requestAnimationFrame(() => formHeadingRef.current?.focus());
+    const frameId = window.requestAnimationFrame(() => {
+      const active = document.activeElement;
+      const isInputFocused =
+        active &&
+        (active.tagName === 'INPUT' ||
+          active.tagName === 'TEXTAREA' ||
+          active.tagName === 'SELECT');
+      if (!isInputFocused) {
+        formHeadingRef.current?.focus();
+      }
+    });
+    return () => window.cancelAnimationFrame(frameId);
   }, [isFormOpen]);
 
   // Fetch rooms
@@ -117,26 +145,42 @@ export const AdminPage: React.FC = () => {
   const handleOpenCreate = (trigger: HTMLButtonElement) => {
     detailRequestRef.current?.abort();
     detailRequestRef.current = null;
+    uploadRequestRef.current?.abort();
+    uploadRequestRef.current = null;
     setLoadingDetailId(null);
     setDetailLoadError(null);
     formTriggerRef.current = trigger;
+    setFormMode('create');
     setEditingRoomId(null);
     setEditingRoomStatus(null);
     setFormData(initialFormValues);
     setFormErrors({});
+    setPendingImageFiles([]);
+    setIsUploadingImages(false);
+    setImageUploadError(null);
+    setCreatedRoomIdForRetry(null);
+    lastCommittedFormSnapshotRef.current = null;
     setIsFormOpen(true);
   };
 
   // Open Edit Form
   const handleOpenEdit = async (roomId: string, trigger: HTMLButtonElement) => {
     detailRequestRef.current?.abort();
+    uploadRequestRef.current?.abort();
+    uploadRequestRef.current = null;
     const controller = new AbortController();
     detailRequestRef.current = controller;
     formTriggerRef.current = trigger;
     setIsFormOpen(false);
+    setFormMode('edit');
     setLoadingDetailId(roomId);
     setDetailLoadError(null);
     setFormErrors({});
+    setPendingImageFiles([]);
+    setIsUploadingImages(false);
+    setImageUploadError(null);
+    setCreatedRoomIdForRetry(null);
+    lastCommittedFormSnapshotRef.current = null;
     try {
       const res = await roomApi.getRoomById(roomId, controller.signal);
       if (res.success && !controller.signal.aborted && detailRequestRef.current === controller) {
@@ -169,14 +213,61 @@ export const AdminPage: React.FC = () => {
 
   // Close & Reset Form
   const handleCloseForm = () => {
+    if (isSubmitting || isUploadingImages) return;
+    uploadRequestRef.current?.abort();
+    uploadRequestRef.current = null;
     setIsFormOpen(false);
+    setFormMode('create');
     setEditingRoomId(null);
     setEditingRoomStatus(null);
     setFormData(initialFormValues);
     setFormErrors({});
+    setPendingImageFiles([]);
+    setIsUploadingImages(false);
+    setImageUploadError(null);
+    setCreatedRoomIdForRetry(null);
+    lastCommittedFormSnapshotRef.current = null;
     const trigger = formTriggerRef.current;
     formTriggerRef.current = null;
     window.requestAnimationFrame(() => trigger?.focus());
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files) return;
+    const selected = Array.from(e.target.files);
+    setImageUploadError(null);
+
+    const combined = [...pendingImageFiles, ...selected];
+    if (combined.length > MAX_ROOM_IMAGE_FILES) {
+      setImageUploadError(
+        `Số lượng file vượt quá giới hạn cho phép (tối đa ${MAX_ROOM_IMAGE_FILES} file)`,
+      );
+      e.target.value = '';
+      return;
+    }
+
+    for (const file of selected) {
+      if (!ALLOWED_IMAGE_MIME_TYPES.includes(file.type)) {
+        setImageUploadError('Chỉ chấp nhận các định dạng ảnh JPEG, PNG, WebP');
+        e.target.value = '';
+        return;
+      }
+      if (file.size > MAX_ROOM_IMAGE_SIZE_BYTES) {
+        setImageUploadError(
+          `Kích thước file "${file.name}" vượt quá giới hạn cho phép (tối đa 5MB)`,
+        );
+        e.target.value = '';
+        return;
+      }
+    }
+
+    setPendingImageFiles(combined);
+    e.target.value = '';
+  };
+
+  const handleRemovePendingFile = (indexToRemove: number) => {
+    setPendingImageFiles((prev) => prev.filter((_, idx) => idx !== indexToRemove));
+    setImageUploadError(null);
   };
 
   // Form field handlers
@@ -318,7 +409,14 @@ export const AdminPage: React.FC = () => {
       return;
     }
 
+    if (isSubmitting || isUploadingImages) return;
+
+    const isCreateFlow = formMode === 'create';
+    let targetRoomId: string | null = isCreateFlow ? createdRoomIdForRetry : editingRoomId;
+
     setIsSubmitting(true);
+    setImageUploadError(null);
+
     try {
       const normalizedDescription =
         formData.description.trim() === '' ? null : formData.description.trim();
@@ -327,35 +425,45 @@ export const AdminPage: React.FC = () => {
         isPrimary: img.isPrimary,
       }));
 
-      if (editingRoomId) {
-        await adminRoomApi.updateRoom(editingRoomId, {
-          name: trimmedName,
-          description: normalizedDescription,
-          capacity: capacityNum,
-          pricePerHour: priceStr,
-          amenityIds: formData.amenityIds,
-          images: payloadImages,
-        });
+      const currentFormSnapshot = JSON.stringify({
+        name: trimmedName,
+        description: normalizedDescription,
+        capacity: capacityNum,
+        pricePerHour: priceStr,
+        amenityIds: [...formData.amenityIds].sort(),
+        images: payloadImages,
+      });
 
-        setSuccessMessage('Cập nhật thông tin phòng thành công!');
-        handleCloseForm();
-        fetchRooms(currentPage);
-      } else {
-        await adminRoomApi.createRoom({
-          name: trimmedName,
-          description: normalizedDescription,
-          capacity: capacityNum,
-          pricePerHour: priceStr,
-          amenityIds: formData.amenityIds,
-          images: payloadImages,
-        });
+      const isMetadataCommitted =
+        targetRoomId !== null && lastCommittedFormSnapshotRef.current === currentFormSnapshot;
 
-        setSuccessMessage('Tạo phòng mới thành công!');
-        handleCloseForm();
-        setCurrentPage(1);
-        fetchRooms(1);
+      if (!isMetadataCommitted) {
+        if (targetRoomId) {
+          await adminRoomApi.updateRoom(targetRoomId, {
+            name: trimmedName,
+            description: normalizedDescription,
+            capacity: capacityNum,
+            pricePerHour: priceStr,
+            amenityIds: formData.amenityIds,
+            images: payloadImages,
+          });
+          lastCommittedFormSnapshotRef.current = currentFormSnapshot;
+        } else {
+          const createRes = await adminRoomApi.createRoom({
+            name: trimmedName,
+            description: normalizedDescription,
+            capacity: capacityNum,
+            pricePerHour: priceStr,
+            amenityIds: formData.amenityIds,
+            images: payloadImages,
+          });
+          targetRoomId = createRes.data.id;
+          setCreatedRoomIdForRetry(createRes.data.id);
+          lastCommittedFormSnapshotRef.current = currentFormSnapshot;
+        }
       }
     } catch (err: any) {
+      setIsSubmitting(false);
       const serverDetails = err.response?.data?.details;
       const serverMessage = err.response?.data?.message || 'Đã có lỗi xảy ra khi lưu phòng.';
       const mapped: AdminFormErrors = { general: serverMessage };
@@ -374,8 +482,60 @@ export const AdminPage: React.FC = () => {
         }
       }
       setFormErrors(mapped);
+      return;
     } finally {
       setIsSubmitting(false);
+    }
+
+    // If no pending image files to upload, complete immediately
+    if (!targetRoomId || pendingImageFiles.length === 0) {
+      setSuccessMessage(
+        isCreateFlow ? 'Tạo phòng mới thành công!' : 'Cập nhật thông tin phòng thành công!',
+      );
+      handleCloseForm();
+      if (isCreateFlow) {
+        setCurrentPage(1);
+        fetchRooms(1);
+      } else {
+        fetchRooms(currentPage);
+      }
+      return;
+    }
+
+    // Upload pending image files
+    setIsUploadingImages(true);
+    uploadRequestRef.current?.abort();
+    const uploadController = new AbortController();
+    uploadRequestRef.current = uploadController;
+
+    try {
+      await adminRoomApi.uploadRoomImages(targetRoomId, pendingImageFiles, uploadController.signal);
+      if (uploadController.signal.aborted || uploadRequestRef.current !== uploadController) return;
+
+      setPendingImageFiles([]);
+      setSuccessMessage(
+        isCreateFlow ? 'Tạo phòng mới thành công!' : 'Cập nhật thông tin phòng thành công!',
+      );
+      handleCloseForm();
+      if (isCreateFlow) {
+        setCurrentPage(1);
+        fetchRooms(1);
+      } else {
+        fetchRooms(currentPage);
+      }
+    } catch (err: any) {
+      if (uploadController.signal.aborted || uploadRequestRef.current !== uploadController) return;
+      const serverMessage =
+        err.response?.data?.message || 'Không thể tải ảnh lên. Vui lòng thử lại.';
+      setImageUploadError(serverMessage);
+      if (isCreateFlow && targetRoomId) {
+        setCreatedRoomIdForRetry(targetRoomId);
+      }
+    } finally {
+      if (uploadRequestRef.current === uploadController) {
+        uploadRequestRef.current = null;
+        setIsUploadingImages(false);
+      }
     }
   };
 
@@ -594,7 +754,7 @@ export const AdminPage: React.FC = () => {
               type="button"
               className="btn-close"
               onClick={handleCloseForm}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isUploadingImages}
               aria-label="Đóng biểu mẫu phòng"
             >
               ✕
@@ -633,7 +793,7 @@ export const AdminPage: React.FC = () => {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} noValidate aria-busy={isSubmitting}>
+          <form onSubmit={handleSubmit} noValidate aria-busy={isSubmitting || isUploadingImages}>
             {/* Name */}
             <div className="form-group">
               <label htmlFor="room-name" className="form-label">
@@ -648,7 +808,7 @@ export const AdminPage: React.FC = () => {
                 onChange={handleInputChange}
                 placeholder="Ví dụ: Phòng Họp Sáng Tạo A"
                 maxLength={191}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploadingImages}
                 aria-invalid={Boolean(formErrors.name)}
                 aria-describedby={formErrors.name ? 'error-name' : undefined}
               />
@@ -672,7 +832,7 @@ export const AdminPage: React.FC = () => {
                 onChange={handleInputChange}
                 rows={3}
                 placeholder="Mô tả các đặc điểm nổi bật, ánh sáng, thiết bị..."
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploadingImages}
                 aria-invalid={Boolean(formErrors.description)}
                 aria-describedby={formErrors.description ? 'error-description' : undefined}
               />
@@ -698,7 +858,7 @@ export const AdminPage: React.FC = () => {
                   value={formData.capacity}
                   onChange={handleInputChange}
                   placeholder="Ví dụ: 8"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isUploadingImages}
                   aria-invalid={Boolean(formErrors.capacity)}
                   aria-describedby={formErrors.capacity ? 'error-capacity' : undefined}
                 />
@@ -721,7 +881,7 @@ export const AdminPage: React.FC = () => {
                   value={formData.pricePerHour}
                   onChange={handleInputChange}
                   placeholder="Ví dụ: 150000.00"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isUploadingImages}
                   aria-invalid={Boolean(formErrors.pricePerHour)}
                   aria-describedby={formErrors.pricePerHour ? 'error-pricePerHour' : undefined}
                 />
@@ -774,7 +934,12 @@ export const AdminPage: React.FC = () => {
                         className="amenity-checkbox"
                         checked={formData.amenityIds.includes(amenity.id)}
                         onChange={() => handleAmenityToggle(amenity.id)}
-                        disabled={isSubmitting || isLoadingAmenities || Boolean(amenitiesError)}
+                        disabled={
+                          isSubmitting ||
+                          isUploadingImages ||
+                          isLoadingAmenities ||
+                          Boolean(amenitiesError)
+                        }
                       />
                       <span>{amenity.name}</span>
                     </label>
@@ -800,7 +965,7 @@ export const AdminPage: React.FC = () => {
                   type="button"
                   className="btn btn-outline btn-sm"
                   onClick={handleAddImage}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isUploadingImages}
                   data-testid="admin-add-image-btn"
                 >
                   + Thêm URL ảnh
@@ -840,7 +1005,7 @@ export const AdminPage: React.FC = () => {
                       placeholder="https://example.com/image.jpg"
                       value={img.imageUrl}
                       onChange={(e) => handleImageUrlChange(idx, e.target.value)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isUploadingImages}
                       maxLength={500}
                       aria-invalid={Boolean(formErrors.images)}
                       aria-describedby={formErrors.images ? 'error-images' : undefined}
@@ -852,7 +1017,7 @@ export const AdminPage: React.FC = () => {
                         name="primaryImage"
                         checked={img.isPrimary}
                         onChange={() => handleSetPrimaryImage(idx)}
-                        disabled={isSubmitting}
+                        disabled={isSubmitting || isUploadingImages}
                         data-testid={`admin-primary-radio-${idx}`}
                       />
                       <span>Ảnh chính</span>
@@ -861,7 +1026,7 @@ export const AdminPage: React.FC = () => {
                       type="button"
                       className="btn btn-danger-outline btn-sm"
                       onClick={() => handleRemoveImage(idx)}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || isUploadingImages}
                       data-testid={`admin-remove-image-${idx}`}
                     >
                       Xóa
@@ -871,23 +1036,117 @@ export const AdminPage: React.FC = () => {
               </div>
             </div>
 
+            {/* Direct File Upload Section (Cloudinary) */}
+            <div className="form-group admin-upload-section">
+              <div className="admin-upload-header">
+                <label htmlFor="room-image-files" className="form-label" style={{ margin: 0 }}>
+                  Tải ảnh trực tiếp (Cloudinary)
+                </label>
+              </div>
+              <p className="admin-upload-helptext">
+                Hỗ trợ JPEG, PNG, WebP. Tối đa 10 ảnh, dung lượng tối đa 5MB mỗi ảnh.
+              </p>
+
+              {imageUploadError && (
+                <div
+                  className="alert alert-danger"
+                  role="alert"
+                  id="error-image-upload"
+                  data-testid="image-upload-error"
+                  style={{ marginBottom: '0.75rem' }}
+                >
+                  <span>{imageUploadError}</span>
+                </div>
+              )}
+
+              <div className="admin-file-input-wrapper">
+                <input
+                  id="room-image-files"
+                  type="file"
+                  multiple
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={handleFileSelect}
+                  disabled={isSubmitting || isUploadingImages}
+                  aria-describedby={imageUploadError ? 'error-image-upload' : undefined}
+                  data-testid="admin-room-files-input"
+                  className="admin-file-input"
+                />
+              </div>
+
+              {/* Selected pending files list */}
+              {pendingImageFiles.length > 0 && (
+                <div className="admin-pending-files-list" data-testid="admin-pending-files-list">
+                  <p className="admin-pending-files-count">
+                    Đã chọn {pendingImageFiles.length} file chờ tải lên:
+                  </p>
+                  <ul className="admin-pending-files-items">
+                    {pendingImageFiles.map((file, idx) => (
+                      <li
+                        key={`${file.name}-${idx}`}
+                        className="admin-pending-file-item"
+                        data-testid={`admin-pending-file-${idx}`}
+                      >
+                        <span className="admin-pending-file-name" title={file.name}>
+                          📷 {file.name}
+                        </span>
+                        <span className="admin-pending-file-size">
+                          ({(file.size / 1024 / 1024).toFixed(2)} MB)
+                        </span>
+                        <button
+                          type="button"
+                          className="btn-link admin-remove-file-btn"
+                          onClick={() => handleRemovePendingFile(idx)}
+                          disabled={isSubmitting || isUploadingImages}
+                          aria-label={`Xóa file ${file.name}`}
+                          data-testid={`admin-remove-file-${idx}`}
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {/* Upload loading state indicator */}
+              {isUploadingImages && (
+                <div
+                  className="admin-uploading-indicator"
+                  aria-live="polite"
+                  data-testid="uploading-indicator"
+                >
+                  <span>Đang tải ảnh...</span>
+                </div>
+              )}
+            </div>
+
             {/* Form Action Buttons */}
             <div className="admin-form-actions">
               <button
                 type="button"
                 className="btn btn-outline"
                 onClick={handleCloseForm}
-                disabled={isSubmitting}
+                disabled={isSubmitting || isUploadingImages}
               >
                 Hủy
               </button>
               <button
                 type="submit"
                 className="btn btn-primary"
-                disabled={isSubmitting || isLoadingAmenities || Boolean(amenitiesError)}
+                disabled={
+                  isSubmitting || isUploadingImages || isLoadingAmenities || Boolean(amenitiesError)
+                }
                 data-testid="admin-submit-room-btn"
               >
-                {isSubmitting ? 'Đang lưu...' : editingRoomId ? 'Lưu thay đổi' : 'Tạo phòng'}
+                {isUploadingImages
+                  ? 'Đang tải ảnh...'
+                  : isSubmitting
+                    ? 'Đang lưu...'
+                    : imageUploadError && pendingImageFiles.length > 0
+                      ? 'Thử lại tải ảnh'
+                      : editingRoomId
+                        ? 'Lưu thay đổi'
+                        : 'Tạo phòng'}
               </button>
             </div>
           </form>

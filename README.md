@@ -39,6 +39,17 @@ Tạo file `.env` cho backend:
 cp apps/server/.env.example apps/server/.env
 ```
 
+Cấu hình các biến môi trường cần thiết trong `apps/server/.env`:
+
+- `PORT`: Cổng máy chủ backend (mặc định `5000`).
+- `DATABASE_URL`: Chuỗi kết nối MySQL (Prisma ORM).
+- `JWT_SECRET`: Khóa bí mật ký xác thực JWT (tối thiểu 32 ký tự).
+- `JWT_EXPIRES_IN`: Thời gian sống của Access Token (ví dụ `1d`, `15m`).
+- `CLIENT_ORIGIN`: URL frontend được phép truy cập CORS (ví dụ `http://localhost:5173`).
+- `CLOUDINARY_CLOUD_NAME`: Tên cloud tài khoản Cloudinary lưu trữ ảnh phòng.
+- `CLOUDINARY_API_KEY`: API Key truy cập Cloudinary API.
+- `CLOUDINARY_API_SECRET`: API Secret xác thực Cloudinary API.
+
 ### 3. Khởi chạy dự án ở chế độ Development
 
 - **Chạy cả Frontend và Backend song song (Khuyến nghị):**
@@ -364,7 +375,7 @@ Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh s�
 - **Transaction & Đồng bộ dữ liệu**:
   - Thực thi trong một Database Transaction duy nhất.
   - Kiểm tra tính tồn tại của tất cả tiện ích trong `amenityIds`; nếu thiếu ID ném lỗi `400 INVALID_AMENITY_IDS` kèm danh sách `missingIds` và rollback toàn bộ.
-  - Lưu ảnh URL thủ công với `public_id = null` (tính năng upload file lên Cloudinary sẽ được mở rộng trong Task 2009).
+  - Lưu ảnh URL thủ công với `public_id = null`.
 - **Phản hồi `201 Created`**: Trả về `RoomDetail` hoàn chỉnh.
 
 ### 3. Cập nhật một phần phòng: `PATCH /api/v1/admin/rooms/:id`
@@ -376,12 +387,33 @@ Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh s�
   - Từ chối body rỗng (`{}`) với `400 VALIDATION_ERROR`.
   - Quy tắc Partial Update & Quan hệ:
     - Các trường scalar hoặc relation bị bỏ qua (omitted) thì giữ nguyên dữ liệu hiện tại.
-    - Nếu gửi `amenityIds` hoặc `images`, mảng mới sẽ **thay thế toàn bộ** tập hợp hiện tại của phòng. Gửi mảng rỗng `[]` sẽ xóa toàn bộ liên kết tiện ích hoặc ảnh tương ứng.
+    - Nếu gửi `amenityIds` hoặc `images`, mảng mới sẽ **thay thế toàn bộ** tập hợp hiện tại của phòng. Gửi mảng rỗng `[]` sẽ xóa toàn bộ liên kết tiện ích hoặc ảnh tương ứng. Nếu cập nhật danh sách ảnh loại bỏ ảnh Cloudinary cũ, hệ thống tự động xóa tài nguyên tương ứng trên Cloudinary sau khi commit transaction thành công.
 - **Xử lý lỗi**:
   - `404 ROOM_NOT_FOUND`: Nếu phòng với `id` cung cấp không tồn tại.
   - `400 INVALID_AMENITY_IDS`: Nếu có bất kỳ amenity ID nào không tồn tại trong cơ sở dữ liệu.
   - Giao dịch thực thi nguyên tử (atomic transaction): nếu xảy ra bất kỳ lỗi nào, toàn bộ thay đổi scalar và relations đều bị rollback.
 - **Phản hồi `200 OK`**: Trả về `RoomDetail` sau cập nhật.
+
+### 4. Tải ảnh trực tiếp lên Cloudinary: `POST /api/v1/admin/rooms/:id/images`
+
+- **Quyền truy cập**: `ADMIN`.
+- **Path Parameter**: `id` là UUID hợp lệ của phòng.
+- **Request Format (`multipart/form-data`)**:
+  - Field name: `images` (tải lên 1 hoặc nhiều file ảnh).
+  - Giới hạn: Tối đa 10 files mỗi lần gửi, dung lượng tối đa 5MB mỗi file.
+  - Định dạng hỗ trợ: JPEG (`image/jpeg`, `image/jpg`), PNG (`image/png`), WebP (`image/webp`).
+  - Kiểm tra an toàn kép (Dual Validation): Multer filter kiểm tra MIME type và Service kiểm tra **Magic Bytes (File Signature)** chống giả mạo đuôi mở rộng.
+- **Lưu trữ & Transaction**:
+  - Upload tuần tự từng ảnh lên Cloudinary tại folder `co-space/rooms/<roomId>`.
+  - Khóa hàng MySQL `SELECT id FROM rooms WHERE id = ? FOR UPDATE` trong Prisma transaction để chống race condition khi bổ sung ảnh đồng thời.
+  - Lưu bản ghi vào bảng `room_images` với `room_id`, `image_url` (`secure_url`), `public_id`, `is_primary`. Nếu phòng chưa có ảnh, file đầu tiên được tự động đánh dấu là `is_primary: true`.
+  - Bảo mật dữ liệu: Public API response (`RoomDetailDto`) chỉ trả về `id`, `imageUrl`, `isPrimary` và **tuyệt đối không bao giờ để lộ `public_id`**.
+  - Cơ chế Rollback bù (Compensating Cleanup): Nếu lưu database thất bại hoặc request lỗi giữa chừng, hệ thống tự động gọi dọn dẹp các asset vừa upload lên Cloudinary (best-effort với cơ chế log sanitized khi nhà cung cấp xảy ra lỗi) để tránh lưu trữ file mồ côi.
+- **Xử lý lỗi**:
+  - `400 VALIDATION_ERROR`: Thiếu file upload, sai định dạng file hoặc sai magic bytes.
+  - `404 ROOM_NOT_FOUND`: Nếu phòng không tồn tại.
+  - `413 FILE_TOO_LARGE`: Nếu bất kỳ file nào vượt quá 5MB.
+- **Phản hồi `201 Created`**: Trả về `RoomDetail` hoàn chỉnh chứa danh sách ảnh đã được cập nhật.
 
 ---
 

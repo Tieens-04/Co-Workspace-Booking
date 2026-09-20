@@ -54,3 +54,12 @@ it('accepts a separate test schema', () => {
   const url = 'mysql://localhost/cospace_test';
   expect(validateTestDatabase(url, 'mysql://localhost/cospace')).toBe(url);
 });
+
+it.each(['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'])(
+  'fails startup when %s is missing or empty',
+  async (varName) => {
+    vi.stubEnv(varName, '');
+    vi.resetModules();
+    await expect(import('../config/env.config.js')).rejects.toThrow(varName);
+  },
+);
