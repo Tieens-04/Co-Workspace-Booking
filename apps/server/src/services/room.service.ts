@@ -1,3 +1,4 @@
+import { RoomStatus } from '@prisma/client';
 import {
   RoomRepositoryContract,
   roomRepository,
@@ -12,8 +13,11 @@ import {
   RoomListItem,
   RoomImageDto,
   AmenityDto,
+  RoomAvailabilityResponseData,
 } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
+import { getDayBounds, generateAvailabilitySlots } from '../utils/room-availability.util.js';
+import { BUSINESS_TIMEZONE } from '../utils/booking-code.util.js';
 
 export function formatPrice(price: unknown): string {
   if (
@@ -121,6 +125,32 @@ export class RoomService {
       status: room.status,
       images: mapImages(room.images),
       amenities: mapAmenities(room.amenities),
+    };
+  }
+
+  async getAvailability(id: string, date: string): Promise<RoomAvailabilityResponseData> {
+    const { dayStart, dayEnd } = getDayBounds(date);
+
+    const room = await this.roomRepo.findAvailabilityById(id, dayStart, dayEnd);
+    if (!room) {
+      throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
+    }
+
+    if (room.status === RoomStatus.MAINTENANCE) {
+      throw new AppError(
+        'ROOM_NOT_AVAILABLE',
+        'Phòng đang trong trạng thái bảo trì, không thể kiểm tra lịch trống',
+        409,
+      );
+    }
+
+    const slots = generateAvailabilitySlots(dayStart, dayEnd, room.bookings);
+
+    return {
+      roomId: room.id,
+      date,
+      timezone: BUSINESS_TIMEZONE,
+      slots,
     };
   }
 }

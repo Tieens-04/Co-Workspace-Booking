@@ -139,12 +139,26 @@ export interface UpdateRoomRepoResult {
   removedPublicIds: string[];
 }
 
+export interface RoomAvailabilityRecord {
+  id: string;
+  status: RoomStatus;
+  bookings: Array<{
+    startTime: Date;
+    endTime: Date;
+  }>;
+}
+
 export interface RoomRepositoryContract {
   findManyAndCount(filter: FindRoomsFilter): Promise<[number, RoomListRecord[]]>;
   findById(id: string): Promise<RoomDetailRecord | null>;
   createWithRelations(data: CreateRoomRepoInput): Promise<RoomDetailRecord>;
   updateWithRelations(id: string, data: UpdateRoomRepoInput): Promise<UpdateRoomRepoResult>;
   appendImages(id: string, images: AppendRoomImageItem[]): Promise<RoomDetailRecord>;
+  findAvailabilityById(
+    id: string,
+    dayStart: Date,
+    dayEnd: Date,
+  ): Promise<RoomAvailabilityRecord | null>;
 }
 
 export class RoomRepository implements RoomRepositoryContract {
@@ -196,6 +210,31 @@ export class RoomRepository implements RoomRepositoryContract {
     return prisma.room.findUnique({
       where: { id },
       select: roomDetailSelect,
+    });
+  }
+
+  async findAvailabilityById(
+    id: string,
+    dayStart: Date,
+    dayEnd: Date,
+  ): Promise<RoomAvailabilityRecord | null> {
+    return prisma.room.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        status: true,
+        bookings: {
+          where: {
+            status: { in: [...BLOCKING_BOOKING_STATUSES] },
+            startTime: { lt: dayEnd },
+            endTime: { gt: dayStart },
+          },
+          select: {
+            startTime: true,
+            endTime: true,
+          },
+        },
+      },
     });
   }
 

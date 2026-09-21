@@ -90,5 +90,34 @@ export const getRoomByIdParamsSchema = z
   })
   .strict();
 
+export const isValidCalendarDate = (val: string): boolean => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(val)) {
+    return false;
+  }
+  const [yStr, mStr, dStr] = val.split('-');
+  const year = Number(yStr);
+  const month = Number(mStr);
+  const day = Number(dStr);
+
+  if (month < 1 || month > 12) {
+    return false;
+  }
+
+  const isLeap = (year % 4 === 0 && year % 100 !== 0) || year % 400 === 0;
+  const daysInMonth = [31, isLeap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
+  return day >= 1 && day <= daysInMonth[month - 1];
+};
+
+export const getRoomAvailabilityQuerySchema = z
+  .object({
+    date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'date phải có định dạng YYYY-MM-DD')
+      .refine(isValidCalendarDate, 'date phải là ngày thực tế hợp lệ'),
+  })
+  .strict();
+
 export type GetRoomsQueryInput = z.infer<typeof getRoomsQuerySchema>;
 export type GetRoomByIdParamsInput = z.infer<typeof getRoomByIdParamsSchema>;
+export type GetRoomAvailabilityQueryInput = z.infer<typeof getRoomAvailabilityQuerySchema>;

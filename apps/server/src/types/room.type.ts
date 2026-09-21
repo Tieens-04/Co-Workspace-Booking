@@ -54,3 +54,18 @@ export interface FindRoomsFilter {
   maxPrice?: string;
   amenityIds?: string[];
 }
+
+export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';
+
+export interface RoomAvailabilitySlotDto {
+  startTime: string;
+  endTime: string;
+  status: RoomSlotStatus;
+}
+
+export interface RoomAvailabilityResponseData {
+  roomId: string;
+  date: string;
+  timezone: string;
+  slots: RoomAvailabilitySlotDto[];
+}

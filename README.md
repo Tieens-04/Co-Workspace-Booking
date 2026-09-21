@@ -317,7 +317,54 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
 }
 ```
 
-### 3. Danh mục tiện ích: `GET /api/v1/amenities`
+### 3. Kiểm tra lịch trống của phòng: `GET /api/v1/rooms/:id/availability`
+
+- **Quyền truy cập**: Công khai (không yêu cầu xác thực).
+- **Path Parameters**:
+  - `id`: UUID hợp lệ của phòng. Nếu không đúng định dạng UUID, trả `400 VALIDATION_ERROR`.
+- **Query Parameters**:
+  - `date` (bắt buộc): Chuỗi ngày theo định dạng `YYYY-MM-DD`. Bắt buộc phải là ngày lịch thực tế hợp lệ (bao gồm kiểm tra năm nhuận). Bất kỳ query parameter nào ngoài danh sách cho phép đều bị từ chối với `400 VALIDATION_ERROR`.
+- **Hành vi & Dữ liệu trả về**:
+  - Trả về danh sách **48 slot 30 phút liên tiếp**, bao phủ trọn vẹn 24 giờ của ngày yêu cầu theo múi giờ nghiệp vụ `Asia/Ho_Chi_Minh` (`+07:00`) từ `00:00` đến `24:00` (ngày kế tiếp).
+  - Trạng thái từng slot là `AVAILABLE` hoặc `BOOKED`.
+  - **Ý nghĩa trạng thái**: Trạng thái `AVAILABLE` thể hiện slot hiện tại chưa có booking blocking tại thời điểm truy vấn. Trạng thái này không đóng vai trò khóa giữ chỗ (lock/reservation) và không đồng nghĩa với việc một slot 30 phút đơn lẻ có thể tạo booking độc lập (các quy tắc nghiệp vụ khi đặt phòng như thời lượng tối thiểu 1 giờ, tối đa 8 giờ, lead time tối thiểu 30 phút vẫn do API tạo booking kiểm soát và quyết định).
+  - **Thuật toán Overlap**: Một slot mang trạng thái `BOOKED` khi tồn tại booking có trạng thái thuộc danh sách chặn (`CONFIRMED`) giao với slot:
+    $$\text{existing.startTime} < \text{slot.endTime} \quad\land\quad \text{existing.endTime} > \text{slot.startTime}$$
+  - **Quy tắc chạm biên (Boundary Touching)**: Không bị tính là trùng lặp. Ví dụ booking kết thúc lúc `10:00` và slot bắt đầu lúc `10:00` thì slot đó vẫn là `AVAILABLE`.
+  - Các booking có trạng thái khác (`CANCELLED`, `COMPLETED`, `NO_SHOW`) hoặc booking của phòng khác không làm ảnh hưởng trạng thái slot.
+  - **Bảo mật dữ liệu**: API chỉ trả về mảng slot với mốc thời gian ISO 8601 UTC và trạng thái, không làm lộ bất kỳ thông tin cá nhân, mã đặt chỗ hay định danh booking nào.
+- **Xử lý lỗi**:
+  - `400 VALIDATION_ERROR`: Thiếu `date`, sai định dạng `YYYY-MM-DD`, ngày không hợp lệ trên lịch (ví dụ `2026-02-29`, `2026-04-31`), ID phòng không phải UUID, hoặc truyền tham số truy vấn ngoài danh sách.
+  - `404 ROOM_NOT_FOUND`: Phòng không tồn tại trong hệ thống.
+  - `409 ROOM_NOT_AVAILABLE`: Phòng đang ở trạng thái bảo trì (`MAINTENANCE`).
+
+**Ví dụ phản hồi `200 OK`:**
+
+```json
+{
+  "success": true,
+  "message": "Lấy thông tin lịch trống của phòng thành công",
+  "data": {
+    "roomId": "c1f72922-38ef-46c5-9276-88b1424df94a",
+    "date": "2026-09-21",
+    "timezone": "Asia/Ho_Chi_Minh",
+    "slots": [
+      {
+        "startTime": "2026-09-20T17:00:00.000Z",
+        "endTime": "2026-09-20T17:30:00.000Z",
+        "status": "AVAILABLE"
+      },
+      {
+        "startTime": "2026-09-20T17:30:00.000Z",
+        "endTime": "2026-09-20T18:00:00.000Z",
+        "status": "AVAILABLE"
+      }
+    ]
+  }
+}
+```
+
+### 4. Danh mục tiện ích: `GET /api/v1/amenities`
 
 - **Quyền truy cập**: Công khai (không yêu cầu xác thực).
 - **Tham số truy vấn (Query Parameters)**: Không nhận bất kỳ query parameter nào. Bất kỳ query parameter nào được truyền vào đều bị từ chối với `400 VALIDATION_ERROR`.
