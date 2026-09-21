@@ -5,6 +5,7 @@ import {
   GetRoomsResponseData,
   RoomDetail,
   Amenity,
+  RoomAvailabilityResponseData,
 } from '../types/room';
 
 export const roomApi = {
@@ -30,6 +31,21 @@ export const roomApi = {
     const response = await apiClient.get<ApiResponse<Amenity[]>>('/amenities', {
       signal,
     });
+    return response.data;
+  },
+
+  getAvailability: async (
+    id: string,
+    date: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResponse<RoomAvailabilityResponseData>> => {
+    const response = await apiClient.get<ApiResponse<RoomAvailabilityResponseData>>(
+      `/rooms/${id}/availability`,
+      {
+        params: { date },
+        signal,
+      },
+    );
     return response.data;
   },
 };

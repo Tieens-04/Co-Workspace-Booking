@@ -1,9 +1,20 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { bookingApi } from '../services/booking.api';
-import { RoomStatus } from '../types/room';
+import { RoomStatus, RoomAvailabilitySlot } from '../types/room';
 import { BookingResult } from '../types/booking';
 import { formatVnd, formatCurrency } from '../utils/format';
+import { useRoomAvailability } from '../hooks/useRoomAvailability';
+import { TimeGrid } from './TimeGrid';
+import {
+  getVietnamTodayString,
+  formatVnDateTimeLocal,
+  parseVnDateTimeLocalToUtc,
+  getCoveredVnDates,
+  calculateEstimatedTotal,
+  validateBookingSelection,
+  checkRangeAvailability,
+} from '../utils/bookingTime';
 
 export interface BookingFormProps {
   roomId: string;
@@ -31,50 +42,174 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 }) => {
   const location = useLocation();
 
+  const [viewDate, setViewDate] = useState<string>(() => getVietnamTodayString());
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
+  const [selectingStartTime, setSelectingStartTime] = useState<string | null>(null);
   const [note, setNote] = useState<string>('');
   const [errors, setErrors] = useState<BookingFormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [bookingSuccess, setBookingSuccess] = useState<BookingResult | null>(null);
   const [isStaleMaintenance, setIsStaleMaintenance] = useState<boolean>(false);
+  const [hasBookingConflict, setHasBookingConflict] = useState<boolean>(false);
+  const [currentMs, setCurrentMs] = useState<number>(() => Date.now());
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // Periodic clock update to re-evaluate lead time / validity
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentMs(Date.now());
+    }, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Compute parsed UTC instants from wall-clock input values
+  const startUtc = useMemo(() => parseVnDateTimeLocalToUtc(startTime), [startTime]);
+  const endUtc = useMemo(() => parseVnDateTimeLocalToUtc(endTime), [endTime]);
+
+  // Compute covered Vietnam dates for the selection (up to 2 dates if overnight)
+  const coveredDates = useMemo(() => {
+    if (startUtc && endUtc && endUtc > startUtc) {
+      return getCoveredVnDates(startUtc, endUtc);
+    }
+    return [viewDate];
+  }, [startUtc, endUtc, viewDate]);
+
+  // Dates to load: always include viewDate and any covered dates from selection
+  const datesToLoad = useMemo(() => {
+    return Array.from(new Set([viewDate, ...coveredDates]));
+  }, [viewDate, coveredDates]);
+
+  // Enable availability fetch only for active customer form with available room
+  const isAvailabilityEnabled =
+    isAuthenticated && userRole !== 'ADMIN' && roomStatus === 'AVAILABLE' && !isStaleMaintenance;
+
+  const availability = useRoomAvailability(roomId, datesToLoad, isAvailabilityEnabled);
+
+  // Combine all loaded slots across covered dates. If any covered date is not loaded yet, return null.
+  const allLoadedCoveredSlots = useMemo(() => {
+    const slots: RoomAvailabilitySlot[] = [];
+    for (const d of coveredDates) {
+      const daySlots = availability.slotsByDate[d];
+      if (daySlots && daySlots.length > 0) {
+        slots.push(...daySlots);
+      } else {
+        return null;
+      }
+    }
+    return slots;
+  }, [coveredDates, availability.slotsByDate]);
+
+  // F2 & N2: Derive selection validity from shared validator, clock, conflict status, and slot availability
+  const isSelectionValid = useMemo(() => {
+    if (!startUtc || !endUtc || endUtc <= startUtc) return false;
+    if (hasBookingConflict) return false;
+    if (availability.loading || Boolean(availability.error)) return false;
+    const timeValidation = validateBookingSelection(startUtc, endUtc, new Date(currentMs));
+    if (!timeValidation.isValid) return false;
+    if (!allLoadedCoveredSlots) return false;
+    const rangeCheck = checkRangeAvailability(startUtc, endUtc, allLoadedCoveredSlots);
+    return rangeCheck.isAvailable;
+  }, [
+    startUtc,
+    endUtc,
+    currentMs,
+    allLoadedCoveredSlots,
+    hasBookingConflict,
+    availability.loading,
+    availability.error,
+  ]);
+
   useEffect(() => {
     // Reset form state when roomId changes
+    setViewDate(getVietnamTodayString());
     setStartTime('');
     setEndTime('');
+    setSelectingStartTime(null);
     setNote('');
     setErrors({});
     setIsSubmitting(false);
     setBookingSuccess(null);
     setIsStaleMaintenance(false);
+    setHasBookingConflict(false);
 
     return () => {
       abortControllerRef.current?.abort();
     };
   }, [roomId]);
 
-  // Compute preview for duration and total amount
+  // Handle date picker change for viewing grid
+  const handleViewDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    setViewDate(newDate);
+    setStartTime('');
+    setEndTime('');
+    setSelectingStartTime(null);
+    setErrors({});
+    setHasBookingConflict(false);
+  };
+
+  // Handle manual start time input change
+  const handleStartTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setStartTime(val);
+    setSelectingStartTime(null);
+    setHasBookingConflict(false);
+    if (errors.startTime) setErrors((prev) => ({ ...prev, startTime: undefined }));
+
+    const datePart = val.split('T')[0];
+    if (/^\d{4}-\d{2}-\d{2}$/.test(datePart) && datePart !== viewDate) {
+      setViewDate(datePart);
+    }
+  };
+
+  // Handle manual end time input change
+  const handleEndTimeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value;
+    setEndTime(val);
+    setSelectingStartTime(null);
+    setHasBookingConflict(false);
+    if (errors.endTime) setErrors((prev) => ({ ...prev, endTime: undefined }));
+  };
+
+  // Grid callbacks
+  const handleSelectStart = useCallback((startIso: string) => {
+    setSelectingStartTime(startIso);
+    const localStart = formatVnDateTimeLocal(new Date(startIso));
+    setStartTime(localStart);
+    setEndTime('');
+    setErrors({});
+    setHasBookingConflict(false);
+  }, []);
+
+  const handleSelectRange = useCallback((startIso: string, endIso: string) => {
+    setSelectingStartTime(null);
+    const localStart = formatVnDateTimeLocal(new Date(startIso));
+    const localEnd = formatVnDateTimeLocal(new Date(endIso));
+    setStartTime(localStart);
+    setEndTime(localEnd);
+    setErrors({});
+    setHasBookingConflict(false);
+  }, []);
+
+  // Compute preview for duration and total amount using decimal-safe rounding
   const preview = useMemo(() => {
-    if (!startTime || !endTime) return null;
-    const start = new Date(startTime);
-    const end = new Date(endTime);
-    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+    if (!isSelectionValid || !startTime || !endTime || !startUtc || !endUtc || endUtc <= startUtc) {
       return null;
     }
-    const durationMinutes = (end.getTime() - start.getTime()) / (60 * 1000);
+
+    const durationMinutes = (endUtc.getTime() - startUtc.getTime()) / (60 * 1000);
     const hours = durationMinutes / 60;
-    const priceNum = Number(pricePerHour);
-    if (Number.isNaN(priceNum)) return null;
-    const estimatedTotal = priceNum * hours;
+    const estimatedTotal = calculateEstimatedTotal(pricePerHour, durationMinutes);
+    if (estimatedTotal === null) return null;
+
     return {
       durationHours: hours,
       durationMinutes,
       estimatedTotal,
     };
-  }, [startTime, endTime, pricePerHour]);
+  }, [isSelectionValid, startTime, endTime, startUtc, endUtc, pricePerHour]);
 
   // If user is guest (not logged in)
   if (!isAuthenticated) {
@@ -111,8 +246,12 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     );
   }
 
-  // If room is in MAINTENANCE status (or backend just reported MAINTENANCE)
-  if (roomStatus === 'MAINTENANCE' || isStaleMaintenance) {
+  // If room is in MAINTENANCE status (or backend just reported MAINTENANCE via GET or POST)
+  if (
+    roomStatus === 'MAINTENANCE' ||
+    isStaleMaintenance ||
+    availability.errorCode === 'ROOM_NOT_AVAILABLE'
+  ) {
     return (
       <section className="card booking-form-card" data-testid="booking-maintenance-box">
         <div className="booking-form-header">
@@ -147,8 +286,13 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             </li>
             <li>
               <strong>Thời gian:</strong>{' '}
-              {new Date(bookingSuccess.startTime).toLocaleString('vi-VN')} –{' '}
-              {new Date(bookingSuccess.endTime).toLocaleString('vi-VN')}
+              {new Date(bookingSuccess.startTime).toLocaleString('vi-VN', {
+                timeZone: 'Asia/Ho_Chi_Minh',
+              })}{' '}
+              –{' '}
+              {new Date(bookingSuccess.endTime).toLocaleString('vi-VN', {
+                timeZone: 'Asia/Ho_Chi_Minh',
+              })}
             </li>
             <li>
               <strong>Tổng tiền:</strong>{' '}
@@ -172,7 +316,9 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             setBookingSuccess(null);
             setStartTime('');
             setEndTime('');
+            setSelectingStartTime(null);
             setNote('');
+            availability.refresh().catch(() => {});
           }}
           data-testid="booking-new-btn"
         >
@@ -182,68 +328,44 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     );
   }
 
-  // Validate form client-side
-  const validateForm = (): boolean => {
-    const newErrors: BookingFormErrors = {};
-    if (!startTime) {
-      newErrors.startTime = 'Vui lòng chọn thời gian bắt đầu';
-    }
-    if (!endTime) {
-      newErrors.endTime = 'Vui lòng chọn thời gian kết thúc';
-    }
-
-    if (startTime && endTime) {
-      const start = new Date(startTime);
-      const end = new Date(endTime);
-
-      if (Number.isNaN(start.getTime())) {
-        newErrors.startTime = 'Thời gian bắt đầu không hợp lệ';
-      }
-      if (Number.isNaN(end.getTime())) {
-        newErrors.endTime = 'Thời gian kết thúc không hợp lệ';
-      }
-
-      if (!newErrors.startTime && !newErrors.endTime) {
-        if (start.getMinutes() % 30 !== 0) {
-          newErrors.startTime = 'Thời gian bắt đầu phải theo mốc 30 phút (ví dụ: 09:00, 09:30)';
-        }
-        if (end.getMinutes() % 30 !== 0) {
-          newErrors.endTime = 'Thời gian kết thúc phải theo mốc 30 phút (ví dụ: 10:00, 10:30)';
-        }
-
-        if (end <= start) {
-          newErrors.endTime = 'Thời gian kết thúc phải sau thời gian bắt đầu';
-        } else {
-          const durationMins = (end.getTime() - start.getTime()) / (60 * 1000);
-          if (durationMins < 60) {
-            newErrors.endTime = 'Thời lượng đặt phòng tối thiểu là 1 giờ';
-          } else if (durationMins > 480) {
-            newErrors.endTime = 'Thời lượng đặt phòng tối đa là 8 giờ';
-          }
-        }
-
-        const now = new Date();
-        if (start <= now) {
-          newErrors.startTime = 'Thời gian bắt đầu không được ở trong quá khứ';
-        } else if (start.getTime() - now.getTime() < 30 * 60 * 1000) {
-          newErrors.startTime = 'Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút';
-        }
-      }
-    }
-
-    if (note && note.trim().length > 500) {
-      newErrors.note = 'Ghi chú không được vượt quá 500 ký tự';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
-    if (!validateForm()) return;
+    if (hasBookingConflict) {
+      setErrors({
+        general:
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+      });
+      return;
+    }
+
+    if (availability.error) {
+      setErrors({
+        general: availability.error || 'Không thể kiểm tra lịch trống của phòng. Vui lòng thử lại.',
+      });
+      return;
+    }
+
+    const validation = validateBookingSelection(startUtc, endUtc, new Date(), note);
+    if (!validation.isValid) {
+      setErrors(validation.errors);
+      return;
+    }
+
+    // Check against currently loaded slots first to avoid unnecessary network request if already known booked
+    if (allLoadedCoveredSlots) {
+      const currentRangeCheck = checkRangeAvailability(startUtc!, endUtc!, allLoadedCoveredSlots);
+      if (!currentRangeCheck.isAvailable) {
+        setHasBookingConflict(true);
+        setErrors({
+          general:
+            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+        });
+        return;
+      }
+    }
+
     if (isSubmitting) return;
 
     setIsSubmitting(true);
@@ -252,8 +374,46 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     abortControllerRef.current = controller;
 
     try {
-      const startIso = new Date(startTime).toISOString();
-      const endIso = new Date(endTime).toISOString();
+      // Refresh availability to check current occupancy before POST
+      const preflight = await availability.refresh();
+      if (controller.signal.aborted || abortControllerRef.current !== controller) return;
+
+      if (!preflight.success) {
+        if (preflight.code === 'ROOM_NOT_AVAILABLE') {
+          setIsStaleMaintenance(true);
+          setErrors({
+            general: preflight.message || 'Phòng vừa được chuyển sang bảo trì, không thể đặt phòng.',
+          });
+          return;
+        }
+        setErrors({
+          general: preflight.message || 'Không thể kiểm tra lịch trống của phòng. Vui lòng thử lại.',
+        });
+        return;
+      }
+
+      // F1 FIX: Re-validate time rules with fresh timestamp after preflight GET and before POST
+      const postValidation = validateBookingSelection(startUtc, endUtc, new Date(), note);
+      if (!postValidation.isValid) {
+        setErrors(postValidation.errors);
+        return;
+      }
+
+      // Check slot availability from freshly fetched slots across all covered dates
+      const allFreshSlots = coveredDates.flatMap((d) => preflight.data?.[d] || []);
+      const rangeCheck = checkRangeAvailability(startUtc!, endUtc!, allFreshSlots);
+
+      if (!rangeCheck.isAvailable) {
+        setHasBookingConflict(true);
+        setErrors({
+          general:
+            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+        });
+        return;
+      }
+
+      const startIso = startUtc!.toISOString();
+      const endIso = endUtc!.toISOString();
 
       const res = await bookingApi.createBooking(
         {
@@ -283,11 +443,21 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           general: message || 'Phòng vừa được chuyển sang bảo trì, không thể đặt phòng.',
         });
       } else if (code === 'BOOKING_CONFLICT') {
+        setHasBookingConflict(true);
         setErrors({
           general:
             message ||
             'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
         });
+        // Refresh availability in background to render newly booked slot as disabled/gray
+        availability
+          .refresh()
+          .then((res) => {
+            if (res.success) {
+              setHasBookingConflict(false);
+            }
+          })
+          .catch(() => {});
       } else if (code === 'VALIDATION_ERROR' && Array.isArray(details) && details.length > 0) {
         const fieldErrors: BookingFormErrors = {};
         for (const item of details) {
@@ -309,6 +479,10 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       }
     }
   };
+
+  const viewDateSlots = availability.slotsByDate[viewDate] || [];
+  const selectedStartIso = isSelectionValid && startUtc ? startUtc.toISOString() : null;
+  const selectedEndIso = isSelectionValid && endUtc ? endUtc.toISOString() : null;
 
   return (
     <section
@@ -333,6 +507,64 @@ export const BookingForm: React.FC<BookingFormProps> = ({
         </div>
       )}
 
+      {/* Date selector for availability grid */}
+      <div className="form-group" style={{ marginBottom: '1rem' }}>
+        <label htmlFor="booking-view-date" className="form-label">
+          Ngày xem lịch <span className="text-muted">(Giờ Việt Nam UTC+7)</span>
+        </label>
+        <input
+          id="booking-view-date"
+          type="date"
+          className="form-control"
+          value={viewDate}
+          onChange={handleViewDateChange}
+          disabled={isSubmitting}
+          data-testid="booking-view-date-input"
+        />
+      </div>
+
+      {/* Availability TimeGrid Component */}
+      {availability.loading && (
+        <div className="time-grid-loading" aria-live="polite" style={{ padding: '1rem 0' }}>
+          <p className="text-muted" style={{ margin: 0 }}>Đang tải lịch trống của phòng...</p>
+        </div>
+      )}
+
+      {!availability.loading && availability.error && (
+        <div className="alert alert-danger" role="alert" style={{ marginBottom: '1rem' }}>
+          <p style={{ margin: '0 0 0.5rem 0' }}>{availability.error}</p>
+          <button
+            type="button"
+            className="btn btn-outline"
+            onClick={() => {
+              availability
+                .refresh()
+                .then((res) => {
+                  if (res.success) {
+                    setHasBookingConflict(false);
+                  }
+                })
+                .catch(() => {});
+            }}
+            data-testid="booking-retry-availability-btn"
+          >
+            Thử lại
+          </button>
+        </div>
+      )}
+
+      {!availability.loading && !availability.error && (
+        <TimeGrid
+          slots={viewDateSlots}
+          selectedStartTime={selectedStartIso}
+          selectedEndTime={selectedEndIso}
+          selectingStartTime={selectingStartTime}
+          onSelectStart={handleSelectStart}
+          onSelectRange={handleSelectRange}
+          disabled={isSubmitting}
+        />
+      )}
+
       <form onSubmit={handleSubmit} noValidate aria-busy={isSubmitting}>
         <div className="admin-form-row">
           <div className="form-group" style={{ flex: 1 }}>
@@ -345,10 +577,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
               step={1800}
               className={`form-control ${errors.startTime ? 'has-error' : ''}`}
               value={startTime}
-              onChange={(e) => {
-                setStartTime(e.target.value);
-                if (errors.startTime) setErrors((prev) => ({ ...prev, startTime: undefined }));
-              }}
+              onChange={handleStartTimeChange}
               disabled={isSubmitting}
               aria-invalid={Boolean(errors.startTime)}
               aria-describedby={errors.startTime ? 'error-booking-start' : undefined}
@@ -371,10 +600,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
               step={1800}
               className={`form-control ${errors.endTime ? 'has-error' : ''}`}
               value={endTime}
-              onChange={(e) => {
-                setEndTime(e.target.value);
-                if (errors.endTime) setErrors((prev) => ({ ...prev, endTime: undefined }));
-              }}
+              onChange={handleEndTimeChange}
               disabled={isSubmitting}
               aria-invalid={Boolean(errors.endTime)}
               aria-describedby={errors.endTime ? 'error-booking-end' : undefined}
@@ -442,7 +668,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           type="submit"
           className="btn btn-primary"
           style={{ width: '100%', marginTop: '0.5rem' }}
-          disabled={isSubmitting}
+          disabled={isSubmitting || hasBookingConflict || Boolean(availability.error)}
           data-testid="booking-submit-btn"
         >
           {isSubmitting ? 'Đang gửi yêu cầu đặt...' : 'Xác nhận đặt phòng'}

@@ -599,6 +599,33 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
 
 ---
 
+### 2. Giao Diện Time-Grid & Đặt Phòng Phía Client (Frontend Time-Grid UI)
+
+Biểu mẫu đặt phòng tại `/rooms/:id` được tích hợp thành phần **Time-Grid** tương tác trực quan dành cho người dùng có vai trò `CUSTOMER` đã đăng nhập:
+
+- **Hiển thị 48 Slot trong ngày (Giờ Việt Nam UTC+7)**:
+  - Cho phép người dùng chọn ngày xem lịch thông qua bộ chọn ngày `booking-view-date-input`.
+  - Tải và kết xuất 48 khung giờ 30 phút liên tục trong ngày theo múi giờ `Asia/Ho_Chi_Minh`.
+- **Trạng thái & Màu sắc các Slot (AC1)**:
+  - **Trống (`AVAILABLE`)**: Ô màu trắng có viền, có thể tương tác click để chọn khoảng giờ.
+  - **Đã đặt (`BOOKED`)**: Ô màu xám (`slot-booked`), mang nhãn _"Đã đặt"_, áp dụng thuộc tính native `disabled`, không thể click hay chọn bằng bàn phím.
+  - **Đã qua giờ / Dưới lead time 30 phút**: Ô màu xám nhạt (`slot-past`), native `disabled`.
+  - **Đang chọn / Đã chọn**: Ô được highlight màu xanh thương hiệu (`slot-selected`) khi nằm trong khoảng `[startTime, endTime)`.
+- **Quy tắc chọn Khung giờ & Đồng bộ Hai chiều (Two-Way Sync - AC2)**:
+  - **Chọn 2 bước**: Click ô đầu tiên để bắt đầu chọn `startTime`, click ô thứ hai để chọn `endTime`.
+  - Không cho phép chọn khoảng thời gian đi xuyên qua slot đã đặt (`BOOKED`).
+  - Ràng buộc thời lượng: Tối thiểu 1 giờ (60 phút) và tối đa 8 giờ (480 phút). Click lại chính ô bắt đầu sẽ hiển thị thông báo hướng dẫn thời lượng tối thiểu 1 giờ.
+  - Đồng bộ hai chiều: Thao tác click trên grid tự động cập nhật hai ô nhập `datetime-local`; ngược lại, việc nhập tay vào các ô thời gian cũng cập nhật highlight trên grid và tự động chuyển ngày xem lịch.
+  - **Hỗ trợ đặt phòng qua nửa đêm (Overnight Booking)**: Khách hàng có thể nhập khoảng giờ xuyên đêm (ví dụ `23:00` đến `01:00` ngày hôm sau). Hệ thống tự động tải và xác thực lịch trống cho cả hai ngày.
+- **Tự tính Tiền Tạm tính (AC3)**:
+  - Giao diện tự động tính thời lượng đặt và tổng tiền ước tính (`preview`) dựa trên `pricePerHour` của phòng và số lượng slot 30 phút.
+  - Áp dụng làm tròn `ROUND_HALF_UP` trên tổng tiền (sử dụng đơn vị integer cents) đảm bảo tính toán đồng nhất với thuật toán Decimal của backend.
+- **Cơ chế Preflight Refresh & Chống Xung đột**:
+  - Trước khi gửi request `POST /api/v1/bookings`, hệ thống tự động tải lại (refresh) trạng thái phòng và lịch trống của các ngày liên quan để phát hiện sớm các slot vừa bị đặt bởi người dùng khác.
+  - Nếu phát hiện xung đột hoặc nhận phản hồi `409 BOOKING_CONFLICT`, biểu mẫu giữ nguyên thông tin đã nhập, hiển thị thông báo lỗi rõ ràng và cập nhật lại lưới hiển thị để slot bận chuyển sang màu xám.
+
+---
+
 ## 📁 Cấu Trúc Thư Mục Backend (Clean Architecture)
 
 ```text

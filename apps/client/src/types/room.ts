@@ -1,4 +1,18 @@
 export type RoomStatus = 'AVAILABLE' | 'MAINTENANCE';
+export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';
+
+export interface RoomAvailabilitySlot {
+  startTime: string;
+  endTime: string;
+  status: RoomSlotStatus;
+}
+
+export interface RoomAvailabilityResponseData {
+  roomId: string;
+  date: string;
+  timezone: string;
+  slots: RoomAvailabilitySlot[];
+}
 
 export interface Amenity {
   id: string;

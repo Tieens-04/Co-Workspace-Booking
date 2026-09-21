@@ -12,6 +12,7 @@ vi.mock('../services/room.api', () => ({
     getRooms: vi.fn(),
     getRoomById: vi.fn(),
     getAmenities: vi.fn(),
+    getAvailability: vi.fn(),
   },
 }));
 
@@ -56,11 +57,37 @@ const mockRoomResponse = (room: RoomDetail = mockRoomDetailData): ApiResponse<Ro
   data: room,
 });
 
+const mockAvailabilityResponse = (
+  date = '2026-10-25',
+  roomId = 'room-101',
+): ApiResponse<any> => ({
+  success: true,
+  message: 'Lấy thông tin lịch trống của phòng thành công',
+  data: {
+    roomId,
+    date,
+    timezone: 'Asia/Ho_Chi_Minh',
+    slots: Array.from({ length: 48 }, (_, i) => {
+      const dayStart = new Date(`${date}T00:00:00.000+07:00`);
+      const slotStart = new Date(dayStart.getTime() + i * 30 * 60 * 1000);
+      const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
+      return {
+        startTime: slotStart.toISOString(),
+        endTime: slotEnd.toISOString(),
+        status: 'AVAILABLE' as const,
+      };
+    }),
+  },
+});
+
 describe('RoomDetailPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
     vi.mocked(roomApi.getRoomById).mockResolvedValue(mockRoomResponse());
+    vi.mocked(roomApi.getAvailability).mockImplementation(async (_id, date) =>
+      mockAvailabilityResponse(date),
+    );
   });
 
   const renderComponent = (
