@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { bookingApi } from '../services/booking.api';
 import { RoomStatus, RoomAvailabilitySlot } from '../types/room';
-import { BookingResult } from '../types/booking';
 import { formatVnd, formatCurrency } from '../utils/format';
 import { useRoomAvailability } from '../hooks/useRoomAvailability';
+import { AuthContext } from '../context/auth-context-base';
 import { TimeGrid } from './TimeGrid';
 import {
   getVietnamTodayString,
@@ -23,6 +23,7 @@ export interface BookingFormProps {
   pricePerHour: string;
   isAuthenticated: boolean;
   userRole?: string | null;
+  userId?: string;
 }
 
 export interface BookingFormErrors {
@@ -39,9 +40,19 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   pricePerHour,
   isAuthenticated,
   userRole,
+  userId,
 }) => {
   const location = useLocation();
+  const navigate = useNavigate();
+  const auth = useContext(AuthContext);
+  const currentUserId = userId || auth?.principal?.id;
 
+  const [phase, setPhase] = useState<'edit' | 'review'>('edit');
+  const [reviewedSnapshot, setReviewedSnapshot] = useState<{
+    durationHours: number;
+    durationMinutes: number;
+    estimatedTotal: string;
+  } | null>(null);
   const [viewDate, setViewDate] = useState<string>(() => getVietnamTodayString());
   const [startTime, setStartTime] = useState<string>('');
   const [endTime, setEndTime] = useState<string>('');
@@ -49,7 +60,6 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   const [note, setNote] = useState<string>('');
   const [errors, setErrors] = useState<BookingFormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
-  const [bookingSuccess, setBookingSuccess] = useState<BookingResult | null>(null);
   const [isStaleMaintenance, setIsStaleMaintenance] = useState<boolean>(false);
   const [hasBookingConflict, setHasBookingConflict] = useState<boolean>(false);
   const [currentMs, setCurrentMs] = useState<number>(() => Date.now());
@@ -130,7 +140,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setNote('');
     setErrors({});
     setIsSubmitting(false);
-    setBookingSuccess(null);
+    setPhase('edit');
+    setReviewedSnapshot(null);
     setIsStaleMaintenance(false);
     setHasBookingConflict(false);
 
@@ -267,68 +278,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     );
   }
 
-  // If booking succeeded, show confirmation view
-  if (bookingSuccess) {
-    return (
-      <section
-        className="card booking-form-card booking-success-container"
-        data-testid="booking-success-view"
-      >
-        <div className="booking-success-box" role="status">
-          <h2 className="booking-success-title">🎉 Đặt phòng thành công!</h2>
-          <p>
-            Mã đặt phòng của bạn là:{' '}
-            <strong data-testid="booking-success-code">{bookingSuccess.bookingCode}</strong>
-          </p>
-          <ul style={{ margin: '0.75rem 0 0.75rem 1.25rem', padding: 0 }}>
-            <li>
-              <strong>Phòng:</strong> {bookingSuccess.room.name || roomName}
-            </li>
-            <li>
-              <strong>Thời gian:</strong>{' '}
-              {new Date(bookingSuccess.startTime).toLocaleString('vi-VN', {
-                timeZone: 'Asia/Ho_Chi_Minh',
-              })}{' '}
-              –{' '}
-              {new Date(bookingSuccess.endTime).toLocaleString('vi-VN', {
-                timeZone: 'Asia/Ho_Chi_Minh',
-              })}
-            </li>
-            <li>
-              <strong>Tổng tiền:</strong>{' '}
-              <span className="price-highlight" data-testid="booking-success-total">
-                {formatCurrency(bookingSuccess.totalAmount)}
-              </span>
-            </li>
-            <li>
-              <strong>Trạng thái đặt:</strong> {bookingSuccess.status} (
-              {bookingSuccess.paymentStatus})
-            </li>
-          </ul>
-          <p style={{ fontSize: '0.875rem', color: '#15803d', margin: '0.5rem 0 0 0' }}>
-            Vui lòng hoàn tất thanh toán khi đến nhận phòng.
-          </p>
-        </div>
-        <button
-          type="button"
-          className="btn btn-outline"
-          onClick={() => {
-            setBookingSuccess(null);
-            setStartTime('');
-            setEndTime('');
-            setSelectingStartTime(null);
-            setNote('');
-            availability.refresh().catch(() => {});
-          }}
-          data-testid="booking-new-btn"
-        >
-          Đặt thêm khung giờ khác
-        </button>
-      </section>
-    );
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleProceedToReview = (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
@@ -347,27 +297,50 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       return;
     }
 
-    const validation = validateBookingSelection(startUtc, endUtc, new Date(), note);
+    const validation = validateBookingSelection(startUtc, endUtc, new Date(currentMs), note);
     if (!validation.isValid) {
       setErrors(validation.errors);
       return;
     }
 
-    // Check against currently loaded slots first to avoid unnecessary network request if already known booked
-    if (allLoadedCoveredSlots) {
-      const currentRangeCheck = checkRangeAvailability(startUtc!, endUtc!, allLoadedCoveredSlots);
-      if (!currentRangeCheck.isAvailable) {
-        setHasBookingConflict(true);
-        setErrors({
-          general:
-            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
-        });
-        return;
-      }
+    // Require availability to be fully loaded before entering review
+    if (availability.loading || !allLoadedCoveredSlots) {
+      setErrors({
+        general: 'Đang tải dữ liệu lịch trống của phòng, vui lòng đợi trong giây lát.',
+      });
+      return;
     }
 
+    // Check against currently loaded slots first to avoid unnecessary step if already known booked
+    const currentRangeCheck = checkRangeAvailability(startUtc!, endUtc!, allLoadedCoveredSlots);
+    if (!currentRangeCheck.isAvailable) {
+      setHasBookingConflict(true);
+      setErrors({
+        general:
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+      });
+      return;
+    }
+
+    if (!preview) {
+      setErrors({
+        general: 'Không thể tính toán thời lượng và giá tạm tính. Vui lòng kiểm tra lại thời gian.',
+      });
+      return;
+    }
+
+    setReviewedSnapshot({
+      durationHours: preview.durationHours,
+      durationMinutes: preview.durationMinutes,
+      estimatedTotal: preview.estimatedTotal,
+    });
+    setPhase('review');
+  };
+
+  const handleFinalSubmit = async () => {
     if (isSubmitting) return;
 
+    setErrors({});
     setIsSubmitting(true);
     abortControllerRef.current?.abort();
     const controller = new AbortController();
@@ -382,12 +355,14 @@ export const BookingForm: React.FC<BookingFormProps> = ({
         if (preflight.code === 'ROOM_NOT_AVAILABLE') {
           setIsStaleMaintenance(true);
           setErrors({
-            general: preflight.message || 'Phòng vừa được chuyển sang bảo trì, không thể đặt phòng.',
+            general:
+              preflight.message || 'Phòng vừa được chuyển sang bảo trì, không thể đặt phòng.',
           });
           return;
         }
         setErrors({
-          general: preflight.message || 'Không thể kiểm tra lịch trống của phòng. Vui lòng thử lại.',
+          general:
+            preflight.message || 'Không thể kiểm tra lịch trống của phòng. Vui lòng thử lại.',
         });
         return;
       }
@@ -428,7 +403,12 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       if (controller.signal.aborted || abortControllerRef.current !== controller) return;
 
       if (res.success) {
-        setBookingSuccess(res.data);
+        navigate('/booking-confirmation', {
+          state: {
+            booking: res.data,
+            customerId: currentUserId,
+          },
+        });
       }
     } catch (err: any) {
       if (controller.signal.aborted || abortControllerRef.current !== controller) return;
@@ -480,6 +460,161 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     }
   };
 
+  // If in review phase, render review card
+  if (phase === 'review') {
+    return (
+      <section
+        className="card booking-form-card booking-review-card"
+        data-testid="booking-review-section"
+        aria-labelledby="booking-review-heading"
+      >
+        <div className="booking-form-header">
+          <h2 id="booking-review-heading" className="booking-form-title">
+            Xác Nhận Thông Tin Đặt Phòng
+          </h2>
+          <p className="text-muted" style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>
+            Vui lòng kiểm tra lại toàn bộ thông tin trước khi gửi yêu cầu đặt chỗ.
+          </p>
+        </div>
+
+        {errors.general && (
+          <div
+            className="alert alert-danger"
+            role="alert"
+            data-testid="booking-general-error"
+            style={{ marginBottom: '1.25rem' }}
+          >
+            {errors.general}
+          </div>
+        )}
+
+        {errors.startTime && (
+          <div
+            className="alert alert-danger"
+            role="alert"
+            data-testid="error-booking-start"
+            style={{ marginBottom: '1.25rem' }}
+          >
+            {errors.startTime}
+          </div>
+        )}
+
+        {errors.endTime && (
+          <div
+            className="alert alert-danger"
+            role="alert"
+            data-testid="error-booking-end"
+            style={{ marginBottom: '1.25rem' }}
+          >
+            {errors.endTime}
+          </div>
+        )}
+
+        {errors.note && (
+          <div
+            className="alert alert-danger"
+            role="alert"
+            data-testid="error-booking-note"
+            style={{ marginBottom: '1.25rem' }}
+          >
+            {errors.note}
+          </div>
+        )}
+
+        <div className="booking-review-details">
+          <div className="booking-review-row">
+            <span className="review-label">Phòng làm việc:</span>
+            <strong className="review-value" data-testid="review-room-name">
+              {roomName}
+            </strong>
+          </div>
+
+          <div className="booking-review-row">
+            <span className="review-label">Thời gian bắt đầu:</span>
+            <span className="review-value" data-testid="review-start-time">
+              {startUtc
+                ? new Date(startUtc).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
+                : ''}
+            </span>
+          </div>
+
+          <div className="booking-review-row">
+            <span className="review-label">Thời gian kết thúc:</span>
+            <span className="review-value" data-testid="review-end-time">
+              {endUtc
+                ? new Date(endUtc).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
+                : ''}
+            </span>
+          </div>
+
+          <div className="booking-review-row">
+            <span className="review-label">Thời lượng đặt:</span>
+            <span className="review-value" data-testid="review-duration">
+              {(reviewedSnapshot ?? preview)?.durationHours} giờ ({(reviewedSnapshot ?? preview)?.durationMinutes} phút)
+            </span>
+          </div>
+
+          <div className="booking-review-row">
+            <span className="review-label">Đơn giá:</span>
+            <span className="review-value" data-testid="review-price-per-hour">
+              {formatVnd(pricePerHour)}
+            </span>
+          </div>
+
+          <div
+            className="booking-review-row total-row"
+            style={{
+              marginTop: '0.5rem',
+              paddingTop: '0.5rem',
+              borderTop: '1px dashed var(--color-border)',
+            }}
+          >
+            <span className="review-label">Tổng tiền ước tính:</span>
+            <strong className="review-value price-highlight" data-testid="review-estimated-total">
+              {(reviewedSnapshot ?? preview)
+                ? formatCurrency((reviewedSnapshot ?? preview)!.estimatedTotal)
+                : ''}
+            </strong>
+          </div>
+
+          <div className="booking-review-row" style={{ marginTop: '0.5rem' }}>
+            <span className="review-label">Ghi chú:</span>
+            <span className="review-value" data-testid="review-note">
+              {note.trim() !== '' ? note.trim() : 'Không có'}
+            </span>
+          </div>
+        </div>
+
+        <div className="booking-review-actions">
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{ flex: 1 }}
+            onClick={() => {
+              setPhase('edit');
+              setReviewedSnapshot(null);
+              setErrors({});
+            }}
+            disabled={isSubmitting}
+            data-testid="booking-back-btn"
+          >
+            ← Quay lại chỉnh sửa
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            style={{ flex: 1 }}
+            onClick={handleFinalSubmit}
+            disabled={isSubmitting || hasBookingConflict}
+            data-testid="booking-confirm-btn"
+          >
+            {isSubmitting ? 'Đang gửi yêu cầu đặt...' : 'Xác nhận đặt phòng'}
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   const viewDateSlots = availability.slotsByDate[viewDate] || [];
   const selectedStartIso = isSelectionValid && startUtc ? startUtc.toISOString() : null;
   const selectedEndIso = isSelectionValid && endUtc ? endUtc.toISOString() : null;
@@ -526,7 +661,9 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       {/* Availability TimeGrid Component */}
       {availability.loading && (
         <div className="time-grid-loading" aria-live="polite" style={{ padding: '1rem 0' }}>
-          <p className="text-muted" style={{ margin: 0 }}>Đang tải lịch trống của phòng...</p>
+          <p className="text-muted" style={{ margin: 0 }}>
+            Đang tải lịch trống của phòng...
+          </p>
         </div>
       )}
 
@@ -565,7 +702,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
         />
       )}
 
-      <form onSubmit={handleSubmit} noValidate aria-busy={isSubmitting}>
+      <form onSubmit={handleProceedToReview} noValidate aria-busy={isSubmitting}>
         <div className="admin-form-row">
           <div className="form-group" style={{ flex: 1 }}>
             <label htmlFor="booking-start-time" className="form-label">
@@ -671,7 +808,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           disabled={isSubmitting || hasBookingConflict || Boolean(availability.error)}
           data-testid="booking-submit-btn"
         >
-          {isSubmitting ? 'Đang gửi yêu cầu đặt...' : 'Xác nhận đặt phòng'}
+          {availability.loading ? 'Đang kiểm tra lịch trống...' : 'Tiếp tục xem lại thông tin'}
         </button>
       </form>
     </section>

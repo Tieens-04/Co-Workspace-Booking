@@ -1704,3 +1704,220 @@ body {
     font-size: 0.625rem;
   }
 }
+
+/* ============================================================= */
+/* Customer Booking Review Phase (CWB-24)                        */
+/* ============================================================= */
+
+.booking-review-card {
+  margin-top: 1.5rem;
+}
+
+.booking-review-details {
+  background-color: #f8fafc;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.625rem;
+}
+
+.booking-review-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.9375rem;
+  gap: 1rem;
+}
+
+.booking-review-row .review-label {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.booking-review-row .review-value {
+  text-align: right;
+  word-break: break-word;
+}
+
+.booking-review-row.total-row {
+  font-size: 1.0625rem;
+}
+
+.booking-review-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+/* ============================================================= */
+/* Booking Confirmation Page (CWB-24)                           */
+/* ============================================================= */
+
+.confirmation-page-container {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2rem 1.5rem;
+}
+
+.confirmation-card {
+  padding: 2rem;
+  border-radius: var(--radius-md);
+}
+
+.confirmation-header-banner {
+  text-align: center;
+  margin-bottom: 1.75rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.confirmation-success-icon {
+  font-size: 3rem;
+  display: inline-block;
+  margin-bottom: 0.5rem;
+}
+
+.confirmation-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #166534;
+  margin: 0 0 0.5rem 0;
+}
+
+.confirmation-subtitle {
+  color: var(--color-text-muted);
+  margin: 0;
+  font-size: 0.9375rem;
+}
+
+.confirmation-code-wrapper {
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 2px dashed #93c5fd;
+  border-radius: var(--radius-md);
+  padding: 1.25rem;
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.confirmation-code-label {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #1e40af;
+  margin-bottom: 0.35rem;
+}
+
+.confirmation-code-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #1e3a8a;
+  font-family: monospace;
+}
+
+.confirmation-details-card {
+  background-color: #f9fafb;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.confirmation-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.9375rem;
+  gap: 1rem;
+}
+
+.confirmation-detail-row .detail-label {
+  color: var(--color-text-muted);
+  flex-shrink: 0;
+}
+
+.confirmation-detail-row .detail-value {
+  text-align: right;
+  word-break: break-word;
+}
+
+.confirmation-detail-row.total-row {
+  margin-top: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--color-border);
+}
+
+.badge-unpaid {
+  background-color: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.booking-payment-instruction-box {
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-left: 4px solid #16a34a;
+  border-radius: var(--radius-sm);
+  padding: 1.125rem 1.25rem;
+  margin-bottom: 1.75rem;
+  color: #14532d;
+}
+
+.payment-instruction-title {
+  font-weight: 700;
+  font-size: 1rem;
+  margin-bottom: 0.375rem;
+  color: #166534;
+}
+
+.payment-instruction-text {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .confirmation-page-container {
+    padding: 1rem;
+  }
+
+  .confirmation-card {
+    padding: 1.25rem;
+  }
+
+  .confirmation-detail-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.25rem;
+  }
+
+  .confirmation-detail-row .detail-value {
+    text-align: left;
+  }
+
+  .confirmation-actions {
+    flex-direction: column-reverse;
+  }
+
+  .confirmation-actions .btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  .booking-review-actions {
+    flex-direction: column;
+  }
+}

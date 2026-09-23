@@ -10,6 +10,7 @@ import {
   setStoredToken,
   TOKEN_STORAGE_KEY,
 } from '../utils/token';
+import { sanitizeHistoryState } from '../utils/history';
 import { AuthContext, AuthContextType } from './auth-context-base';
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -30,6 +31,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = useCallback(
     (reason: 'sessionExpired' | 'userAction' = 'userAction') => {
+      sanitizeHistoryState();
       removeStoredToken();
       setToken(null);
       setPrincipal(null);

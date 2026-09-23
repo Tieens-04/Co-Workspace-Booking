@@ -31,6 +31,7 @@ describe('LoginPage', () => {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/" element={<div>Mock Home Page</div>} />
             <Route path="/admin" element={<div>Mock Admin Page</div>} />
+            <Route path="/rooms/:id" element={<div>Mock Room Detail Page</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>,
@@ -293,5 +294,148 @@ describe('LoginPage', () => {
     expect(passwordInput).toHaveAttribute('type', 'text');
     await user.click(screen.getByRole('button', { name: /Ẩn mật khẩu/i }));
     expect(passwordInput).toHaveAttribute('type', 'password');
+  });
+
+  describe('CWB-24 Navigation on Login (AC1)', () => {
+    it('redirects CUSTOMER to room path when state.from is a valid internal room path', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        success: true,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER',
+          },
+        },
+      });
+
+      renderComponent([
+        {
+          pathname: '/login',
+          state: { from: '/rooms/room-uuid-1' },
+        },
+      ]);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/^Email/i), 'customer@example.com');
+      await user.type(screen.getByLabelText(/^Mật khẩu/i), 'ValidPassword123');
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Room Detail Page')).toBeInTheDocument();
+      expect(screen.queryByText('Mock Home Page')).not.toBeInTheDocument();
+    });
+
+    it('falls back to / when state.from is an unsafe or non-room path', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        success: true,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER',
+          },
+        },
+      });
+
+      // Pass an external / invalid path
+      renderComponent([
+        {
+          pathname: '/login',
+          state: { from: 'https://evil.com/phishing' },
+        },
+      ]);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/^Email/i), 'customer@example.com');
+      await user.type(screen.getByLabelText(/^Mật khẩu/i), 'ValidPassword123');
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Home Page')).toBeInTheDocument();
+      expect(screen.queryByText('Mock Room Detail Page')).not.toBeInTheDocument();
+    });
+
+    it('falls back to / when state.from attempts path traversal or admin path for CUSTOMER', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        success: true,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER',
+          },
+        },
+      });
+
+      renderComponent([
+        {
+          pathname: '/login',
+          state: { from: '/admin' },
+        },
+      ]);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/^Email/i), 'customer@example.com');
+      await user.type(screen.getByLabelText(/^Mật khẩu/i), 'ValidPassword123');
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Home Page')).toBeInTheDocument();
+      expect(screen.queryByText('Mock Admin Page')).not.toBeInTheDocument();
+    });
+
+    it('navigates ADMIN to /admin even if state.from specifies a room path', async () => {
+      const adminToken = createMockJwt({ sub: 'admin-1', role: 'ADMIN' });
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        success: true,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: adminToken,
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          user: {
+            id: 'admin-1',
+            email: 'admin@cospace.vn',
+            fullName: 'System Administrator',
+            phoneNumber: null,
+            role: 'ADMIN',
+          },
+        },
+      });
+
+      renderComponent([
+        {
+          pathname: '/login',
+          state: { from: '/rooms/room-uuid-1' },
+        },
+      ]);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/^Email/i), 'admin@cospace.vn');
+      await user.type(screen.getByLabelText(/^Mật khẩu/i), 'AdminPassword123');
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Admin Page')).toBeInTheDocument();
+      expect(screen.queryByText('Mock Room Detail Page')).not.toBeInTheDocument();
+    });
   });
 });

@@ -75,7 +75,9 @@ export const LoginPage: React.FC = () => {
       if (user.role === 'ADMIN') {
         navigate('/admin', { replace: true });
       } else {
-        navigate('/', { replace: true });
+        const from = location.state?.from;
+        const isSafeRoomPath = typeof from === 'string' && /^\/rooms\/[a-zA-Z0-9_-]+$/.test(from);
+        navigate(isSafeRoomPath ? from : '/', { replace: true });
       }
     } catch (err: unknown) {
       setIsSubmitting(false);

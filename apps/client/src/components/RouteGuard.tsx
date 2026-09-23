@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, useLocation, Link } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { sanitizeHistoryState } from '../utils/history';
 
 export const GuestRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, principal, isLoading } = useAuth();
@@ -13,6 +14,27 @@ export const GuestRoute: React.FC<{ children: React.ReactNode }> = ({ children }
     if (principal.role === 'ADMIN') {
       return <Navigate to="/admin" replace />;
     }
+    return <Navigate to="/" replace />;
+  }
+
+  return <>{children}</>;
+};
+
+export const CustomerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, principal, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return <div className="loading-container">Đang tải...</div>;
+  }
+
+  if (!isAuthenticated || !principal) {
+    sanitizeHistoryState();
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  if (principal.role !== 'CUSTOMER') {
+    sanitizeHistoryState();
     return <Navigate to="/" replace />;
   }
 

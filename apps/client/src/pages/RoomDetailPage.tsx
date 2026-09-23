@@ -278,6 +278,7 @@ export const RoomDetailPage: React.FC = () => {
               pricePerHour={room.pricePerHour}
               isAuthenticated={isAuthenticated}
               userRole={principal?.role}
+              userId={principal?.id}
             />
           </section>
         </article>

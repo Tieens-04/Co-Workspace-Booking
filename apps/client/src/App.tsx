@@ -1,11 +1,12 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
-import { GuestRoute, AdminRoute } from './components/RouteGuard';
+import { GuestRoute, AdminRoute, CustomerRoute } from './components/RouteGuard';
 import { HomePage } from './pages/HomePage';
 import { RoomDetailPage } from './pages/RoomDetailPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AdminPage } from './pages/AdminPage';
+import { BookingConfirmationPage } from './pages/BookingConfirmationPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export default function App() {
@@ -15,6 +16,14 @@ export default function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/rooms/:id" element={<RoomDetailPage />} />
+          <Route
+            path="/booking-confirmation"
+            element={
+              <CustomerRoute>
+                <BookingConfirmationPage />
+              </CustomerRoute>
+            }
+          />
           <Route
             path="/login"
             element={

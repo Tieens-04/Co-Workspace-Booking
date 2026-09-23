@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
-import { GuestRoute, AdminRoute } from '../components/RouteGuard';
+import { GuestRoute, AdminRoute, CustomerRoute } from '../components/RouteGuard';
 import { NotFoundPage } from '../pages/NotFoundPage';
 import { TOKEN_STORAGE_KEY } from '../utils/token';
 import { createMockJwt } from './test-utils';
@@ -40,6 +40,14 @@ describe('RouteGuard and Navigation', () => {
                 <AdminRoute>
                   <div>Admin Secret Screen</div>
                 </AdminRoute>
+              }
+            />
+            <Route
+              path="/customer-only"
+              element={
+                <CustomerRoute>
+                  <div>Customer Secret Screen</div>
+                </CustomerRoute>
               }
             />
             <Route path="*" element={<NotFoundPage />} />
@@ -100,6 +108,46 @@ describe('RouteGuard and Navigation', () => {
 
     expect(screen.getByText('Admin Secret Screen')).toBeInTheDocument();
     expect(screen.queryByText('Login Screen')).not.toBeInTheDocument();
+  });
+
+  describe('CustomerRoute', () => {
+    it('redirects unauthenticated user from customer route to /login', () => {
+      renderWithRoutes('/customer-only');
+
+      expect(screen.getByText('Login Screen')).toBeInTheDocument();
+      expect(screen.queryByText('Customer Secret Screen')).not.toBeInTheDocument();
+    });
+
+    it('redirects ADMIN from customer route to /', () => {
+      const adminToken = createMockJwt({ sub: 'a-1', role: 'ADMIN' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, adminToken);
+
+      renderWithRoutes('/customer-only');
+
+      expect(screen.getByText('Home Screen')).toBeInTheDocument();
+      expect(screen.queryByText('Customer Secret Screen')).not.toBeInTheDocument();
+    });
+
+    it('allows authenticated CUSTOMER to access customer route', () => {
+      const customerToken = createMockJwt({ sub: 'c-1', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, customerToken);
+
+      renderWithRoutes('/customer-only');
+
+      expect(screen.getByText('Customer Secret Screen')).toBeInTheDocument();
+    });
+
+    it('sanitizes window.history.state when redirecting unauthenticated user', () => {
+      window.history.replaceState({ idx: 1, key: 'k1', usr: { booking: { id: 'b1' } } }, '');
+      renderWithRoutes('/customer-only');
+
+      expect(window.history.state).toEqual({
+        idx: 1,
+        key: 'k1',
+        usr: null,
+      });
+      expect(window.history.state.usr).toBeNull();
+    });
   });
 
   it('renders 404 NotFoundPage for undefined routes', () => {
