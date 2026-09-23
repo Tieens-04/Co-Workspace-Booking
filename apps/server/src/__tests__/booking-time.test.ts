@@ -189,6 +189,19 @@ describe('Booking Time & Pricing Utilities', () => {
       const total2 = calculateBookingTotal('100.51', 90);
       expect(total2.toFixed(2)).toBe('150.77');
     });
+
+    it('rounds once on total amount instead of rounding per 30-minute slot', () => {
+      // 100.01 * 1.5 hours (90 mins) = 150.015 -> rounds up to 150.02
+      // Per-slot rounding would yield: 3 slots * round(50.005) = 3 * 50.01 = 150.03 (incorrect)
+      const total = calculateBookingTotal('100.01', 90);
+      expect(total.toFixed(2)).toBe('150.02');
+    });
+
+    it('handles maximum schema price for 8 hours without precision loss or float drift', () => {
+      // 99999999.99 * 8 hours (480 mins) = 799999999.92, fits in Decimal(12,2)
+      const total = calculateBookingTotal('99999999.99', 480);
+      expect(total.toFixed(2)).toBe('799999999.92');
+    });
   });
 
   describe('Booking Code Generation', () => {

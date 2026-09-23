@@ -104,6 +104,9 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
       expect(res.body.data.id).toBe('booking-uuid-1');
       expect(res.body.data.bookingCode).toBe('CS-20260921-ABCD');
       expect(res.body.data.totalAmount).toBe('500000.00');
+      expect(res.body.data.status).toBe('CONFIRMED');
+      expect(res.body.data.paymentStatus).toBe('UNPAID');
+      expect(res.body.data.paymentMethod).toBeNull();
     });
   });
 
@@ -144,6 +147,8 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
         { totalAmount: '1.00' },
         { status: 'COMPLETED' },
         { paymentStatus: 'PAID' },
+        { paymentMethod: 'CASH' },
+        { durationMinutes: 120 },
         { bookingCode: 'CS-HACK-0000' },
         { pricePerHour: '10.00' },
         { role: 'ADMIN' },
@@ -503,7 +508,7 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
 
       vi.mocked(bookingRepository.createBooking)
         .mockRejectedValueOnce(p2002Error)
-        .mockResolvedValueOnce(mockBookingFixture());
+        .mockResolvedValueOnce(mockBookingFixture({ bookingCode: 'CS-20260921-RETR' }));
 
       const slot = getFutureSlot();
       const result = await bookingService.createBooking(customerSub, {
@@ -514,7 +519,60 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
       });
 
       expect(result).toBeDefined();
+      expect(result.bookingCode).toBe('CS-20260921-RETR');
       expect(bookingRepository.createBooking).toHaveBeenCalledTimes(2);
+    });
+
+    it('retries code generation when P2002 meta.target is a MySQL index name string (bookings_booking_code_key)', async () => {
+      const p2002Error = new Prisma.PrismaClientKnownRequestError(
+        'Unique constraint failed on bookings_booking_code_key',
+        {
+          code: 'P2002',
+          clientVersion: '6.19.3',
+          meta: { target: 'bookings_booking_code_key' },
+        },
+      );
+
+      vi.mocked(bookingRepository.createBooking)
+        .mockRejectedValueOnce(p2002Error)
+        .mockResolvedValueOnce(mockBookingFixture({ bookingCode: 'CS-20260921-SUCC' }));
+
+      const slot = getFutureSlot();
+      const result = await bookingService.createBooking(customerSub, {
+        roomId: validRoomId,
+        startTime: slot.startTime,
+        endTime: slot.endTime,
+        note: null,
+      });
+
+      expect(result).toBeDefined();
+      expect(result.bookingCode).toBe('CS-20260921-SUCC');
+      expect(bookingRepository.createBooking).toHaveBeenCalledTimes(2);
+    });
+
+    it('derives booking code date segment from booking start time in Asia/Ho_Chi_Minh, not request submission time', async () => {
+      // Request submitted on 2026-09-20T10:00:00Z (2026-09-20 17:00 VN)
+      const simulatedNow = new Date('2026-09-20T10:00:00.000Z');
+      // Booking starts on 2026-09-21T02:00:00Z (2026-09-21 09:00 VN)
+      const startTime = '2026-09-21T02:00:00.000Z';
+      const endTime = '2026-09-21T04:00:00.000Z';
+
+      await bookingService.createBooking(
+        customerSub,
+        {
+          roomId: validRoomId,
+          startTime,
+          endTime,
+          note: null,
+        },
+        simulatedNow,
+      );
+
+      expect(bookingRepository.createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookingCode: expect.stringMatching(/^CS-20260921-[0-9A-Z]{4}$/),
+        }),
+      );
     });
 
     it('does not retry P2002 if the collision target is not booking_code and rethrows immediately', async () => {

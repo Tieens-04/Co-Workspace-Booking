@@ -558,8 +558,8 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
     Cho phép chạm mốc biên (boundary touching): một booking kết thúc lúc `10:00` và booking tiếp theo bắt đầu lúc `10:00` không bị coi là trùng lặp.
   - **Bảo vệ Concurrency / Double-booking**: Toàn bộ thao tác kiểm tra phòng, kiểm tra overlap và chèn dữ liệu được thực thi trong một `prisma.$transaction` kết hợp khóa hàng MySQL `FOR UPDATE`. Hai request đồng thời cho cùng một phòng/khung giờ sẽ được serialize; request thứ hai sẽ phát hiện overlap và trả về `409 BOOKING_CONFLICT`.
 - **Định Giá & Tạo Mã Đặt Chỗ Phía Server**:
-  - **Tính tổng tiền Authoritative**: Server tính toán tổng tiền dựa trên giá trị `price_per_hour` đọc từ database tại thời điểm giao dịch và thời lượng thực tế (`pricePerHour * durationMinutes / 60`). Sử dụng `Prisma.Decimal` với chế độ làm tròn `ROUND_HALF_UP` 2 chữ số thập phân, tuyệt đối không dùng số thực dấu phẩy động (floating-point) của JavaScript để chống sai lệch tiền tệ.
-  - **Định dạng mã đặt phòng**: Tạo mã duy nhất theo định dạng `CS-YYYYMMDD-XXXX` (với ngày theo múi giờ `Asia/Ho_Chi_Minh` và chuỗi ngẫu nhiên cryptographic 4 ký tự in hoa/chữ số). Hệ thống có cơ chế retry tối đa 5 lần nếu xảy ra xung đột unique constraint `bookingCode`.
+  - **Tính tổng tiền Authoritative**: Server tính toán tổng tiền dựa trên giá trị `price_per_hour` đọc từ database tại thời điểm giao dịch và thời lượng thực tế (`pricePerHour * durationMinutes / 60`). Sử dụng `Prisma.Decimal` với chế độ làm tròn `ROUND_HALF_UP` 2 chữ số thập phân (làm tròn một lần duy nhất trên tổng số tiền, không làm tròn theo từng slot 30 phút nhằm tránh sai lệch tích lũy; ví dụ: `100.55 * 1.5h = 150.825 -> 150.83`, `100.01 * 1.5h = 150.015 -> 150.02`), tuyệt đối không dùng số thực dấu phẩy động (floating-point) của JavaScript để bảo đảm tính chính xác tiền tệ.
+  - **Định dạng mã đặt phòng**: Tạo mã duy nhất theo định dạng `CS-YYYYMMDD-XXXX` (trong đó phần ngày `YYYYMMDD` được xác định theo thời gian bắt đầu `startTime` quy đổi về múi giờ `Asia/Ho_Chi_Minh`, không phụ thuộc vào thời điểm gửi request; hậu tố gồm 4 ký tự ngẫu nhiên `[0-9A-Z]` sinh bằng `crypto.randomInt`). Khi phát hiện xung đột unique constraint trên `bookingCode` (`P2002`), hệ thống thực hiện cơ chế thử lại tối đa 5 lần tổng cộng (`MAX_CODE_RETRIES = 5`). Nếu sau 5 lần vẫn xung đột, hệ thống rollback an toàn và trả về `409 BOOKING_CODE_CONFLICT`.
   - **Trạng thái ban đầu**: Booking tạo mới luôn có `status: "CONFIRMED"`, `paymentStatus: "UNPAID"`, `paymentMethod: null`.
 - **Xử lý lỗi**:
   - `400 VALIDATION_ERROR`: Sai định dạng request body, UUID phòng không hợp lệ, chuỗi thời gian không đúng chuẩn ISO 8601, hoặc ghi chú vượt quá 500 ký tự.
@@ -596,6 +596,16 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
     }
   }
   ```
+
+#### Kiểm thử tạo đặt phòng & tính giá (CWB-22)
+
+```bash
+# Unit & API tests (mocked DB, quy tắc thời gian, retry mã, mass assignment)
+npm run test --workspace=apps/server -- src/__tests__/booking-time.test.ts src/__tests__/booking.test.ts
+
+# Integration tests (MySQL thật, transaction row lock, overlap, collision retry, làm tròn giá lẻ)
+npm run test:integration --workspace=apps/server -- src/__tests__/booking.integration.test.ts
+```
 
 ---
 
