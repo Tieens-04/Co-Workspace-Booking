@@ -7,6 +7,8 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AdminPage } from './pages/AdminPage';
 import { BookingConfirmationPage } from './pages/BookingConfirmationPage';
+import { BookingHistoryPage } from './pages/BookingHistoryPage';
+import { BookingDetailPage } from './pages/BookingDetailPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 export default function App() {
@@ -21,6 +23,22 @@ export default function App() {
             element={
               <CustomerRoute>
                 <BookingConfirmationPage />
+              </CustomerRoute>
+            }
+          />
+          <Route
+            path="/bookings"
+            element={
+              <CustomerRoute>
+                <BookingHistoryPage />
+              </CustomerRoute>
+            }
+          />
+          <Route
+            path="/bookings/:id"
+            element={
+              <CustomerRoute>
+                <BookingDetailPage />
               </CustomerRoute>
             }
           />

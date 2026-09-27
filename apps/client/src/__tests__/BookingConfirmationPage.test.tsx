@@ -1,6 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter, Route, Routes, BrowserRouter, useNavigate, useLocation } from 'react-router-dom';
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  BrowserRouter,
+  useNavigate,
+  useLocation,
+} from 'react-router-dom';
 import { BookingConfirmationPage } from '../pages/BookingConfirmationPage';
 import { isValidBookingResult } from '../utils/history';
 import { CustomerRoute } from '../components/RouteGuard';
@@ -19,7 +26,7 @@ describe('BookingConfirmationPage', () => {
       name: 'Phòng Hội Thảo Alpha',
     },
     startTime: '2026-10-25T03:00:00.000Z', // 10:00:00 VN (+07:00)
-    endTime: '2026-10-25T05:00:00.000Z',   // 12:00:00 VN (+07:00)
+    endTime: '2026-10-25T05:00:00.000Z', // 12:00:00 VN (+07:00)
     totalAmount: '400000.00',
     note: 'Cần chuẩn bị máy chiếu và bảng trắng',
     status: 'CONFIRMED',
@@ -45,6 +52,8 @@ describe('BookingConfirmationPage', () => {
             <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
             <Route path="/" element={<div>Mock Home Page</div>} />
             <Route path="/rooms/:id" element={<div>Mock Room Detail</div>} />
+            <Route path="/bookings" element={<div>Mock Booking History</div>} />
+            <Route path="/bookings/:id" element={<div>Mock Booking Detail</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>,
@@ -107,6 +116,16 @@ describe('BookingConfirmationPage', () => {
 
       expect(screen.getByTestId('booking-confirmation-note')).toHaveTextContent('Không có');
     });
+
+    it('renders links to view booking detail and booking history in action buttons', () => {
+      renderComponent({ booking: mockBookingResult, customerId: 'customer-1' });
+
+      expect(screen.getByTestId('confirmation-view-detail-btn')).toHaveAttribute(
+        'href',
+        `/bookings/${mockBookingResult.id}`,
+      );
+      expect(screen.getByTestId('confirmation-history-btn')).toHaveAttribute('href', '/bookings');
+    });
   });
 
   describe('Finding 1: Session & Customer Ownership Isolation', () => {
@@ -121,7 +140,10 @@ describe('BookingConfirmationPage', () => {
     });
 
     it('renders fallback empty state when accessed by a different customer (customer-2)', () => {
-      localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'customer-2', role: 'CUSTOMER' }));
+      localStorage.setItem(
+        TOKEN_STORAGE_KEY,
+        createMockJwt({ sub: 'customer-2', role: 'CUSTOMER' }),
+      );
       renderComponent({ booking: mockBookingResult, customerId: 'customer-1' });
 
       expect(screen.getByTestId('confirmation-empty-state')).toBeInTheDocument();
@@ -213,7 +235,10 @@ describe('BookingConfirmationPage', () => {
     });
 
     it('clears booking data from history entry so navigating away and logging out leaves no BookingResult', async () => {
-      localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'customer-1', role: 'CUSTOMER' }));
+      localStorage.setItem(
+        TOKEN_STORAGE_KEY,
+        createMockJwt({ sub: 'customer-1', role: 'CUSTOMER' }),
+      );
 
       window.history.replaceState({ idx: 0, key: 'root', usr: null }, '', '/');
       window.history.pushState(
@@ -284,7 +309,10 @@ describe('BookingConfirmationPage', () => {
     });
 
     it('preserves destination router state when unmounting and navigating to a route with state', async () => {
-      localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'customer-1', role: 'CUSTOMER' }));
+      localStorage.setItem(
+        TOKEN_STORAGE_KEY,
+        createMockJwt({ sub: 'customer-1', role: 'CUSTOMER' }),
+      );
 
       window.history.replaceState({ idx: 0, key: 'root', usr: null }, '', '/');
       window.history.pushState(

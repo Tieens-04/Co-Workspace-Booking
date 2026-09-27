@@ -77,7 +77,14 @@ export const LoginPage: React.FC = () => {
       } else {
         const from = location.state?.from;
         const isSafeRoomPath = typeof from === 'string' && /^\/rooms\/[a-zA-Z0-9_-]+$/.test(from);
-        navigate(isSafeRoomPath ? from : '/', { replace: true });
+        const isSafeBookingHistoryPath = from === '/bookings';
+        const isSafeBookingDetailPath =
+          typeof from === 'string' &&
+          /^\/bookings\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
+            from,
+          );
+        const isSafePath = isSafeRoomPath || isSafeBookingHistoryPath || isSafeBookingDetailPath;
+        navigate(isSafePath ? from : '/', { replace: true });
       }
     } catch (err: unknown) {
       setIsSubmitting(false);

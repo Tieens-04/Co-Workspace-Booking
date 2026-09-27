@@ -310,6 +310,11 @@ export const HomePage: React.FC = () => {
                   Khu vực Quản trị
                 </Link>
               )}
+              {principal.role === 'CUSTOMER' && (
+                <Link to="/bookings" className="btn btn-outline">
+                  Lịch sử đặt phòng
+                </Link>
+              )}
               <button
                 type="button"
                 className="btn btn-danger-outline"

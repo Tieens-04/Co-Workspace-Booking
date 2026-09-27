@@ -32,6 +32,8 @@ describe('LoginPage', () => {
             <Route path="/" element={<div>Mock Home Page</div>} />
             <Route path="/admin" element={<div>Mock Admin Page</div>} />
             <Route path="/rooms/:id" element={<div>Mock Room Detail Page</div>} />
+            <Route path="/bookings" element={<div>Mock Booking History Page</div>} />
+            <Route path="/bookings/:id" element={<div>Mock Booking Detail Page</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>,
@@ -436,6 +438,111 @@ describe('LoginPage', () => {
 
       expect(await screen.findByText('Mock Admin Page')).toBeInTheDocument();
       expect(screen.queryByText('Mock Room Detail Page')).not.toBeInTheDocument();
+    });
+
+    it('navigates CUSTOMER to /bookings when state.from specifies /bookings', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        success: true,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER',
+          },
+        },
+      });
+
+      renderComponent([
+        {
+          pathname: '/login',
+          state: { from: '/bookings' },
+        },
+      ]);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/^Email/i), 'customer@example.com');
+      await user.type(screen.getByLabelText(/^Mật khẩu/i), 'ValidPassword123');
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Booking History Page')).toBeInTheDocument();
+      expect(screen.queryByText('Mock Home Page')).not.toBeInTheDocument();
+    });
+
+    it('navigates CUSTOMER to /bookings/:id when state.from specifies valid UUID', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        success: true,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER',
+          },
+        },
+      });
+
+      renderComponent([
+        {
+          pathname: '/login',
+          state: { from: '/bookings/11111111-1111-4111-8111-111111111111' },
+        },
+      ]);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/^Email/i), 'customer@example.com');
+      await user.type(screen.getByLabelText(/^Mật khẩu/i), 'ValidPassword123');
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Booking Detail Page')).toBeInTheDocument();
+      expect(screen.queryByText('Mock Home Page')).not.toBeInTheDocument();
+    });
+
+    it('falls back to / when state.from specifies invalid UUID for /bookings', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      vi.mocked(authApi.login).mockResolvedValueOnce({
+        success: true,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer',
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER',
+          },
+        },
+      });
+
+      renderComponent([
+        {
+          pathname: '/login',
+          state: { from: '/bookings/invalid-id' },
+        },
+      ]);
+      const user = userEvent.setup();
+
+      await user.type(screen.getByLabelText(/^Email/i), 'customer@example.com');
+      await user.type(screen.getByLabelText(/^Mật khẩu/i), 'ValidPassword123');
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Home Page')).toBeInTheDocument();
+      expect(screen.queryByText('Mock Booking Detail Page')).not.toBeInTheDocument();
     });
   });
 });

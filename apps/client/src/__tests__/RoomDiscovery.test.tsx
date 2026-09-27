@@ -6,6 +6,8 @@ import { HomePage } from '../pages/HomePage';
 import { AuthProvider } from '../context/AuthContext';
 import { roomApi } from '../services/room.api';
 import { RoomListItem, Amenity, ApiResponse, GetRoomsResponseData } from '../types/room';
+import { TOKEN_STORAGE_KEY } from '../utils/token';
+import { createMockJwt } from './test-utils';
 
 vi.mock('../services/room.api', () => ({
   roomApi: {
@@ -378,6 +380,42 @@ describe('Room Discovery - HomePage', () => {
         expect.objectContaining({ page: 2 }),
         expect.any(AbortSignal),
       );
+    });
+  });
+
+  describe('Navigation links and roles', () => {
+    it('shows "Lịch sử đặt phòng" link when logged in as CUSTOMER', async () => {
+      localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'c-1', role: 'CUSTOMER' }));
+      vi.mocked(roomApi.getRooms).mockResolvedValue(mockRoomsResponse(mockRoomsData, 2, 1, 1));
+
+      renderComponent();
+
+      expect(await screen.findByRole('link', { name: /Lịch sử đặt phòng/i })).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: /Lịch sử đặt phòng/i })).toHaveAttribute(
+        'href',
+        '/bookings',
+      );
+      expect(screen.queryByRole('link', { name: /Khu vực Quản trị/i })).not.toBeInTheDocument();
+    });
+
+    it('does not show "Lịch sử đặt phòng" link when logged in as ADMIN', async () => {
+      localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'a-1', role: 'ADMIN' }));
+      vi.mocked(roomApi.getRooms).mockResolvedValue(mockRoomsResponse(mockRoomsData, 2, 1, 1));
+
+      renderComponent();
+
+      expect(await screen.findByRole('link', { name: /Khu vực Quản trị/i })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Lịch sử đặt phòng/i })).not.toBeInTheDocument();
+    });
+
+    it('does not show "Lịch sử đặt phòng" link when not authenticated', async () => {
+      localStorage.clear();
+      vi.mocked(roomApi.getRooms).mockResolvedValue(mockRoomsResponse(mockRoomsData, 2, 1, 1));
+
+      renderComponent();
+
+      expect(await screen.findByRole('link', { name: /Đăng nhập/i })).toBeInTheDocument();
+      expect(screen.queryByRole('link', { name: /Lịch sử đặt phòng/i })).not.toBeInTheDocument();
     });
   });
 });

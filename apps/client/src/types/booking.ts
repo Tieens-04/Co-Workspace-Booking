@@ -1,4 +1,4 @@
-import { ApiResponse } from './room';
+import { ApiResponse, PaginationMeta } from './room';
 
 export interface CreateBookingPayload {
   roomId: string;
@@ -26,3 +26,19 @@ export interface BookingResult {
 }
 
 export type CreateBookingResponse = ApiResponse<BookingResult>;
+
+export type BookingHistoryView = 'ALL' | 'UPCOMING' | 'COMPLETED';
+
+export interface GetBookingsParams {
+  page?: number;
+  limit?: number;
+  view?: BookingHistoryView;
+}
+
+export interface GetBookingsResponseData {
+  items: BookingResult[];
+  pagination: PaginationMeta;
+}
+
+export type GetBookingsResponse = ApiResponse<GetBookingsResponseData>;
+export type GetBookingDetailResponse = ApiResponse<BookingResult>;

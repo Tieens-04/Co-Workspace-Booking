@@ -103,14 +103,16 @@ npm run build
 
 ### 1. Bảng Định Tuyến Tuyến Đường (Client Routes & Access Rules)
 
-| Tuyến đường             | Nội dung & Quyền truy cập                                                                                                                                                                | Hành vi điều hướng & Quy tắc hiển thị                                                                                                                                                                                                                           |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `/login`                | Form đăng nhập (Email, mật khẩu, nút ẩn/hiện mật khẩu, liên kết đăng ký).                                                                                                                | Người dùng đã đăng nhập tự động chuyển về trang đích theo role (`CUSTOMER` → `/`, `ADMIN` → `/admin`). Điền sẵn email và hiển thị thông báo thành công nếu nhận state từ trang Đăng ký. Hỗ trợ quay lại trang phòng an toàn (`/rooms/:id`) nếu có `state.from`. |
-| `/register`             | Form đăng ký tài khoản khách hàng (`fullName`, `email`, `phoneNumber` tùy chọn, `password`, `confirmPassword`, nút ẩn/hiện mật khẩu).                                                    | Người dùng đã đăng nhập tự chuyển về trang đích theo role. Đăng ký thành công → `/login` kèm email điền sẵn và banner thông báo thành công (chưa cấp phiên).                                                                                                    |
-| `/`                     | Trang chào công khai: hiển thị trạng thái đăng nhập, nút Đăng xuất, liên kết Quản trị (nếu là `ADMIN`), và kiểm tra kết nối Backend (Health Check).                                      | Truy cập công khai cho cả khách vãng lai và người dùng đã đăng nhập.                                                                                                                                                                                            |
-| `/admin`                | Trang quản trị phòng làm việc dành cho vai trò `ADMIN`: danh sách phòng phân trang, xem tiện ích/ảnh, form inline tạo và chỉnh sửa phòng dùng chung, quản lý danh sách URL ảnh thủ công. | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                    |
-| `/booking-confirmation` | Màn hình xác nhận đặt phòng thành công: hiển thị mã đặt phòng, thông tin phòng, thời gian, trạng thái và hướng dẫn thanh toán tại quầy.                                                  | Nhận dữ liệu đặt phòng qua router state sau khi tạo thành công. Truy cập trực tiếp không có state sẽ hiển thị giao diện fallback thông báo thân thiện và nút quay lại danh sách phòng.                                                                          |
-| Đường dẫn khác          | Giao diện 404 Not Found thân thiện.                                                                                                                                                      | Cung cấp liên kết đưa người dùng quay trở về trang chủ `/`.                                                                                                                                                                                                     |
+| Tuyến đường             | Nội dung & Quyền truy cập                                                                                                                                                                          | Hành vi điều hướng & Quy tắc hiển thị                                                                                                                                                                                                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/login`                | Form đăng nhập (Email, mật khẩu, nút ẩn/hiện mật khẩu, liên kết đăng ký).                                                                                                                          | Người dùng đã đăng nhập tự động chuyển về trang đích theo role (`CUSTOMER` → `/`, `ADMIN` → `/admin`). Điền sẵn email và hiển thị thông báo thành công nếu nhận state từ trang Đăng ký. Hỗ trợ quay lại an toàn các đường dẫn (`/rooms/:id`, `/bookings`, `/bookings/:uuid`) nếu có `state.from`. |
+| `/register`             | Form đăng ký tài khoản khách hàng (`fullName`, `email`, `phoneNumber` tùy chọn, `password`, `confirmPassword`, nút ẩn/hiện mật khẩu).                                                              | Người dùng đã đăng nhập tự chuyển về trang đích theo role. Đăng ký thành công → `/login` kèm email điền sẵn và banner thông báo thành công (chưa cấp phiên).                                                                                                                                      |
+| `/`                     | Trang chào công khai: hiển thị trạng thái đăng nhập, nút Đăng xuất, liên kết Quản trị (nếu là `ADMIN`), liên kết Lịch sử đặt phòng (nếu là `CUSTOMER`), và khám phá danh sách phòng làm việc.      | Truy cập công khai cho cả khách vãng lai và người dùng đã đăng nhập.                                                                                                                                                                                                                              |
+| `/admin`                | Trang quản trị phòng làm việc dành cho vai trò `ADMIN`: danh sách phòng phân trang, xem tiện ích/ảnh, form inline tạo và chỉnh sửa phòng dùng chung, quản lý danh sách URL ảnh thủ công.           | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
+| `/booking-confirmation` | Màn hình xác nhận đặt phòng thành công: hiển thị mã đặt phòng, thông tin phòng, thời gian, trạng thái, liên kết xem chi tiết/lịch sử và hướng dẫn thanh toán tại quầy.                             | Nhận dữ liệu đặt phòng qua router state sau khi tạo thành công. Truy cập trực tiếp không có state sẽ hiển thị giao diện fallback thông báo thân thiện và nút quay lại danh sách phòng.                                                                                                            |
+| `/bookings`             | Trang lịch sử đặt phòng dành cho vai trò `CUSTOMER`: danh sách đơn phân trang (10 đơn/trang), 3 bộ lọc (Tất cả, Sắp tới, Đã hoàn tất), hiển thị rõ mã đơn, ngày giờ, số tiền và trạng thái.        | Khách chưa đăng nhập → chuyển hướng sang `/login`. Vai trò `ADMIN` truy cập → chuyển về trang chủ `/`. Đổi tài khoản tự động làm mới dữ liệu, không rò rỉ đơn của phiên cũ.                                                                                                                       |
+| `/bookings/:id`         | Trang chi tiết đặt phòng dành cho vai trò `CUSTOMER`: tải trực tiếp dữ liệu từ API bằng UUID, kiểm tra quyền sở hữu IDOR phía server, hiển thị đầy đủ thông tin phòng, giờ VN, tiền và trạng thái. | Khách chưa đăng nhập → chuyển hướng sang `/login`. Đơn không tồn tại hoặc thuộc người khác → hiển thị thông báo không tìm thấy (404), kèm liên kết quay lại lịch sử và danh sách phòng.                                                                                                           |
+| Đường dẫn khác          | Giao diện 404 Not Found thân thiện.                                                                                                                                                                | Cung cấp liên kết đưa người dùng quay trở về trang chủ `/`.                                                                                                                                                                                                                                       |
 
 ### 2. Quản Lý Phiên Làm Việc (Session Storage & Lifecycle)
 
@@ -648,8 +650,47 @@ Biểu mẫu đặt phòng tại `/rooms/:id` được tích hợp thành phần
   - **Cơ chế Fallback bảo vệ truy cập trực tiếp**: Khi người dùng refresh trình duyệt hoặc truy cập trực tiếp URL `/booking-confirmation` mà không có dữ liệu booking hợp lệ trong router state, ứng dụng hiển thị giao diện thông báo nhẹ nhàng kèm nút điều hướng về trang chủ thay vì bị crash.
 - **Điều hướng thông minh sau đăng nhập cho khách vãng lai (Safe Post-Login Redirect)**:
   - Khách chưa đăng nhập khi xem phòng sẽ được hiển thị prompt đăng nhập kèm lưu lại đường dẫn gốc vào `location.state.from` (ví dụ `/rooms/:id`).
-  - Sau khi đăng nhập thành công với vai trò `CUSTOMER`, hệ thống kiểm tra an toàn bằng regex `/^\/rooms\/[a-zA-Z0-9_-]+$/`: nếu hợp lệ sẽ tự động đưa người dùng trở lại đúng phòng đang xem; nếu đường dẫn không an toàn, ngoại vi hoặc chứa path traversal sẽ fallback an toàn về `/`.
+  - Sau khi đăng nhập thành công với vai trò `CUSTOMER`, hệ thống kiểm tra an toàn bằng regex: hỗ trợ đường dẫn phòng `/rooms/:id`, trang lịch sử `/bookings`, và chi tiết đơn `/bookings/:uuid`. Nếu hợp lệ sẽ tự động đưa người dùng trở lại đúng trang yêu cầu; nếu đường dẫn không an toàn, ngoại vi hoặc chứa path traversal sẽ fallback an toàn về `/`.
   - Tài khoản với vai trò `ADMIN` luôn được ưu tiên điều hướng về `/admin`.
+
+### 4. Lịch Sử & Chi Tiết Đặt Phòng Phía Customer (CWB-25)
+
+Hệ thống cung cấp tính năng theo dõi lịch sử và mở xem chi tiết các đơn đặt phòng dành riêng cho khách hàng (`CUSTOMER`):
+
+- **API Lấy danh sách đặt phòng (`GET /api/v1/bookings`)**:
+  - Yêu cầu xác thực JWT với vai trò `CUSTOMER`. Quyền sở hữu được kiểm tra nghiêm ngặt tại cơ sở dữ liệu (`userId = req.user.sub`), khách hàng không thể xem đơn của người khác.
+  - Phân trang giới hạn (Bounded Pagination): tham số `page` (mặc định 1) và `limit` (mặc định 10, tối đa 100).
+  - 3 chế độ xem / bộ lọc (`view`):
+    - `ALL` (mặc định): Toàn bộ đơn của khách hàng, sắp xếp theo `startTime desc, id desc`.
+    - `UPCOMING`: Chỉ các đơn `status = CONFIRMED` và có `startTime >= now` theo giờ server, sắp xếp theo `startTime asc, id asc`.
+    - `COMPLETED`: Chỉ các đơn `status = COMPLETED`, sắp xếp theo `startTime desc, id desc`.
+  - Nghiêm cấm nhận các tham số ngoài allowlist (từ chối query lạ bằng `400 VALIDATION_ERROR`).
+- **API Lấy chi tiết đặt phòng (`GET /api/v1/bookings/:id`)**:
+  - Nhận `id` là UUID của đơn đặt phòng.
+  - Nếu ID không tồn tại hoặc thuộc về khách hàng khác, API trả về mã lỗi `404 BOOKING_NOT_FOUND` kèm thông báo _"Không tìm thấy đặt phòng"_ để bảo vệ quyền riêng tư và chống tấn công dò quét IDOR.
+  - Trả về đầy đủ: mã đơn `bookingCode`, thông tin phòng (`id`, `name`), thời gian bắt đầu/kết thúc (ISO), số tiền đã lưu `totalAmount`, ghi chú, trạng thái đơn, trạng thái thanh toán và phương thức thanh toán.
+- **Giao diện Lịch sử đặt phòng (`/bookings`)**:
+  - Đồng bộ trạng thái URL (`?view=...&page=...`), tự động chuẩn hóa query không hợp lệ.
+  - 3 tab chọn bộ lọc ("Tất cả", "Sắp tới", "Đã hoàn tất") với thuộc tính `aria-pressed`. Đổi bộ lọc tự động quay về trang 1.
+  - Trình bày thông tin rõ ràng bằng `BookingSummary`: mã đơn, tên phòng, ngày giờ (Việt Nam `Asia/Ho_Chi_Minh`), tổng tiền (`formatCurrency`), nhãn trạng thái và badge màu riêng biệt.
+  - Cung cấp nút _"Xem chi tiết →"_ cho từng đơn.
+  - Cơ chế chống stale response và hủy request bằng `AbortController` khi chuyển trang/bộ lọc hoặc đăng xuất.
+- **Giao diện Chi tiết đặt phòng (`/bookings/:id`)**:
+  - Tải dữ liệu độc lập từ API server theo UUID trên URL; hoạt động ổn định khi truy cập trực tiếp, refresh trình duyệt hoặc qua deep link.
+  - Xử lý đầy đủ các trạng thái loading (skeleton), lỗi mạng (kèm nút thử lại), và lỗi không tìm thấy (404/IDOR) với các liên kết quay lại lịch sử và danh sách phòng.
+
+#### Kiểm thử Lịch sử & Chi tiết đặt phòng (CWB-25)
+
+```bash
+# Unit & API tests (mocked DB, query validation, RBAC, time boundary)
+npm run test --workspace=apps/server -- src/__tests__/booking-history.test.ts
+
+# Integration tests (MySQL thật, cách ly dữ liệu giữa 2 Customer, 3 bộ lọc, bảo lưu số tiền)
+npm run test:integration --workspace=apps/server -- src/__tests__/booking-history.integration.test.ts
+
+# Frontend tests (Lịch sử đặt phòng, Chi tiết đặt phòng, Guard và Điều hướng)
+npm run test --workspace=apps/client -- src/__tests__/BookingHistoryPage.test.tsx src/__tests__/BookingDetailPage.test.tsx
+```
 
 ---
 

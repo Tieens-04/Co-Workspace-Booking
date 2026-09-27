@@ -48,10 +48,10 @@ export const BookingConfirmationPage: React.FC = () => {
 
   const isAuthorizedCustomer = Boolean(
     isAuthenticated &&
-      principal &&
-      principal.role === 'CUSTOMER' &&
-      customerId &&
-      customerId === principal.id,
+    principal &&
+    principal.role === 'CUSTOMER' &&
+    customerId &&
+    customerId === principal.id,
   );
 
   const isValidBooking = isAuthorizedCustomer && Boolean(booking);
@@ -220,6 +220,18 @@ export const BookingConfirmationPage: React.FC = () => {
           </div>
 
           <div className="confirmation-actions">
+            {booking.id && (
+              <Link
+                to={`/bookings/${booking.id}`}
+                className="btn btn-outline"
+                data-testid="confirmation-view-detail-btn"
+              >
+                Xem chi tiết đặt phòng
+              </Link>
+            )}
+            <Link to="/bookings" className="btn btn-outline" data-testid="confirmation-history-btn">
+              Lịch sử đặt phòng
+            </Link>
             {booking.room?.id && (
               <Link
                 to={`/rooms/${booking.room.id}`}

@@ -4,7 +4,11 @@ import {
   bookingRepository,
 } from '../repositories/booking.repository.js';
 import { CreateBookingInput } from '../validators/booking.validator.js';
-import { BookingResponseDto } from '../types/booking.type.js';
+import {
+  BookingResponseDto,
+  FindUserBookingsFilter,
+  GetBookingsResponseData,
+} from '../types/booking.type.js';
 import { validateBookingTime } from '../utils/booking-time.util.js';
 import { generateBookingCode } from '../utils/booking-code.util.js';
 import { AppError } from '../utils/error.util.js';
@@ -64,6 +68,33 @@ export class BookingService {
       'Không thể tạo mã đặt phòng duy nhất, vui lòng thử lại',
       409,
     );
+  }
+
+  async getBookings(
+    userId: string,
+    filter: FindUserBookingsFilter,
+    now = new Date(),
+  ): Promise<GetBookingsResponseData> {
+    const [total, items] = await this.bookingRepo.findManyAndCountForUser(userId, filter, now);
+    const totalPages = total === 0 ? 0 : Math.ceil(total / filter.limit);
+
+    return {
+      items,
+      pagination: {
+        page: filter.page,
+        limit: filter.limit,
+        total,
+        totalPages,
+      },
+    };
+  }
+
+  async getBookingById(userId: string, id: string): Promise<BookingResponseDto> {
+    const booking = await this.bookingRepo.findByIdForUser(userId, id);
+    if (!booking) {
+      throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+    }
+    return booking;
   }
 }
 

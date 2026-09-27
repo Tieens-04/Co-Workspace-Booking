@@ -148,6 +148,49 @@ describe('RouteGuard and Navigation', () => {
       });
       expect(window.history.state.usr).toBeNull();
     });
+
+    it('redirects unauthenticated user from /bookings and /bookings/:id to /login', () => {
+      const { unmount } = render(
+        <MemoryRouter initialEntries={['/bookings']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<div>Login Screen</div>} />
+              <Route
+                path="/bookings"
+                element={
+                  <CustomerRoute>
+                    <div>Booking History Screen</div>
+                  </CustomerRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('Login Screen')).toBeInTheDocument();
+      expect(screen.queryByText('Booking History Screen')).not.toBeInTheDocument();
+      unmount();
+
+      render(
+        <MemoryRouter initialEntries={['/bookings/11111111-1111-4111-8111-111111111111']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/login" element={<div>Login Screen</div>} />
+              <Route
+                path="/bookings/:id"
+                element={
+                  <CustomerRoute>
+                    <div>Booking Detail Screen</div>
+                  </CustomerRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+      expect(screen.getByText('Login Screen')).toBeInTheDocument();
+      expect(screen.queryByText('Booking Detail Screen')).not.toBeInTheDocument();
+    });
   });
 
   it('renders 404 NotFoundPage for undefined routes', () => {

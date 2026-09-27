@@ -32,3 +32,21 @@ export interface FutureBookingWarningDetails {
   futureBookingCount: number;
   bookings: FutureBookingWarningItem[];
 }
+
+export type BookingHistoryView = 'ALL' | 'UPCOMING' | 'COMPLETED';
+
+export interface FindUserBookingsFilter {
+  page: number;
+  limit: number;
+  view: BookingHistoryView;
+}
+
+export interface GetBookingsResponseData {
+  items: BookingResponseDto[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
