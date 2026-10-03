@@ -13,6 +13,7 @@ import { createMockJwt } from './test-utils';
 vi.mock('../services/booking.api', () => ({
   bookingApi: {
     getBookingById: vi.fn(),
+    cancelBooking: vi.fn(),
   },
 }));
 
@@ -43,6 +44,7 @@ const mockDetailResponse = (data: BookingResult): GetBookingDetailResponse => ({
 describe('BookingDetailPage', () => {
   beforeEach(() => {
     vi.mocked(bookingApi.getBookingById).mockReset();
+    vi.mocked(bookingApi.cancelBooking).mockReset();
     localStorage.clear();
     localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' }));
   });
@@ -339,5 +341,322 @@ describe('BookingDetailPage', () => {
     expect(screen.getByTestId('booking-time-value')).toHaveTextContent(
       /25\/10\/2026.*26\/10\/2026/,
     );
+  });
+
+  describe('Customer Booking Cancellation (CWB-26)', () => {
+    it('displays "Hủy đặt phòng" button and cancellation policy info when booking is CONFIRMED (AC1)', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+
+      renderComponent();
+
+      expect(await screen.findByTestId('booking-detail-card')).toBeInTheDocument();
+      expect(screen.getByTestId('cancellation-section')).toBeInTheDocument();
+      expect(screen.getByText(/trước thời gian bắt đầu ít nhất 1 giờ/i)).toBeInTheDocument();
+      expect(screen.getByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('cancel-booking-init-btn')).toHaveTextContent('Hủy đặt phòng');
+    });
+
+    it('does not display cancellation section when booking status is CANCELLED, COMPLETED, or NO_SHOW', async () => {
+      const nonConfirmedStatuses = ['CANCELLED', 'COMPLETED', 'NO_SHOW'];
+
+      for (const status of nonConfirmedStatuses) {
+        vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+          mockDetailResponse({ ...mockDetailData, status }),
+        );
+
+        const { unmount } = renderComponent();
+
+        expect(await screen.findByTestId('booking-detail-card')).toBeInTheDocument();
+        expect(screen.queryByTestId('cancellation-section')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('cancel-booking-init-btn')).not.toBeInTheDocument();
+
+        unmount();
+      }
+    });
+
+    it('shows confirmation box when user clicks "Hủy đặt phòng" and allows closing without calling API', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+
+      renderComponent();
+      const user = userEvent.setup();
+
+      expect(await screen.findByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+      expect(screen.queryByTestId('cancellation-confirm-box')).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId('cancel-booking-init-btn'));
+
+      expect(screen.getByTestId('cancellation-confirm-box')).toBeInTheDocument();
+      expect(
+        screen.getByText('Bạn có chắc chắn muốn hủy đơn đặt phòng này không?'),
+      ).toBeInTheDocument();
+      expect(screen.getByTestId('confirm-cancel-btn')).toBeInTheDocument();
+      expect(screen.getByTestId('abort-cancel-btn')).toBeInTheDocument();
+
+      // Click "Đóng" (abort)
+      await user.click(screen.getByTestId('abort-cancel-btn'));
+
+      expect(screen.queryByTestId('cancellation-confirm-box')).not.toBeInTheDocument();
+      expect(screen.getByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+      expect(bookingApi.cancelBooking).not.toHaveBeenCalled();
+    });
+
+    it('cancels booking successfully, updates badge to "Đã hủy", and displays success banner (AC1)', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+
+      const cancelledBooking: BookingResult = {
+        ...mockDetailData,
+        status: 'CANCELLED',
+      };
+      vi.mocked(bookingApi.cancelBooking).mockResolvedValueOnce({
+        success: true,
+        message: 'Hủy đặt phòng thành công',
+        data: cancelledBooking,
+      });
+
+      renderComponent();
+      const user = userEvent.setup();
+
+      expect(await screen.findByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('cancel-booking-init-btn'));
+      await user.click(screen.getByTestId('confirm-cancel-btn'));
+
+      expect(bookingApi.cancelBooking).toHaveBeenCalledWith(validBookingId, expect.any(AbortSignal));
+
+      expect(await screen.findByTestId('cancel-success-banner')).toBeInTheDocument();
+      expect(screen.getByTestId('cancel-success-banner')).toHaveTextContent(
+        'Hủy đặt phòng thành công',
+      );
+      expect(screen.getByTestId('booking-status-badge')).toHaveTextContent('Đã hủy');
+      expect(screen.getByTestId('booking-status-badge')).toHaveClass('badge-cancelled');
+
+      // Cancellation section is hidden once status is CANCELLED
+      expect(screen.queryByTestId('cancellation-section')).not.toBeInTheDocument();
+    });
+
+    it('displays error alert when API returns 400 CANCELLATION_POLICY_VIOLATION (AC2)', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+
+      const policyError = new AxiosError('Bad Request', '400', undefined, undefined, {
+        status: 400,
+        statusText: 'Bad Request',
+        data: {
+          success: false,
+          code: 'CANCELLATION_POLICY_VIOLATION',
+          message: 'Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ',
+        },
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+      vi.mocked(bookingApi.cancelBooking).mockRejectedValueOnce(policyError);
+
+      renderComponent();
+      const user = userEvent.setup();
+
+      expect(await screen.findByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('cancel-booking-init-btn'));
+      await user.click(screen.getByTestId('confirm-cancel-btn'));
+
+      expect(await screen.findByTestId('cancel-error-banner')).toBeInTheDocument();
+      expect(screen.getByTestId('cancel-error-banner')).toHaveTextContent(
+        'Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ',
+      );
+      // Status remains CONFIRMED
+      expect(screen.getByTestId('booking-status-badge')).toHaveTextContent('Đã xác nhận');
+    });
+
+    it('displays conflict banner and allows refresh when API returns 409 BOOKING_STATE_CONFLICT', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+
+      const conflictError = new AxiosError('Conflict', '409', undefined, undefined, {
+        status: 409,
+        statusText: 'Conflict',
+        data: {
+          success: false,
+          code: 'BOOKING_STATE_CONFLICT',
+          message: 'Chỉ có thể hủy đơn đặt phòng ở trạng thái đã xác nhận',
+        },
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+      vi.mocked(bookingApi.cancelBooking).mockRejectedValueOnce(conflictError);
+
+      renderComponent();
+      const user = userEvent.setup();
+
+      expect(await screen.findByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('cancel-booking-init-btn'));
+      await user.click(screen.getByTestId('confirm-cancel-btn'));
+
+      expect(await screen.findByTestId('cancel-error-banner')).toBeInTheDocument();
+      expect(screen.getByTestId('cancel-conflict-refresh-btn')).toBeInTheDocument();
+
+      // Click "Tải lại dữ liệu" to refresh detail
+      const refreshedBooking: BookingResult = {
+        ...mockDetailData,
+        status: 'COMPLETED',
+      };
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(refreshedBooking),
+      );
+
+      await user.click(screen.getByTestId('cancel-conflict-refresh-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('booking-status-badge')).toHaveTextContent('Đã hoàn tất');
+      });
+
+      // Old cancellation error banner and retry button must be cleared after successful refresh
+      expect(screen.queryByTestId('cancel-error-banner')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('cancel-conflict-refresh-btn')).not.toBeInTheDocument();
+    });
+
+    it('transitions to not-found state when cancelBooking returns 404 BOOKING_NOT_FOUND', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+
+      const notFoundError = new AxiosError('Not Found', '404', undefined, undefined, {
+        status: 404,
+        statusText: 'Not Found',
+        data: {
+          success: false,
+          code: 'BOOKING_NOT_FOUND',
+          message: 'Không tìm thấy đặt phòng',
+        },
+        headers: {},
+        config: { headers: new AxiosHeaders() },
+      });
+      vi.mocked(bookingApi.cancelBooking).mockRejectedValueOnce(notFoundError);
+
+      renderComponent();
+      const user = userEvent.setup();
+
+      expect(await screen.findByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('cancel-booking-init-btn'));
+      await user.click(screen.getByTestId('confirm-cancel-btn'));
+
+      expect(await screen.findByTestId('booking-not-found-state')).toBeInTheDocument();
+    });
+
+    it('does not overwrite state if session switches while cancel request is in-flight', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+
+      let resolveCancel: (res: any) => void;
+      const cancelPromise = new Promise((resolve) => {
+        resolveCancel = resolve;
+      });
+      vi.mocked(bookingApi.cancelBooking).mockReturnValueOnce(cancelPromise as any);
+
+      renderComponent();
+      const user = userEvent.setup();
+
+      expect(await screen.findByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+
+      await user.click(screen.getByTestId('cancel-booking-init-btn'));
+      await user.click(screen.getByTestId('confirm-cancel-btn'));
+
+      // While cancel is in-flight, session changes to Customer B
+      const cust2Token = createMockJwt({ sub: 'cust-2', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, cust2Token);
+
+      const cust2Promise = new Promise<GetBookingDetailResponse>(() => {});
+      vi.mocked(bookingApi.getBookingById).mockReturnValueOnce(cust2Promise);
+
+      act(() => {
+        window.dispatchEvent(
+          new StorageEvent('storage', {
+            key: TOKEN_STORAGE_KEY,
+            newValue: cust2Token,
+          }),
+        );
+      });
+
+      // Now cancel resolves late
+      act(() => {
+        resolveCancel!({
+          success: true,
+          message: 'Hủy đặt phòng thành công',
+          data: { ...mockDetailData, status: 'CANCELLED' },
+        });
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+      // Should not render Customer A's cancelled data for Customer B
+      expect(screen.queryByTestId('cancel-success-banner')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('booking-detail-card')).not.toBeInTheDocument();
+    });
+
+    it('does not overwrite state if booking ID changes while cancel request is in-flight', async () => {
+      const secondBookingId = '33333333-3333-4333-8333-333333333333';
+      const secondBookingData: BookingResult = {
+        ...mockDetailData,
+        id: secondBookingId,
+        bookingCode: 'CS-20261025-WXYZ',
+      };
+
+      vi.mocked(bookingApi.getBookingById).mockImplementation(async (targetId) => {
+        if (targetId === validBookingId) return mockDetailResponse(mockDetailData);
+        if (targetId === secondBookingId) return mockDetailResponse(secondBookingData);
+        throw new Error('Not found');
+      });
+
+      let resolveCancel: (res: any) => void;
+      const cancelPromise = new Promise((resolve) => {
+        resolveCancel = resolve;
+      });
+      vi.mocked(bookingApi.cancelBooking).mockReturnValueOnce(cancelPromise as any);
+
+      let navigateFn!: (to: string) => void;
+      function TestNavigator() {
+        navigateFn = useNavigate();
+        return null;
+      }
+
+      render(
+        <MemoryRouter initialEntries={[`/bookings/${validBookingId}`]}>
+          <AuthProvider>
+            <TestNavigator />
+            <Routes>
+              <Route path="/bookings/:id" element={<BookingDetailPage />} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      const user = userEvent.setup();
+      expect(await screen.findByTestId('cancel-booking-init-btn')).toBeInTheDocument();
+
+      // Initiate cancel on booking 1
+      await user.click(screen.getByTestId('cancel-booking-init-btn'));
+      await user.click(screen.getByTestId('confirm-cancel-btn'));
+
+      // While cancel is in-flight, navigate to booking 2
+      act(() => {
+        navigateFn(`/bookings/${secondBookingId}`);
+      });
+
+      // Booking 2 loads
+      await waitFor(() => {
+        expect(screen.getByTestId('detail-booking-code')).toHaveTextContent('CS-20261025-WXYZ');
+      });
+
+      // Now cancel for booking 1 resolves late
+      act(() => {
+        resolveCancel!({
+          success: true,
+          message: 'Hủy đặt phòng thành công',
+          data: { ...mockDetailData, status: 'CANCELLED' },
+        });
+      });
+
+      await new Promise((r) => setTimeout(r, 50));
+
+      // Booking 2 should not be affected by booking 1's cancellation
+      expect(screen.getByTestId('detail-booking-code')).toHaveTextContent('CS-20261025-WXYZ');
+      expect(screen.getByTestId('booking-status-badge')).toHaveTextContent('Đã xác nhận');
+      expect(screen.queryByTestId('cancel-success-banner')).not.toBeInTheDocument();
+    });
   });
 });

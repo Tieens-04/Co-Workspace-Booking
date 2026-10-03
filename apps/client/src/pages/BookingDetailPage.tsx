@@ -14,6 +14,13 @@ interface BookingDetailState {
   isLoading: boolean;
   isNotFound: boolean;
   errorMessage: string | null;
+  isCancelling: boolean;
+  showCancelConfirm: boolean;
+  cancelFeedback: {
+    type: 'success' | 'error';
+    message: string;
+    code?: string;
+  } | null;
 }
 
 export const BookingDetailPage: React.FC = () => {
@@ -27,6 +34,9 @@ export const BookingDetailPage: React.FC = () => {
     isLoading: true,
     isNotFound: false,
     errorMessage: null,
+    isCancelling: false,
+    showCancelConfirm: false,
+    cancelFeedback: null,
   }));
 
   // Synchronously reset state if session or target ID changes during render before painting DOM
@@ -38,6 +48,9 @@ export const BookingDetailPage: React.FC = () => {
       isLoading: true,
       isNotFound: false,
       errorMessage: null,
+      isCancelling: false,
+      showCancelConfirm: false,
+      cancelFeedback: null,
     });
   }
 
@@ -52,6 +65,7 @@ export const BookingDetailPage: React.FC = () => {
   // Stale request guards
   const requestIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const cancelAbortControllerRef = useRef<AbortController | null>(null);
   const activeSessionUserRef = useRef<string | undefined>(principal?.id);
   activeSessionUserRef.current = principal?.id;
 
@@ -68,6 +82,9 @@ export const BookingDetailPage: React.FC = () => {
         isLoading: false,
         isNotFound: true,
         errorMessage: null,
+        isCancelling: false,
+        showCancelConfirm: false,
+        cancelFeedback: null,
       });
       return;
     }
@@ -85,6 +102,7 @@ export const BookingDetailPage: React.FC = () => {
       isLoading: true,
       isNotFound: false,
       errorMessage: null,
+      cancelFeedback: null,
     }));
 
     bookingApi
@@ -98,14 +116,18 @@ export const BookingDetailPage: React.FC = () => {
           return;
         }
 
-        setState({
+        setState((prev) => ({
+          ...prev,
           sessionUserId: requestingUser,
           bookingId: targetId,
           booking: res.data,
           isLoading: false,
           isNotFound: false,
           errorMessage: null,
-        });
+          isCancelling: false,
+          showCancelConfirm: false,
+          cancelFeedback: null,
+        }));
       })
       .catch((err) => {
         if (
@@ -121,7 +143,8 @@ export const BookingDetailPage: React.FC = () => {
         const statusCode = err.response?.status;
         const errorCode = err.response?.data?.code;
 
-        setState({
+        setState((prev) => ({
+          ...prev,
           sessionUserId: requestingUser,
           bookingId: targetId,
           booking: null,
@@ -131,15 +154,103 @@ export const BookingDetailPage: React.FC = () => {
             statusCode === 404 || errorCode === 'BOOKING_NOT_FOUND'
               ? null
               : err.response?.data?.message || err.message || 'Không thể tải chi tiết đặt phòng',
-        });
+          isCancelling: false,
+          showCancelConfirm: false,
+          cancelFeedback: null,
+        }));
       });
   }, [id, principal?.id]);
+
+  const handleCancelBooking = useCallback(async () => {
+    if (!id || !effectiveBooking || effectiveBooking.status !== 'CONFIRMED' || state.isCancelling) {
+      return;
+    }
+
+    const requestingUser = principal?.id;
+    const targetId = id;
+
+    if (cancelAbortControllerRef.current) {
+      cancelAbortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    cancelAbortControllerRef.current = controller;
+
+    setState((prev) => ({
+      ...prev,
+      isCancelling: true,
+      cancelFeedback: null,
+    }));
+
+    try {
+      const res = await bookingApi.cancelBooking(targetId, controller.signal);
+
+      if (
+        controller.signal.aborted ||
+        activeSessionUserRef.current !== requestingUser ||
+        id !== targetId
+      ) {
+        return;
+      }
+
+      setState((prev) => ({
+        ...prev,
+        booking: res.data,
+        isCancelling: false,
+        showCancelConfirm: false,
+        cancelFeedback: {
+          type: 'success',
+          message: res.message || 'Hủy đặt phòng thành công',
+        },
+      }));
+    } catch (err: any) {
+      if (
+        controller.signal.aborted ||
+        err.name === 'CanceledError' ||
+        err.code === 'ERR_CANCELED' ||
+        activeSessionUserRef.current !== requestingUser ||
+        id !== targetId
+      ) {
+        return;
+      }
+
+      const statusCode = err.response?.status;
+      const errorCode = err.response?.data?.code;
+      const errorMsg =
+        err.response?.data?.message || err.message || 'Không thể hủy đặt phòng';
+
+      if (statusCode === 404 || errorCode === 'BOOKING_NOT_FOUND') {
+        setState((prev) => ({
+          ...prev,
+          booking: null,
+          isLoading: false,
+          isNotFound: true,
+          isCancelling: false,
+          showCancelConfirm: false,
+          cancelFeedback: null,
+        }));
+        return;
+      }
+
+      setState((prev) => ({
+        ...prev,
+        isCancelling: false,
+        cancelFeedback: {
+          type: 'error',
+          message: errorMsg,
+          code: errorCode,
+        },
+      }));
+    }
+  }, [id, effectiveBooking, state.isCancelling, principal?.id]);
 
   useEffect(() => {
     fetchDetail();
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
+      }
+      if (cancelAbortControllerRef.current) {
+        cancelAbortControllerRef.current.abort();
       }
     };
   }, [fetchDetail]);
@@ -247,6 +358,37 @@ export const BookingDetailPage: React.FC = () => {
                 </div>
               </div>
 
+              {state.cancelFeedback && (
+                <div
+                  className={`cancel-feedback-banner ${state.cancelFeedback.type}`}
+                  role={state.cancelFeedback.type === 'error' ? 'alert' : 'status'}
+                  data-testid={`cancel-${state.cancelFeedback.type}-banner`}
+                >
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '0.75rem',
+                      flexWrap: 'wrap',
+                    }}
+                  >
+                    <span>{state.cancelFeedback.message}</span>
+                    {state.cancelFeedback.code === 'BOOKING_STATE_CONFLICT' && (
+                      <button
+                        type="button"
+                        className="btn btn-outline"
+                        style={{ padding: '0.25rem 0.75rem', fontSize: '0.8125rem' }}
+                        onClick={fetchDetail}
+                        data-testid="cancel-conflict-refresh-btn"
+                      >
+                        Tải lại dữ liệu
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               <div className="detail-summary-wrapper">
                 <BookingSummary
                   booking={effectiveBooking}
@@ -254,6 +396,72 @@ export const BookingDetailPage: React.FC = () => {
                   showNote={true}
                 />
               </div>
+
+              {effectiveBooking.status === 'CONFIRMED' && (
+                <section className="cancellation-section" data-testid="cancellation-section">
+                  <div className="cancellation-policy-info">
+                    <span aria-hidden="true">ℹ️</span>
+                    <div>
+                      <strong>Chính sách hủy đặt phòng:</strong> Quý khách chỉ có thể tự hủy đơn đặt phòng trước thời gian bắt đầu ít nhất 1 giờ. Sau khi hủy thành công, khung giờ sẽ được giải phóng.
+                    </div>
+                  </div>
+
+                  {!state.showCancelConfirm ? (
+                    <div className="cancellation-init-row">
+                      <button
+                        type="button"
+                        className="btn btn-danger-outline"
+                        onClick={() =>
+                          setState((prev) => ({
+                            ...prev,
+                            showCancelConfirm: true,
+                            cancelFeedback: null,
+                          }))
+                        }
+                        data-testid="cancel-booking-init-btn"
+                      >
+                        Hủy đặt phòng
+                      </button>
+                    </div>
+                  ) : (
+                    <div
+                      className="cancellation-confirm-box"
+                      role="region"
+                      aria-labelledby="confirm-cancel-heading"
+                      data-testid="cancellation-confirm-box"
+                    >
+                      <h4 id="confirm-cancel-heading" className="cancellation-confirm-text">
+                        Bạn có chắc chắn muốn hủy đơn đặt phòng này không?
+                      </h4>
+                      <p className="cancellation-confirm-subtext">
+                        Thao tác hủy không thể hoàn tác. Khung giờ này sẽ được giải phóng cho người dùng khác.
+                      </p>
+                      <div className="cancellation-confirm-actions">
+                        <button
+                          type="button"
+                          className="btn btn-danger"
+                          disabled={state.isCancelling}
+                          onClick={handleCancelBooking}
+                          data-testid="confirm-cancel-btn"
+                        >
+                          {state.isCancelling ? 'Đang hủy...' : 'Xác nhận hủy'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          disabled={state.isCancelling}
+                          onClick={() =>
+                            setState((prev) => ({ ...prev, showCancelConfirm: false }))
+                          }
+                          data-testid="abort-cancel-btn"
+                        >
+                          Đóng
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </section>
+              )}
 
               <div className="detail-actions-footer">
                 <Link

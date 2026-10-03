@@ -858,16 +858,15 @@ IDOR/ownership, phân loại upcoming theo timezone.
 **1. Mục tiêu (Objective)**
 
 Xây dựng chức năng cho phép Customer tự hủy đơn nếu cách giờ bắt đầu ít
-nhất 2 tiếng. Dưới 2 tiếng hệ thống từ chối.
+nhất 1 tiếng (theo Human Clarifications). Dưới 1 tiếng hệ thống từ chối.
 
 **2. Các bước thực hiện chi tiết (Step-by-step Implementation)**
 
-- Tạo `PATCH/POST /api/me/bookings/:id/cancel`; kiểm tra ownership và
+- Tạo `PATCH /api/v1/bookings/:id/cancel` (hoặc `PATCH/POST /api/me/bookings/:id/cancel`); kiểm tra ownership và
   trạng thái hiện tại.
-- Tính `startTime - now >= 2h` ở Backend bằng cùng timezone policy;
+- Tính `startTime - now >= 1h` ở Backend bằng cùng timezone policy;
   không dựa vào đồng hồ client.
-- Update có điều kiện từ `CONFIRMED -> CANCELLED`; lưu `cancelledAt`
-  và optional reason.
+- Update có điều kiện từ `CONFIRMED -> CANCELLED`; lưu trạng thái và giữ nguyên thông tin liên quan.
 - Chống double cancel/idempotency: booking đã CANCELLED trả trạng thái
   rõ ràng, không phát side effect lặp.
 - Trigger notification bất đồng bộ/fallback theo Task 2023 sau commit,
@@ -875,12 +874,12 @@ nhất 2 tiếng. Dưới 2 tiếng hệ thống từ chối.
 
 **3. Yêu cầu đầu vào & Tiền đề (Prerequisites / Inputs)**
 
-2017, 2014; cần cancellation policy 2h.
+2017, 2014; cần cancellation policy 1h.
 
 **4. Tiêu chí nghiệm thu & Yêu cầu đầu ra (Acceptance Criteria &
 Outputs)**
 
-AC gốc: Hủy trước 2h thành công (chuyển CANCELLED); hủy sát giờ báo lỗi
+AC hiệu lực: Hủy trước 1h thành công (chuyển CANCELLED); hủy sát giờ báo lỗi
 vi phạm chính sách kèm giải thích. Mở rộng: có automated/manual evidence
 phù hợp; lỗi phải có `code/message` nhất quán. Deliverables:
 Cancellation endpoint/UI + policy tests. HTTP convention: `200/201` cho
@@ -889,7 +888,7 @@ conflict khi áp dụng.
 
 **5. Rủi ro & Lưu ý kỹ thuật (Gotchas & Edge Cases)**
 
-Clock skew, đúng mốc 2h, side effect email lặp.
+Clock skew, đúng mốc 1h, side effect email lặp.
 
 ### `2019` - Implement admin booking management and guest booking
 
@@ -1468,7 +1467,7 @@ transaction/raw query
 
 `2018` 2017, 2014; cần 2017 No
 cancellation policy<br>
-2h
+1h
 
 `2019` 2014, 2015, 2004; cần 2017/2018 No
 chốt guest data model

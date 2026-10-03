@@ -265,6 +265,7 @@ describe('Booking History & Detail Unit Tests (/api/v1/bookings)', () => {
         createBooking: vi.fn(),
         findManyAndCountForUser: vi.fn().mockResolvedValue([0, []]),
         findByIdForUser: vi.fn().mockResolvedValue(null),
+        cancelBooking: vi.fn(),
       };
       const service = new BookingService(mockRepo);
       const fixedNow = new Date('2026-10-25T08:00:00.000Z');

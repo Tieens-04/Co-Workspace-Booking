@@ -4,6 +4,7 @@ import { AppError } from './error.util.js';
 export const MIN_DURATION_MINUTES = 60;
 export const MAX_DURATION_MINUTES = 480;
 export const ADVANCE_NOTICE_MINUTES = 30;
+export const CANCELLATION_MIN_LEAD_MINUTES = 60;
 
 export function isSlotAligned(date: Date): boolean {
   if (Number.isNaN(date.getTime())) {
@@ -58,6 +59,17 @@ export function validateBookingTime(startDate: Date, endDate: Date, now = new Da
     throw new AppError(
       'ADVANCE_NOTICE',
       `Phải đặt phòng trước thời gian bắt đầu ít nhất ${ADVANCE_NOTICE_MINUTES} phút`,
+      400,
+    );
+  }
+}
+
+export function validateCustomerCancellationTime(startTime: Date, now = new Date()): void {
+  const minLeadMs = CANCELLATION_MIN_LEAD_MINUTES * 60 * 1000;
+  if (startTime.getTime() - now.getTime() < minLeadMs) {
+    throw new AppError(
+      'CANCELLATION_POLICY_VIOLATION',
+      'Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ',
       400,
     );
   }

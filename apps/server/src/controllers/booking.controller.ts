@@ -38,6 +38,17 @@ export class BookingController {
       return next(err);
     }
   };
+
+  cancelBooking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user!.sub;
+      const { id } = req.params;
+      const result = await this.service.cancelBooking(userId, id);
+      return sendSuccess(res, result, 'Hủy đặt phòng thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
 }
 
 export const bookingController = new BookingController();

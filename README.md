@@ -679,16 +679,38 @@ Hệ thống cung cấp tính năng theo dõi lịch sử và mở xem chi tiế
   - Tải dữ liệu độc lập từ API server theo UUID trên URL; hoạt động ổn định khi truy cập trực tiếp, refresh trình duyệt hoặc qua deep link.
   - Xử lý đầy đủ các trạng thái loading (skeleton), lỗi mạng (kèm nút thử lại), và lỗi không tìm thấy (404/IDOR) với các liên kết quay lại lịch sử và danh sách phòng.
 
-#### Kiểm thử Lịch sử & Chi tiết đặt phòng (CWB-25)
+### 5. Chính Sách & Quy Trình Hủy Đặt Phòng Phía Khách Hàng (CWB-26)
+
+Hệ thống cho phép khách hàng (`CUSTOMER`) chủ động tự hủy đơn đặt phòng của mình với các quy tắc nghiệp vụ và ràng buộc toàn vẹn dữ liệu:
+
+- **API Hủy đặt phòng (`PATCH /api/v1/bookings/:id/cancel`)**:
+  - Yêu cầu xác thực JWT với vai trò `CUSTOMER`. Thiếu token trả về `401 UNAUTHORIZED`; vai trò `ADMIN` trả về `403 FORBIDDEN`.
+  - Quyền sở hữu được kiểm tra nghiêm ngặt tại cơ sở dữ liệu (`userId = req.user.sub`). Khách hàng không thể hủy đơn của người khác; nếu ID không tồn tại hoặc thuộc người khác, trả về `404 BOOKING_NOT_FOUND` để chống IDOR.
+  - Tham số `:id` được kiểm tra định dạng UUID. Nghiêm cấm nhận body hoặc query lạ (`400 VALIDATION_ERROR`).
+- **Quy tắc thời gian hủy (1-Hour Policy)**:
+  - Khách hàng chỉ được tự hủy đơn nếu thời gian bắt đầu còn **ít nhất 1 giờ** (`startTime - serverNow >= 60 phút`). Giờ server là nguồn thẩm quyền duy nhất, không phụ thuộc vào đồng hồ thiết bị client.
+  - Nếu yêu cầu hủy được gửi sát giờ (< 1 giờ hoặc giờ bắt đầu đã qua), hệ thống từ chối và trả về lỗi `400 CANCELLATION_POLICY_VIOLATION` kèm thông báo giải thích chính sách: _"Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ"_.
+- **Tính nguyên tử & Khóa dữ liệu (Transaction & Row-Locking)**:
+  - Thao tác kiểm tra trạng thái, kiểm tra thời gian và cập nhật trạng thái diễn ra trong một MySQL transaction có khóa dòng bằng `FOR UPDATE`.
+  - Chỉ đơn ở trạng thái `CONFIRMED` mới được phép hủy. Đơn ở trạng thái khác (`COMPLETED`, `NO_SHOW`) trả về `409 BOOKING_STATE_CONFLICT`.
+  - Cơ chế Idempotent: Đơn đã ở trạng thái `CANCELLED` khi gọi lại sẽ trả về thành công `200 OK` với dữ liệu hiện tại, không gây lỗi và không tạo side effect lặp.
+  - Khi đơn chuyển sang `CANCELLED`, khung giờ đặt phòng được giải phóng ngay lập tức khỏi availability để người dùng khác có thể đặt chỗ.
+- **Trải nghiệm người dùng (Frontend Cancellation UI)**:
+  - Tại trang chi tiết đặt phòng (`/bookings/:id`), hiển thị nút _"Hủy đặt phòng"_ cùng thông tin chính sách hủy trước 1 giờ dành cho đơn `CONFIRMED`.
+  - Hộp thoại xác nhận thao tác rõ ràng để tránh người dùng bấm nhầm.
+  - Khóa nút và hiển thị trạng thái đang xử lý (`isCancelling`), cập nhật trực tiếp huy hiệu trạng thái sang _"Đã hủy"_ khi thành công mà không cần tải lại toàn trang.
+  - Hiển thị banner thông báo lỗi chính sách (`role="alert"`) hoặc lỗi xung đột trạng thái (kèm nút tải lại dữ liệu).
+
+#### Kiểm thử Lịch sử, Chi tiết & Hủy đặt phòng (CWB-25, CWB-26)
 
 ```bash
-# Unit & API tests (mocked DB, query validation, RBAC, time boundary)
-npm run test --workspace=apps/server -- src/__tests__/booking-history.test.ts
+# Unit & API tests (mocked DB, query validation, RBAC, time boundary 1h)
+npm run test --workspace=apps/server -- src/__tests__/booking-history.test.ts src/__tests__/booking-cancellation.test.ts src/__tests__/booking-time.test.ts
 
-# Integration tests (MySQL thật, cách ly dữ liệu giữa 2 Customer, 3 bộ lọc, bảo lưu số tiền)
-npm run test:integration --workspace=apps/server -- src/__tests__/booking-history.integration.test.ts
+# Integration tests (MySQL thật, cách ly dữ liệu giữa 2 Customer, 3 bộ lọc, locking và concurrency hủy phòng)
+npm run test:integration --workspace=apps/server -- src/__tests__/booking-history.integration.test.ts src/__tests__/booking-cancellation.integration.test.ts
 
-# Frontend tests (Lịch sử đặt phòng, Chi tiết đặt phòng, Guard và Điều hướng)
+# Frontend tests (Lịch sử đặt phòng, Chi tiết đặt phòng, Quy trình hủy phòng và Guard)
 npm run test --workspace=apps/client -- src/__tests__/BookingHistoryPage.test.tsx src/__tests__/BookingDetailPage.test.tsx
 ```
 

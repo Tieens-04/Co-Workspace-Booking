@@ -35,4 +35,15 @@ export const bookingApi = {
     });
     return response.data;
   },
+
+  cancelBooking: async (id: string, signal?: AbortSignal): Promise<GetBookingDetailResponse> => {
+    const response = await apiClient.patch<GetBookingDetailResponse>(
+      `/bookings/${id}/cancel`,
+      undefined,
+      {
+        signal,
+      },
+    );
+    return response.data;
+  },
 };

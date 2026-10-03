@@ -96,6 +96,14 @@ export class BookingService {
     }
     return booking;
   }
+
+  async cancelBooking(
+    userId: string,
+    id: string,
+    clock?: (() => Date) | Date,
+  ): Promise<BookingResponseDto> {
+    return this.bookingRepo.cancelBooking(userId, id, clock);
+  }
 }
 
 export const bookingService = new BookingService();

@@ -3,6 +3,8 @@ import {
   isSlotAligned,
   validateBookingTime,
   calculateBookingTotal,
+  validateCustomerCancellationTime,
+  CANCELLATION_MIN_LEAD_MINUTES,
 } from '../utils/booking-time.util.js';
 import {
   generateBookingCode,
@@ -222,6 +224,45 @@ describe('Booking Time & Pricing Utilities', () => {
       const start = new Date('2026-09-21T02:00:00.000Z');
       const code = generateBookingCode(start);
       expect(code).toMatch(/^CS-20260921-[0-9A-Z]{4}$/);
+    });
+  });
+
+  describe('validateCustomerCancellationTime (1-Hour Policy)', () => {
+    const fixedNow = new Date('2026-10-25T08:00:00.000Z');
+
+    it('verifies cancellation lead time constant is 60 minutes', () => {
+      expect(CANCELLATION_MIN_LEAD_MINUTES).toBe(60);
+    });
+
+    it('allows cancellation at exactly 60 minutes before start', () => {
+      const start = new Date('2026-10-25T09:00:00.000Z');
+      expect(() => validateCustomerCancellationTime(start, fixedNow)).not.toThrow();
+    });
+
+    it('allows cancellation when more than 60 minutes before start', () => {
+      const start = new Date('2026-10-25T09:00:01.000Z');
+      expect(() => validateCustomerCancellationTime(start, fixedNow)).not.toThrow();
+    });
+
+    it('rejects cancellation when less than 60 minutes before start (59m 59s)', () => {
+      const start = new Date('2026-10-25T08:59:59.000Z');
+      expect(() => validateCustomerCancellationTime(start, fixedNow)).toThrowError(
+        expect.objectContaining({
+          code: 'CANCELLATION_POLICY_VIOLATION',
+          statusCode: 400,
+          message: 'Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ',
+        }),
+      );
+    });
+
+    it('rejects cancellation when start time is in the past', () => {
+      const start = new Date('2026-10-25T07:30:00.000Z');
+      expect(() => validateCustomerCancellationTime(start, fixedNow)).toThrowError(
+        expect.objectContaining({
+          code: 'CANCELLATION_POLICY_VIOLATION',
+          statusCode: 400,
+        }),
+      );
     });
   });
 });

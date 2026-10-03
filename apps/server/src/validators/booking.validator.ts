@@ -56,3 +56,17 @@ export type GetBookingByIdParamsInput = z.infer<typeof getBookingByIdParamsSchem
 
 export const getBookingByIdQuerySchema = z.object({}).strict();
 export type GetBookingByIdQueryInput = z.infer<typeof getBookingByIdQuerySchema>;
+
+export const cancelBookingParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type CancelBookingParamsInput = z.infer<typeof cancelBookingParamsSchema>;
+
+export const cancelBookingQuerySchema = z.object({}).strict();
+export type CancelBookingQueryInput = z.infer<typeof cancelBookingQuerySchema>;
+
+export const cancelBookingBodySchema = z.object({}).strict();
+export type CancelBookingBodyInput = z.infer<typeof cancelBookingBodySchema>;

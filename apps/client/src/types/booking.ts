@@ -42,3 +42,4 @@ export interface GetBookingsResponseData {
 
 export type GetBookingsResponse = ApiResponse<GetBookingsResponseData>;
 export type GetBookingDetailResponse = ApiResponse<BookingResult>;
+export type CancelBookingResponse = ApiResponse<BookingResult>;

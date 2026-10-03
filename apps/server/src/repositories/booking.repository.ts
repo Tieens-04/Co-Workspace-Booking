@@ -6,7 +6,7 @@ import {
   BookingResponseDto,
   FindUserBookingsFilter,
 } from '../types/booking.type.js';
-import { calculateBookingTotal } from '../utils/booking-time.util.js';
+import { calculateBookingTotal, validateCustomerCancellationTime } from '../utils/booking-time.util.js';
 import { AppError } from '../utils/error.util.js';
 
 export interface CreateBookingRepoInput {
@@ -75,6 +75,11 @@ export interface BookingRepositoryContract {
     now: Date,
   ): Promise<[number, BookingResponseDto[]]>;
   findByIdForUser(userId: string, id: string): Promise<BookingResponseDto | null>;
+  cancelBooking(
+    userId: string,
+    id: string,
+    clock?: (() => Date) | Date,
+  ): Promise<BookingResponseDto>;
 }
 
 export class BookingRepository implements BookingRepositoryContract {
@@ -203,6 +208,68 @@ export class BookingRepository implements BookingRepositoryContract {
     });
 
     return record ? mapBookingRecordToDto(record) : null;
+  }
+
+  async cancelBooking(
+    userId: string,
+    id: string,
+    clock?: (() => Date) | Date,
+  ): Promise<BookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      // 1. Lock booking row in MySQL with FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: BookingStatus;
+          start_time: Date | string;
+        }>
+      >(
+        Prisma.sql`SELECT id, status, start_time FROM bookings WHERE id = ${id} AND user_id = ${userId} FOR UPDATE`,
+      );
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      }
+
+      const lockedBooking = rows[0];
+
+      // 2. Idempotent check: if already CANCELLED, return current record without modifications
+      if (lockedBooking.status === BookingStatus.CANCELLED) {
+        const existing = await tx.booking.findUnique({
+          where: { id },
+          select: bookingReadSelect,
+        });
+        if (!existing) {
+          throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+        }
+        return mapBookingRecordToDto(existing);
+      }
+
+      // 3. Only CONFIRMED bookings can be cancelled by customer
+      if (lockedBooking.status !== BookingStatus.CONFIRMED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể hủy đơn đặt phòng ở trạng thái đã xác nhận',
+          409,
+        );
+      }
+
+      // 4. Policy check: must cancel at least 1 hour (60 minutes) before startTime.
+      // Crucial: evaluation time is retrieved AFTER the lock is acquired, eliminating lock-wait skew.
+      const evaluationTime = typeof clock === 'function' ? clock() : (clock ?? new Date());
+      validateCustomerCancellationTime(new Date(lockedBooking.start_time), evaluationTime);
+
+      // 5. Update status to CANCELLED atomically
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          status: BookingStatus.CANCELLED,
+        },
+        select: bookingReadSelect,
+      });
+
+      return mapBookingRecordToDto(updated);
+    });
   }
 }
 

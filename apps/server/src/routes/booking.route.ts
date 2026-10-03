@@ -6,6 +6,9 @@ import {
   getBookingsQuerySchema,
   getBookingByIdParamsSchema,
   getBookingByIdQuerySchema,
+  cancelBookingParamsSchema,
+  cancelBookingQuerySchema,
+  cancelBookingBodySchema,
 } from '../validators/booking.validator.js';
 
 const router = Router();
@@ -18,5 +21,12 @@ router.get(
   bookingController.getBookingById,
 );
 router.post('/', validateBody(createBookingSchema), bookingController.createBooking);
+router.patch(
+  '/:id/cancel',
+  validateParams(cancelBookingParamsSchema),
+  validateQuery(cancelBookingQuerySchema),
+  validateBody(cancelBookingBodySchema),
+  bookingController.cancelBooking,
+);
 
 export default router;
