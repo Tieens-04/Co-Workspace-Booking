@@ -1,9 +1,11 @@
 import { Prisma } from '@prisma/client';
 import {
+  BookingIdentity,
   BookingRepositoryContract,
   bookingRepository,
 } from '../repositories/booking.repository.js';
 import { CreateBookingInput } from '../validators/booking.validator.js';
+import { CreateGuestBookingInput } from '../validators/admin-booking.validator.js';
 import {
   BookingResponseDto,
   FindUserBookingsFilter,
@@ -23,6 +25,34 @@ export class BookingService {
     input: CreateBookingInput,
     now = new Date(),
   ): Promise<BookingResponseDto> {
+    return this.createBookingInternal({ userId }, input, now);
+  }
+
+  async createGuestBooking(
+    input: CreateGuestBookingInput,
+    now = new Date(),
+  ): Promise<BookingResponseDto> {
+    return this.createBookingInternal(
+      {
+        userId: null,
+        guestName: input.guestName,
+        guestPhone: input.guestPhone,
+      },
+      input,
+      now,
+    );
+  }
+
+  private async createBookingInternal(
+    identity: BookingIdentity,
+    input: {
+      roomId: string;
+      startTime: string;
+      endTime: string;
+      note?: string | null;
+    },
+    now = new Date(),
+  ): Promise<BookingResponseDto> {
     const startDate = new Date(input.startTime);
     const endDate = new Date(input.endTime);
 
@@ -36,7 +66,7 @@ export class BookingService {
       const candidateCode = generateBookingCode(startDate);
       try {
         return await this.bookingRepo.createBooking({
-          userId,
+          ...identity,
           roomId: input.roomId,
           bookingCode: candidateCode,
           startDate,

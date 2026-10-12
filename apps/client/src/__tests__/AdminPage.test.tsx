@@ -166,6 +166,17 @@ describe('AdminPage - Room Management & Form', () => {
       expect(screen.getByText('250.000 đ/h')).toBeInTheDocument();
     });
 
+    it('renders navigation link to admin bookings management page', async () => {
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('admin-manage-bookings-link')).toBeInTheDocument();
+      });
+      const link = screen.getByTestId('admin-manage-bookings-link');
+      expect(link).toHaveAttribute('href', '/admin/bookings');
+      expect(link).toHaveTextContent('Quản lý đặt phòng');
+    });
+
     it('renders empty state when there are no rooms', async () => {
       vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(mockRoomsResponse([], 0, 0, 1));
 

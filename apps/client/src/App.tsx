@@ -6,6 +6,7 @@ import { RoomDetailPage } from './pages/RoomDetailPage';
 import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AdminPage } from './pages/AdminPage';
+import { AdminBookingsPage } from './pages/AdminBookingsPage';
 import { BookingConfirmationPage } from './pages/BookingConfirmationPage';
 import { BookingHistoryPage } from './pages/BookingHistoryPage';
 import { BookingDetailPage } from './pages/BookingDetailPage';
@@ -63,6 +64,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <AdminPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/bookings"
+            element={
+              <AdminRoute>
+                <AdminBookingsPage />
               </AdminRoute>
             }
           />

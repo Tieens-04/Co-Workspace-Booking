@@ -6,17 +6,50 @@ import {
   BookingResponseDto,
   FindUserBookingsFilter,
 } from '../types/booking.type.js';
-import { calculateBookingTotal, validateCustomerCancellationTime } from '../utils/booking-time.util.js';
+import {
+  AdminBookingCustomerDto,
+  AdminBookingResponseDto,
+  FindAdminBookingsFilter,
+} from '../types/admin-booking.type.js';
+import {
+  calculateBookingTotal,
+  validateCustomerCancellationTime,
+} from '../utils/booking-time.util.js';
+import { getDayBounds } from '../utils/room-availability.util.js';
 import { AppError } from '../utils/error.util.js';
 
-export interface CreateBookingRepoInput {
+export type BookingUserIdentity = {
   userId: string;
+  guestName?: never;
+  guestPhone?: never;
+};
+
+export type BookingGuestIdentity = {
+  userId: null;
+  guestName: string;
+  guestPhone: string;
+};
+
+export type BookingIdentity = BookingUserIdentity | BookingGuestIdentity;
+
+export type CreateBookingRepoInput = {
   roomId: string;
   bookingCode: string;
   startDate: Date;
   endDate: Date;
   durationMinutes: number;
   note?: string | null;
+} & BookingIdentity;
+
+export function assertValidBookingIdentity(data: BookingIdentity): void {
+  if (data.userId && (data.guestName || data.guestPhone)) {
+    throw new AppError('VALIDATION_ERROR', 'Dữ liệu người đặt phòng không hợp lệ', 400);
+  }
+  if (!data.userId) {
+    if (!data.guestName || !data.guestPhone || !data.guestName.trim() || !data.guestPhone.trim()) {
+      throw new AppError('VALIDATION_ERROR', 'Thông tin khách vãng lai không hợp lệ', 400);
+    }
+  }
 }
 
 export const bookingReadSelect = {
@@ -67,6 +100,77 @@ export function mapBookingRecordToDto(record: BookingReadRecord): BookingRespons
   };
 }
 
+export const adminBookingReadSelect = {
+  id: true,
+  bookingCode: true,
+  room: {
+    select: {
+      id: true,
+      name: true,
+    },
+  },
+  startTime: true,
+  endTime: true,
+  totalAmount: true,
+  note: true,
+  status: true,
+  paymentStatus: true,
+  paymentMethod: true,
+  guestName: true,
+  guestPhone: true,
+  user: {
+    select: {
+      fullName: true,
+      phoneNumber: true,
+    },
+  },
+} satisfies Prisma.BookingSelect;
+
+export type AdminBookingReadRecord = Prisma.BookingGetPayload<{
+  select: typeof adminBookingReadSelect;
+}>;
+
+export function mapAdminBookingRecordToDto(
+  record: AdminBookingReadRecord,
+): AdminBookingResponseDto {
+  const totalAmount =
+    record.totalAmount &&
+    typeof record.totalAmount === 'object' &&
+    'toFixed' in record.totalAmount &&
+    typeof (record.totalAmount as { toFixed: (digits: number) => string }).toFixed === 'function'
+      ? (record.totalAmount as { toFixed: (digits: number) => string }).toFixed(2)
+      : Number(record.totalAmount).toFixed(2);
+
+  const customer: AdminBookingCustomerDto = record.user
+    ? {
+        kind: 'USER',
+        name: record.user.fullName,
+        phone: record.user.phoneNumber,
+      }
+    : {
+        kind: 'GUEST',
+        name: record.guestName ?? '',
+        phone: record.guestPhone,
+      };
+
+  return {
+    id: record.id,
+    bookingCode: record.bookingCode,
+    room: {
+      id: record.room.id,
+      name: record.room.name,
+    },
+    startTime: record.startTime,
+    endTime: record.endTime,
+    totalAmount,
+    note: record.note,
+    status: record.status,
+    paymentStatus: record.paymentStatus,
+    paymentMethod: record.paymentMethod,
+    customer,
+  };
+}
+
 export interface BookingRepositoryContract {
   createBooking(data: CreateBookingRepoInput): Promise<BookingResponseDto>;
   findManyAndCountForUser(
@@ -82,8 +186,17 @@ export interface BookingRepositoryContract {
   ): Promise<BookingResponseDto>;
 }
 
-export class BookingRepository implements BookingRepositoryContract {
+export interface AdminBookingRepositoryContract {
+  findManyAndCountForAdmin(
+    filter: FindAdminBookingsFilter,
+  ): Promise<[number, AdminBookingResponseDto[]]>;
+}
+
+export class BookingRepository
+  implements BookingRepositoryContract, AdminBookingRepositoryContract
+{
   async createBooking(data: CreateBookingRepoInput): Promise<BookingResponseDto> {
+    assertValidBookingIdentity(data);
     return prisma.$transaction(async (tx) => {
       // 1. Lock room row in MySQL with FOR UPDATE
       const lockedRoom = await lockRoomRow(tx, data.roomId);
@@ -125,7 +238,9 @@ export class BookingRepository implements BookingRepositoryContract {
       const createdBooking = await tx.booking.create({
         data: {
           bookingCode: data.bookingCode,
-          userId: data.userId,
+          userId: data.userId ?? null,
+          guestName: data.userId ? null : data.guestName,
+          guestPhone: data.userId ? null : data.guestPhone,
           roomId: data.roomId,
           startTime: data.startDate,
           endTime: data.endDate,
@@ -270,6 +385,49 @@ export class BookingRepository implements BookingRepositoryContract {
 
       return mapBookingRecordToDto(updated);
     });
+  }
+
+  async findManyAndCountForAdmin(
+    filter: FindAdminBookingsFilter,
+  ): Promise<[number, AdminBookingResponseDto[]]> {
+    const where: Prisma.BookingWhereInput = {};
+
+    if (filter.bookingCode) {
+      where.bookingCode = filter.bookingCode;
+    }
+
+    if (filter.status) {
+      where.status = filter.status;
+    }
+
+    if (filter.date) {
+      const { dayStart, dayEnd } = getDayBounds(filter.date);
+      where.startTime = {
+        gte: dayStart,
+        lt: dayEnd,
+      };
+    }
+
+    const orderBy: Prisma.BookingOrderByWithRelationInput[] = [
+      { startTime: 'desc' },
+      { id: 'desc' },
+    ];
+
+    const skip = (filter.page - 1) * filter.limit;
+    const take = filter.limit;
+
+    const [total, records] = await Promise.all([
+      prisma.booking.count({ where }),
+      prisma.booking.findMany({
+        where,
+        skip,
+        take,
+        orderBy,
+        select: adminBookingReadSelect,
+      }),
+    ]);
+
+    return [total, records.map(mapAdminBookingRecordToDto)];
   }
 }
 

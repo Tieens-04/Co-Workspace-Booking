@@ -119,7 +119,7 @@ model RoomImage {
 model Booking {
   id                 String         @id @default(uuid())
   bookingCode        String         @unique @map("booking_code") // e.g. CS-20260915-ABCD
-  userId             String         @map("user_id")
+  userId             String?        @map("user_id")
   roomId             String         @map("room_id")
   startTime          DateTime       @map("start_time")
   endTime            DateTime       @map("end_time")
@@ -132,11 +132,15 @@ model Booking {
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
 
-  user               User           @relation(fields: [userId], references: [id], onDelete: Restrict)
+  guestName          String?        @map("guest_name") @db.VarChar(191)
+  guestPhone         String?        @map("guest_phone") @db.VarChar(191)
+
+  user               User?          @relation(fields: [userId], references: [id], onDelete: Restrict)
   room               Room           @relation(fields: [roomId], references: [id], onDelete: Restrict)
 
   // Composite index cực kỳ quan trọng cho availability query (StartA < EndB AND EndA > StartB)
   @@index([roomId, startTime, endTime, status])
   @@index([userId])
+  @@index([startTime, id])
   @@map("bookings")
 }

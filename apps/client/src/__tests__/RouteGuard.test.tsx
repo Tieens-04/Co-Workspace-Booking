@@ -43,6 +43,14 @@ describe('RouteGuard and Navigation', () => {
               }
             />
             <Route
+              path="/admin/bookings"
+              element={
+                <AdminRoute>
+                  <div>Admin Bookings Screen</div>
+                </AdminRoute>
+              }
+            />
+            <Route
               path="/customer-only"
               element={
                 <CustomerRoute>
@@ -88,6 +96,33 @@ describe('RouteGuard and Navigation', () => {
     renderWithRoutes('/admin');
 
     expect(screen.getByText('Admin Secret Screen')).toBeInTheDocument();
+  });
+
+  it('redirects unauthenticated user from /admin/bookings to /login', () => {
+    renderWithRoutes('/admin/bookings');
+
+    expect(screen.getByText('Login Screen')).toBeInTheDocument();
+    expect(screen.queryByText('Admin Bookings Screen')).not.toBeInTheDocument();
+  });
+
+  it('shows 403 Forbidden screen when CUSTOMER visits /admin/bookings without redirecting or logging out', () => {
+    const customerToken = createMockJwt({ sub: 'c-1', role: 'CUSTOMER' });
+    localStorage.setItem(TOKEN_STORAGE_KEY, customerToken);
+
+    renderWithRoutes('/admin/bookings');
+
+    expect(screen.getByText('403 - Không có quyền truy cập')).toBeInTheDocument();
+    expect(screen.queryByText('Admin Bookings Screen')).not.toBeInTheDocument();
+    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe(customerToken);
+  });
+
+  it('allows ADMIN to access /admin/bookings', () => {
+    const adminToken = createMockJwt({ sub: 'a-1', role: 'ADMIN' });
+    localStorage.setItem(TOKEN_STORAGE_KEY, adminToken);
+
+    renderWithRoutes('/admin/bookings');
+
+    expect(screen.getByText('Admin Bookings Screen')).toBeInTheDocument();
   });
 
   it('redirects authenticated CUSTOMER from /login to /', () => {
