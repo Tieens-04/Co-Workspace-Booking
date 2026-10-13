@@ -5,6 +5,10 @@ import { useToast } from '../hooks/useToast';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult } from '../types/booking';
 import { BookingSummary } from '../components/BookingSummary';
+import { AppHeader } from '../layouts/AppHeader';
+import { AppFooter } from '../layouts/AppFooter';
+import styles from './BookingDetailPage.module.css';
+import { ArrowLeft, AlertTriangle } from 'lucide-react';
 
 const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -26,7 +30,7 @@ interface BookingDetailState {
 
 export const BookingDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { principal, logout } = useAuth();
+  const { principal } = useAuth();
   const { showToast } = useToast();
 
   const [state, setState] = useState<BookingDetailState>(() => ({
@@ -261,241 +265,226 @@ export const BookingDetailPage: React.FC = () => {
   }, [fetchDetail]);
 
   return (
-    <main className="page-container booking-detail-container">
-      {/* Header */}
-      <header className="app-header">
-        <div className="brand-section">
-          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <h1>🏢 Co-Space Working</h1>
+    <div className={styles.pageWrapper}>
+      <AppHeader />
+
+      <main className={`page-container booking-detail-container ${styles.container}`}>
+        <div className={styles.backNav}>
+          <Link to="/bookings" className={styles.backBtn}>
+            <ArrowLeft size={16} /> Quay lại lịch sử đặt phòng
           </Link>
-          <p>Chi tiết đặt phòng</p>
         </div>
 
-        <nav className="nav-actions">
-          {principal && (
-            <span className="user-status-text">
-              Xin chào, <strong>{principal.fullName || principal.email || principal.id}</strong>{' '}
-              <span className="badge badge-customer">CUSTOMER</span>
-            </span>
+        {/* Main Content */}
+        <div className="detail-content-layout">
+          {/* Loading State */}
+          {effectiveIsLoading && (
+            <div
+              className="card booking-detail-loading"
+              role="status"
+              aria-busy="true"
+              aria-label="Đang tải chi tiết đặt phòng"
+            >
+              <div className="skeleton skeleton-title" style={{ width: '50%' }} />
+              <div className="skeleton skeleton-text" style={{ width: '80%' }} />
+              <div className="skeleton skeleton-text" style={{ width: '60%' }} />
+              <div className="skeleton skeleton-text" style={{ width: '40%' }} />
+            </div>
           )}
-          <Link to="/bookings" className="btn btn-outline">
-            Lịch sử đặt phòng
-          </Link>
-          <button
-            type="button"
-            className="btn btn-danger-outline"
-            onClick={() => logout('userAction')}
-          >
-            Đăng xuất
-          </button>
-        </nav>
-      </header>
 
-      {/* Main Content */}
-      <div className="detail-content-layout">
-        {/* Loading State */}
-        {effectiveIsLoading && (
-          <div
-            className="card booking-detail-loading"
-            role="status"
-            aria-busy="true"
-            aria-label="Đang tải chi tiết đặt phòng"
-          >
-            <div className="skeleton skeleton-title" style={{ width: '50%' }} />
-            <div className="skeleton skeleton-text" style={{ width: '80%' }} />
-            <div className="skeleton skeleton-text" style={{ width: '60%' }} />
-            <div className="skeleton skeleton-text" style={{ width: '40%' }} />
-          </div>
-        )}
-
-        {/* Not Found / IDOR State */}
-        {!effectiveIsLoading && effectiveIsNotFound && (
-          <article
-            className="card error-state-card booking-not-found-card"
-            role="alert"
-            data-testid="booking-not-found-state"
-          >
-            <div className="state-icon" aria-hidden="true">
-              🔍
-            </div>
-            <h2 className="error-title">Không tìm thấy thông tin đặt phòng</h2>
-            <p className="error-description">
-              Đơn đặt phòng này không tồn tại hoặc bạn không có quyền truy cập vào thông tin này.
-            </p>
-            <div className="detail-actions" style={{ justifyContent: 'center' }}>
-              <Link to="/bookings" className="btn btn-primary">
-                ← Về lịch sử đặt phòng
-              </Link>
-              <Link to="/" className="btn btn-outline">
-                Danh sách phòng
-              </Link>
-            </div>
-          </article>
-        )}
-
-        {/* Error / Network Failure State */}
-        {!effectiveIsLoading && !effectiveIsNotFound && effectiveErrorMessage && (
-          <div className="card error-state-card" role="alert">
-            <div className="state-icon" aria-hidden="true">
-              ⚠️
-            </div>
-            <h3 className="error-title">Lỗi kết nối máy chủ</h3>
-            <p className="error-description">{effectiveErrorMessage}</p>
-            <button type="button" className="btn btn-primary" onClick={fetchDetail}>
-              Thử lại
-            </button>
-          </div>
-        )}
-
-        {/* Success State */}
-        {!effectiveIsLoading &&
-          !effectiveIsNotFound &&
-          !effectiveErrorMessage &&
-          effectiveBooking && (
-            <article className="card booking-detail-card" data-testid="booking-detail-card">
-              <div className="detail-header-banner">
-                <h2 className="detail-title">Thông tin chi tiết đặt phòng</h2>
-                <div className="detail-code-badge">
-                  <span className="code-label">MÃ ĐƠN:</span>
-                  <strong className="code-value" data-testid="detail-booking-code">
-                    {effectiveBooking.bookingCode}
-                  </strong>
-                </div>
+          {/* Not Found / IDOR State */}
+          {!effectiveIsLoading && effectiveIsNotFound && (
+            <article
+              className="card error-state-card booking-not-found-card"
+              role="alert"
+              data-testid="booking-not-found-state"
+            >
+              <div className="state-icon" aria-hidden="true">
+                🔍
               </div>
-
-              {state.cancelFeedback && (
-                <div
-                  className={`cancel-feedback-banner ${state.cancelFeedback.type}`}
-                  role={state.cancelFeedback.type === 'error' ? 'alert' : 'status'}
-                  data-testid={`cancel-${state.cancelFeedback.type}-banner`}
-                >
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: '0.75rem',
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <span>{state.cancelFeedback.message}</span>
-                    {state.cancelFeedback.code === 'BOOKING_STATE_CONFLICT' && (
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{ padding: '0.25rem 0.75rem', fontSize: '0.8125rem' }}
-                        onClick={fetchDetail}
-                        data-testid="cancel-conflict-refresh-btn"
-                      >
-                        Tải lại dữ liệu
-                      </button>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              <div className="detail-summary-wrapper">
-                <BookingSummary
-                  booking={effectiveBooking}
-                  showPaymentDetails={true}
-                  showNote={true}
-                />
-              </div>
-
-              {effectiveBooking.status === 'CONFIRMED' && (
-                <section className="cancellation-section" data-testid="cancellation-section">
-                  <div className="cancellation-policy-info">
-                    <span aria-hidden="true">ℹ️</span>
-                    <div>
-                      <strong>Chính sách hủy đặt phòng:</strong> Quý khách chỉ có thể tự hủy đơn đặt phòng trước thời gian bắt đầu ít nhất 1 giờ. Sau khi hủy thành công, khung giờ sẽ được giải phóng.
-                    </div>
-                  </div>
-
-                  {!state.showCancelConfirm ? (
-                    <div className="cancellation-init-row">
-                      <button
-                        type="button"
-                        className="btn btn-danger-outline"
-                        onClick={() =>
-                          setState((prev) => ({
-                            ...prev,
-                            showCancelConfirm: true,
-                            cancelFeedback: null,
-                          }))
-                        }
-                        data-testid="cancel-booking-init-btn"
-                      >
-                        Hủy đặt phòng
-                      </button>
-                    </div>
-                  ) : (
-                    <div
-                      className="cancellation-confirm-box"
-                      role="region"
-                      aria-labelledby="confirm-cancel-heading"
-                      data-testid="cancellation-confirm-box"
-                    >
-                      <h4 id="confirm-cancel-heading" className="cancellation-confirm-text">
-                        Bạn có chắc chắn muốn hủy đơn đặt phòng này không?
-                      </h4>
-                      <p className="cancellation-confirm-subtext">
-                        Thao tác hủy không thể hoàn tác. Khung giờ này sẽ được giải phóng cho người dùng khác.
-                      </p>
-                      <div className="cancellation-confirm-actions">
-                        <button
-                          type="button"
-                          className="btn btn-danger"
-                          disabled={state.isCancelling}
-                          onClick={handleCancelBooking}
-                          data-testid="confirm-cancel-btn"
-                        >
-                          {state.isCancelling ? 'Đang hủy...' : 'Xác nhận hủy'}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn btn-outline"
-                          disabled={state.isCancelling}
-                          onClick={() =>
-                            setState((prev) => ({ ...prev, showCancelConfirm: false }))
-                          }
-                          data-testid="abort-cancel-btn"
-                        >
-                          Đóng
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </section>
-              )}
-
-              <div className="detail-actions-footer">
-                <Link
-                  to="/bookings"
-                  className="btn btn-outline"
-                  data-testid="detail-back-history-btn"
-                >
+              <h2 className="error-title">Không tìm thấy thông tin đặt phòng</h2>
+              <p className="error-description">
+                Đơn đặt phòng này không tồn tại hoặc bạn không có quyền truy cập vào thông tin này.
+              </p>
+              <div className="detail-actions" style={{ justifyContent: 'center' }}>
+                <Link to="/bookings" className="btn btn-primary">
                   ← Về lịch sử đặt phòng
                 </Link>
-                {effectiveBooking.room?.id && (
-                  <Link
-                    to={`/rooms/${effectiveBooking.room.id}`}
-                    className="btn btn-outline"
-                    data-testid="detail-view-room-btn"
-                  >
-                    Xem phòng làm việc
-                  </Link>
-                )}
-                <Link to="/" className="btn btn-primary" data-testid="detail-back-home-btn">
-                  Về danh sách phòng
+                <Link to="/" className="btn btn-outline">
+                  Danh sách phòng
                 </Link>
               </div>
             </article>
           )}
-      </div>
 
-      <footer className="app-footer">
-        Co-Space Working Platform — Hệ thống đặt chỗ làm việc thông minh.
-      </footer>
-    </main>
+          {/* Error / Network Failure State */}
+          {!effectiveIsLoading && !effectiveIsNotFound && effectiveErrorMessage && (
+            <div className="card error-state-card" role="alert">
+              <div className="state-icon" aria-hidden="true">
+                ⚠️
+              </div>
+              <h3 className="error-title">Lỗi kết nối máy chủ</h3>
+              <p className="error-description">{effectiveErrorMessage}</p>
+              <button type="button" className="btn btn-primary" onClick={fetchDetail}>
+                Thử lại
+              </button>
+            </div>
+          )}
+
+          {/* Success State */}
+          {!effectiveIsLoading &&
+            !effectiveIsNotFound &&
+            !effectiveErrorMessage &&
+            effectiveBooking && (
+              <article className={`card booking-detail-card ${styles.detailCard}`} data-testid="booking-detail-card">
+                <div className={`detail-header-banner ${styles.headerSection}`}>
+                  <div>
+                    <h2 className={`detail-title ${styles.title}`}>Thông tin chi tiết đặt phòng</h2>
+                    <span className={styles.codeText}>Mã đặt phòng</span>
+                  </div>
+                  <div className="detail-code-badge">
+                    <span className="code-label">MÃ ĐƠN:</span>
+                    <strong className={`code-value ${styles.codeText}`} data-testid="detail-booking-code">
+                      {effectiveBooking.bookingCode}
+                    </strong>
+                  </div>
+                </div>
+
+                {state.cancelFeedback && (
+                  <div
+                    className={`cancel-feedback-banner ${state.cancelFeedback.type}`}
+                    role={state.cancelFeedback.type === 'error' ? 'alert' : 'status'}
+                    data-testid={`cancel-${state.cancelFeedback.type}-banner`}
+                  >
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: '0.75rem',
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <span>{state.cancelFeedback.message}</span>
+                      {state.cancelFeedback.code === 'BOOKING_STATE_CONFLICT' && (
+                        <button
+                          type="button"
+                          className="btn btn-outline"
+                          style={{ padding: '0.25rem 0.75rem', fontSize: '0.8125rem' }}
+                          onClick={fetchDetail}
+                          data-testid="cancel-conflict-refresh-btn"
+                        >
+                          Tải lại dữ liệu
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="detail-summary-wrapper">
+                  <BookingSummary
+                    booking={effectiveBooking}
+                    showPaymentDetails={true}
+                    showNote={true}
+                  />
+                </div>
+
+                {effectiveBooking.status === 'CONFIRMED' && (
+                  <section className="cancellation-section" data-testid="cancellation-section">
+                    <div className="cancellation-policy-info">
+                      <span aria-hidden="true">ℹ️</span>
+                      <div>
+                        <strong>Chính sách hủy đặt phòng:</strong> Quý khách chỉ có thể tự hủy đơn đặt phòng trước thời gian bắt đầu ít nhất 1 giờ. Sau khi hủy thành công, khung giờ sẽ được giải phóng.
+                      </div>
+                    </div>
+
+                    {!state.showCancelConfirm ? (
+                      <div className="cancellation-init-row">
+                        <button
+                          type="button"
+                          className="btn btn-danger-outline"
+                          onClick={() =>
+                            setState((prev) => ({
+                              ...prev,
+                              showCancelConfirm: true,
+                              cancelFeedback: null,
+                            }))
+                          }
+                          data-testid="cancel-booking-init-btn"
+                        >
+                          Hủy đặt phòng
+                        </button>
+                      </div>
+                    ) : (
+                      <div
+                        className={`cancellation-confirm-box ${styles.cancelModalOverlay}`}
+                        role="region"
+                        aria-labelledby="confirm-cancel-heading"
+                        data-testid="cancellation-confirm-box"
+                      >
+                        <div className={styles.cancelModal}>
+                          <h4 id="confirm-cancel-heading" className={`cancellation-confirm-text ${styles.modalTitle}`}>
+                            <AlertTriangle size={20} />
+                            Bạn có chắc chắn muốn hủy đơn đặt phòng này không?
+                          </h4>
+                          <p className={`cancellation-confirm-subtext ${styles.modalDescription}`}>
+                            Thao tác hủy không thể hoàn tác. Khung giờ này sẽ được giải phóng cho người dùng khác.
+                          </p>
+                          <div className={`cancellation-confirm-actions ${styles.modalActions}`}>
+                            <button
+                              type="button"
+                              className="btn btn-outline"
+                              disabled={state.isCancelling}
+                              onClick={() =>
+                                setState((prev) => ({ ...prev, showCancelConfirm: false }))
+                              }
+                              data-testid="abort-cancel-btn"
+                            >
+                              Đóng
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger"
+                              disabled={state.isCancelling}
+                              onClick={handleCancelBooking}
+                              data-testid="confirm-cancel-btn"
+                            >
+                              {state.isCancelling ? 'Đang hủy...' : 'Xác nhận hủy'}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                <div className="detail-actions-footer">
+                  <Link
+                    to="/bookings"
+                    className="btn btn-outline"
+                    data-testid="detail-back-history-btn"
+                  >
+                    ← Về lịch sử đặt phòng
+                  </Link>
+                  {effectiveBooking.room?.id && (
+                    <Link
+                      to={`/rooms/${effectiveBooking.room.id}`}
+                      className="btn btn-outline"
+                      data-testid="detail-view-room-btn"
+                    >
+                      Xem phòng làm việc
+                    </Link>
+                  )}
+                  <Link to="/" className="btn btn-primary" data-testid="detail-back-home-btn">
+                    Về danh sách phòng
+                  </Link>
+                </div>
+              </article>
+            )}
+        </div>
+      </main>
+
+      <AppFooter />
+    </div>
   );
 };

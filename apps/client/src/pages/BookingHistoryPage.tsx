@@ -5,6 +5,9 @@ import { bookingApi } from '../services/booking.api';
 import { BookingResult, BookingHistoryView } from '../types/booking';
 import { PaginationMeta } from '../types/room';
 import { BookingSummary } from '../components/BookingSummary';
+import { AppHeader } from '../layouts/AppHeader';
+import { AppFooter } from '../layouts/AppFooter';
+import styles from './BookingHistoryPage.module.css';
 
 const PAGE_LIMIT = 10;
 const VALID_VIEWS: BookingHistoryView[] = ['ALL', 'UPCOMING', 'COMPLETED'];
@@ -26,7 +29,7 @@ const DEFAULT_PAGINATION: PaginationMeta = {
 };
 
 export const BookingHistoryPage: React.FC = () => {
-  const { principal, logout } = useAuth();
+  const { principal } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Normalize URL parameters
@@ -237,73 +240,48 @@ export const BookingHistoryPage: React.FC = () => {
   };
 
   return (
-    <main className="page-container booking-history-container">
-      {/* Header */}
-      <header className="app-header">
-        <div className="brand-section">
-          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <h1>🏢 Co-Space Working</h1>
-          </Link>
-          <p>Lịch sử đặt phòng của bạn</p>
-        </div>
+    <div className={styles.pageWrapper}>
+      <AppHeader />
 
-        <nav className="nav-actions">
-          {principal && (
-            <span className="user-status-text">
-              Xin chào, <strong>{principal.fullName || principal.email || principal.id}</strong>{' '}
-              <span className="badge badge-customer">CUSTOMER</span>
-            </span>
-          )}
-          <Link to="/" className="btn btn-outline">
-            Danh sách phòng
-          </Link>
-          <button
-            type="button"
-            className="btn btn-danger-outline"
-            onClick={() => logout('userAction')}
-          >
-            Đăng xuất
-          </button>
-        </nav>
-      </header>
+      <main className={`page-container booking-history-container ${styles.container}`}>
+        {/* Main Content */}
+        <div className="history-content-layout">
+          <div className={`history-header-row ${styles.headerSection}`}>
+            <h1 className={`page-heading ${styles.title}`}>📋 Lịch sử đặt phòng</h1>
+            <p className={styles.subtitle}>Quản lý và theo dõi các đơn đặt phòng làm việc của bạn</p>
 
-      {/* Main Content */}
-      <div className="history-content-layout">
-        <div className="history-header-row">
-          <h2 className="page-heading">📋 Lịch sử đặt phòng</h2>
-
-          {/* View Filter Tabs */}
-          <div
-            className="history-filter-tabs"
-            role="group"
-            aria-label="Bộ lọc trạng thái đơn đặt phòng"
-          >
-            <button
-              type="button"
-              className={`history-filter-btn ${currentView === 'ALL' ? 'active' : ''}`}
-              onClick={() => handleViewChange('ALL')}
-              aria-pressed={currentView === 'ALL'}
+            {/* View Filter Tabs */}
+            <div
+              className={`history-filter-tabs ${styles.tabsRow}`}
+              role="group"
+              aria-label="Bộ lọc trạng thái đơn đặt phòng"
             >
-              Tất cả
-            </button>
-            <button
-              type="button"
-              className={`history-filter-btn ${currentView === 'UPCOMING' ? 'active' : ''}`}
-              onClick={() => handleViewChange('UPCOMING')}
-              aria-pressed={currentView === 'UPCOMING'}
-            >
-              Sắp tới
-            </button>
-            <button
-              type="button"
-              className={`history-filter-btn ${currentView === 'COMPLETED' ? 'active' : ''}`}
-              onClick={() => handleViewChange('COMPLETED')}
-              aria-pressed={currentView === 'COMPLETED'}
-            >
-              Đã hoàn tất
-            </button>
+              <button
+                type="button"
+                className={`history-filter-btn ${styles.tabBtn} ${currentView === 'ALL' ? `active ${styles.tabBtnActive}` : ''}`}
+                onClick={() => handleViewChange('ALL')}
+                aria-pressed={currentView === 'ALL'}
+              >
+                Tất cả
+              </button>
+              <button
+                type="button"
+                className={`history-filter-btn ${styles.tabBtn} ${currentView === 'UPCOMING' ? `active ${styles.tabBtnActive}` : ''}`}
+                onClick={() => handleViewChange('UPCOMING')}
+                aria-pressed={currentView === 'UPCOMING'}
+              >
+                Sắp tới
+              </button>
+              <button
+                type="button"
+                className={`history-filter-btn ${styles.tabBtn} ${currentView === 'COMPLETED' ? `active ${styles.tabBtnActive}` : ''}`}
+                onClick={() => handleViewChange('COMPLETED')}
+                aria-pressed={currentView === 'COMPLETED'}
+              >
+                Đã hoàn tất
+              </button>
+            </div>
           </div>
-        </div>
 
         {/* Loading State */}
         {effectiveIsLoading && (
@@ -437,9 +415,8 @@ export const BookingHistoryPage: React.FC = () => {
           )}
       </div>
 
-      <footer className="app-footer">
-        Co-Space Working Platform — Hệ thống đặt chỗ làm việc thông minh.
-      </footer>
-    </main>
+      </main>
+      <AppFooter />
+    </div>
   );
 };
