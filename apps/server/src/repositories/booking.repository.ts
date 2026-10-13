@@ -193,7 +193,6 @@ export interface BookingRepositoryContract {
 export interface AdminBookingRepositoryContract {
   findManyAndCountForAdmin(
     filter: FindAdminBookingsFilter,
-    now?: Date,
   ): Promise<[number, AdminBookingResponseDto[]]>;
   confirmPaymentForAdmin(
     id: string,
@@ -202,7 +201,7 @@ export interface AdminBookingRepositoryContract {
   cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto>;
   completeBookingForAdmin(id: string): Promise<AdminBookingResponseDto>;
   markNoShowForAdmin(id: string): Promise<AdminBookingResponseDto>;
-  evaluateNoShowBookings(now?: Date): Promise<number>;
+  evaluateNoShowBookings(now?: Date, userId?: string): Promise<number>;
   calculateRevenue(filter: RevenuePeriodFilter, now?: Date): Promise<AdminRevenueResponseDto>;
 }
 
@@ -294,7 +293,7 @@ export class BookingRepository
     filter: FindUserBookingsFilter,
     now: Date,
   ): Promise<[number, BookingResponseDto[]]> {
-    await this.evaluateNoShowBookings(now);
+    await this.evaluateNoShowBookings(now, userId);
 
     const where: Prisma.BookingWhereInput = {
       userId,
@@ -673,12 +672,16 @@ export class BookingRepository
     });
   }
 
-  async evaluateNoShowBookings(now: Date = new Date()): Promise<number> {
+  async evaluateNoShowBookings(now: Date = new Date(), userId?: string): Promise<number> {
+    const where: Prisma.BookingWhereInput = {
+      status: BookingStatus.CONFIRMED,
+      endTime: { lte: now },
+    };
+    if (userId) {
+      where.userId = userId;
+    }
     const result = await prisma.booking.updateMany({
-      where: {
-        status: BookingStatus.CONFIRMED,
-        endTime: { lte: now },
-      },
+      where,
       data: {
         status: BookingStatus.NO_SHOW,
       },

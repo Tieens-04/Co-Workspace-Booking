@@ -131,6 +131,7 @@ export const AdminBookingsPage: React.FC = () => {
   const [bookings, setBookings] = useState<AdminBookingItem[] | null>(null);
   const [pagination, setPagination] = useState<PaginationMeta>(DEFAULT_PAGINATION);
   const [revenueData, setRevenueData] = useState<AdminRevenueData | null>(null);
+  const [revenueError, setRevenueError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -286,6 +287,7 @@ export const AdminBookingsPage: React.FC = () => {
 
     setIsLoading(true);
     setErrorMessage(null);
+    setRevenueError(null);
 
     adminBookingApi
       .getRevenue(
@@ -296,13 +298,20 @@ export const AdminBookingsPage: React.FC = () => {
         controller.signal,
       )
       .then((revRes) => {
-        if (!controller.signal.aborted && revRes.success) {
-          setRevenueData(revRes.data);
+        if (!controller.signal.aborted) {
+          if (revRes.success) {
+            setRevenueData(revRes.data);
+          } else {
+            setRevenueError(revRes.message || 'Không thể tải dữ liệu doanh thu.');
+          }
         }
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
           console.error('Không thể tải dữ liệu doanh thu', err);
+          setRevenueError(
+            err.response?.data?.message || 'Không thể tải dữ liệu doanh thu. Vui lòng thử lại.',
+          );
         }
       });
 
@@ -544,6 +553,22 @@ export const AdminBookingsPage: React.FC = () => {
       </section>
 
       {/* Revenue KPI Summary Card */}
+      {revenueError && (
+        <div
+          className="alert alert-error"
+          data-testid="revenue-error-message"
+          style={{
+            marginBottom: '1.5rem',
+            padding: '0.75rem 1rem',
+            borderRadius: '6px',
+            backgroundColor: '#fff5f5',
+            color: '#c53030',
+            border: '1px solid #feb2b2',
+          }}
+        >
+          {revenueError}
+        </div>
+      )}
       {revenueData && (
         <section
           className="card revenue-card"
