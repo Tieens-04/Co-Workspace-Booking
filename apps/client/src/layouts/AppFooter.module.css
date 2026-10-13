@@ -1,0 +1,64 @@
+.footer {
+  border-top: 1px solid var(--border-subtle, #e4e4e7);
+  background: #ffffff;
+  padding: 2.5rem 1.5rem 3rem;
+  margin-top: auto;
+  color: var(--text-muted, #71717a);
+  font-size: 0.875rem;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.topRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.brandNote {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  color: var(--text-main, #09090b);
+}
+
+.metaInfo {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  font-size: 0.8125rem;
+}
+
+.statusIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  color: var(--color-success, #10b981);
+}
+
+.statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-success, #10b981);
+  box-shadow: 0 0 0 2px var(--color-success-bg, #ecfdf5);
+}
+
+.bottomRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-subtle, #e4e4e7);
+  padding-top: 1.25rem;
+  font-size: 0.8125rem;
+  color: var(--text-subtle, #a1a1aa);
+}
