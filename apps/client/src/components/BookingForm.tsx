@@ -16,6 +16,8 @@ import {
   validateBookingSelection,
   checkRangeAvailability,
 } from '../utils/bookingTime';
+import styles from './BookingForm.module.css';
+
 
 export interface BookingFormProps {
   roomId: string;
@@ -471,12 +473,12 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   if (phase === 'review') {
     return (
       <section
-        className="card booking-form-card booking-review-card"
+        className={`card booking-form-card booking-review-card ${styles.formCard} ${styles.animatedPhase}`}
         data-testid="booking-review-section"
         aria-labelledby="booking-review-heading"
       >
-        <div className="booking-form-header">
-          <h2 id="booking-review-heading" className="booking-form-title">
+        <div className={`booking-form-header ${styles.header}`}>
+          <h2 id="booking-review-heading" className={`booking-form-title ${styles.title}`}>
             Xác Nhận Thông Tin Đặt Phòng
           </h2>
           <p className="text-muted" style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>
@@ -528,7 +530,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           </div>
         )}
 
-        <div className="booking-review-details">
+        <div className={`booking-review-details ${styles.reviewReceipt}`}>
           <div className="booking-review-row">
             <span className="review-label">Phòng làm việc:</span>
             <strong className="review-value" data-testid="review-room-name">
@@ -592,7 +594,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           </div>
         </div>
 
-        <div className="booking-review-actions">
+        <div className={`booking-review-actions ${styles.reviewActions}`}>
           <button
             type="button"
             className="btn btn-outline"
@@ -609,7 +611,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           </button>
           <button
             type="button"
-            className="btn btn-primary"
+            className={`btn btn-primary ${styles.submitBtn}`}
             style={{ flex: 1 }}
             onClick={handleFinalSubmit}
             disabled={isSubmitting || hasBookingConflict}
@@ -628,12 +630,12 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
   return (
     <section
-      className="card booking-form-card"
+      className={`card booking-form-card ${styles.formCard} ${styles.animatedPhase}`}
       data-testid="customer-booking-form"
       aria-labelledby="booking-form-heading"
     >
-      <div className="booking-form-header">
-        <h2 id="booking-form-heading" className="booking-form-title">
+      <div className={`booking-form-header ${styles.header}`}>
+        <h2 id="booking-form-heading" className={`booking-form-title ${styles.title}`}>
           Đặt Không Gian Làm Việc
         </h2>
       </div>
@@ -792,25 +794,33 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
         {/* Display-only price & duration preview */}
         {preview && (
-          <div className="booking-price-preview" data-testid="booking-price-preview">
-            <div className="booking-price-row">
+          <div
+            className={`booking-price-preview ${styles.pricePreview}`}
+            data-testid="booking-price-preview"
+          >
+            <div className={`booking-price-row ${styles.priceRow}`}>
               <span>Thời lượng đặt:</span>
               <strong>{preview.durationHours} giờ</strong>
             </div>
-            <div className="booking-price-row">
+            <div className={`booking-price-row ${styles.priceRow}`}>
               <span>Đơn giá:</span>
               <span>{formatVnd(pricePerHour)}</span>
             </div>
-            <div className="booking-price-row" style={{ marginTop: '0.5rem' }}>
+            <div
+              className={`booking-price-row ${styles.priceRow} ${styles.priceTotalRow}`}
+              style={{ marginTop: '0.5rem' }}
+            >
               <span>Ước tính tổng tiền:</span>
-              <span className="booking-price-total">{formatCurrency(preview.estimatedTotal)}</span>
+              <span className={`booking-price-total ${styles.priceTotal}`}>
+                {formatCurrency(preview.estimatedTotal)}
+              </span>
             </div>
           </div>
         )}
 
         <button
           type="submit"
-          className="btn btn-primary"
+          className={`btn btn-primary ${styles.submitBtn}`}
           style={{ width: '100%', marginTop: '0.5rem' }}
           disabled={isSubmitting || hasBookingConflict || Boolean(availability.error)}
           data-testid="booking-submit-btn"
