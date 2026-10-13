@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { adminBookingApi } from '../services/admin-booking.api';
-import { AdminBookingItem } from '../types/admin-booking';
+import { AdminBookingItem, AdminRevenueData } from '../types/admin-booking';
 import { PaginationMeta } from '../types/room';
 import { AdminGuestBookingForm } from '../components/AdminGuestBookingForm';
 import { formatCurrency } from '../utils/format';
@@ -130,6 +130,7 @@ export const AdminBookingsPage: React.FC = () => {
   // Request & list state
   const [bookings, setBookings] = useState<AdminBookingItem[] | null>(null);
   const [pagination, setPagination] = useState<PaginationMeta>(DEFAULT_PAGINATION);
+  const [revenueData, setRevenueData] = useState<AdminRevenueData | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -245,6 +246,34 @@ export const AdminBookingsPage: React.FC = () => {
     }
   };
 
+  const handleCompleteBooking = async (booking: AdminBookingItem) => {
+    try {
+      const res = await adminBookingApi.completeBooking(booking.id);
+      if (res.success) {
+        setActionSuccessMessage(`Đã hoàn tất ca cho đơn ${booking.bookingCode}`);
+        setRefreshIndex((prev) => prev + 1);
+      }
+    } catch (err: any) {
+      setErrorMessage(
+        err.response?.data?.message || 'Không thể hoàn tất đơn đặt phòng. Vui lòng thử lại.',
+      );
+    }
+  };
+
+  const handleMarkNoShow = async (booking: AdminBookingItem) => {
+    try {
+      const res = await adminBookingApi.markNoShow(booking.id);
+      if (res.success) {
+        setActionSuccessMessage(`Đã đánh dấu không đến cho đơn ${booking.bookingCode}`);
+        setRefreshIndex((prev) => prev + 1);
+      }
+    } catch (err: any) {
+      setErrorMessage(
+        err.response?.data?.message || 'Không thể đánh dấu khách không đến. Vui lòng thử lại.',
+      );
+    }
+  };
+
   const fetchAdminBookings = useCallback(() => {
     const currentRequestId = ++requestIdRef.current;
     const requestingUser = principal?.id;
@@ -257,6 +286,25 @@ export const AdminBookingsPage: React.FC = () => {
 
     setIsLoading(true);
     setErrorMessage(null);
+
+    adminBookingApi
+      .getRevenue(
+        {
+          startDate: appliedDate,
+          endDate: appliedDate,
+        },
+        controller.signal,
+      )
+      .then((revRes) => {
+        if (!controller.signal.aborted && revRes.success) {
+          setRevenueData(revRes.data);
+        }
+      })
+      .catch((err) => {
+        if (!controller.signal.aborted) {
+          console.error('Không thể tải dữ liệu doanh thu', err);
+        }
+      });
 
     adminBookingApi
       .getBookings(
@@ -495,6 +543,63 @@ export const AdminBookingsPage: React.FC = () => {
         </form>
       </section>
 
+      {/* Revenue KPI Summary Card */}
+      {revenueData && (
+        <section
+          className="card revenue-card"
+          data-testid="revenue-summary-card"
+          style={{
+            marginBottom: '1.5rem',
+            padding: '1.25rem',
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '2rem',
+            alignItems: 'center',
+            background: '#f8fafc',
+            border: '1px solid #e2e8f0',
+            borderRadius: '8px',
+          }}
+        >
+          <div>
+            <span style={{ fontSize: '0.85rem', color: '#718096', display: 'block' }}>
+              💰 Doanh thu thực tế (Đã thanh toán)
+            </span>
+            <strong
+              data-testid="actual-revenue"
+              style={{ fontSize: '1.25rem', color: '#2b6cb0' }}
+            >
+              {formatCurrency(revenueData.actualRevenue)}
+            </strong>
+          </div>
+          <div>
+            <span style={{ fontSize: '0.85rem', color: '#718096', display: 'block' }}>
+              📊 Doanh thu tạm tính (Tổng đã đặt)
+            </span>
+            <strong
+              data-testid="potential-revenue"
+              style={{ fontSize: '1.25rem', color: '#4a5568' }}
+            >
+              {formatCurrency(revenueData.potentialRevenue)}
+            </strong>
+          </div>
+          <div>
+            <span style={{ fontSize: '0.85rem', color: '#718096', display: 'block' }}>
+              ⏳ Chưa thanh toán
+            </span>
+            <strong
+              data-testid="unpaid-revenue"
+              style={{ fontSize: '1.25rem', color: '#dd6b20' }}
+            >
+              {formatCurrency(revenueData.unpaidRevenue)}
+            </strong>
+          </div>
+          <div style={{ fontSize: '0.85rem', color: '#718096', marginLeft: 'auto' }}>
+            <span>Đã thanh toán: {revenueData.paidBookings} đơn</span> |{' '}
+            <span>Chưa thanh toán: {revenueData.unpaidBookings} đơn</span>
+          </div>
+        </section>
+      )}
+
       {/* Booking List Table Section */}
       <section className="card admin-table-card">
         <div
@@ -685,14 +790,32 @@ export const AdminBookingsPage: React.FC = () => {
                               </span>
                             )}
                             {booking.status === 'CONFIRMED' && (
-                              <button
-                                type="button"
-                                className="btn btn-sm btn-danger-outline"
-                                data-testid={`cancel-booking-btn-${booking.id}`}
-                                onClick={() => handleOpenCancelModal(booking)}
-                              >
-                                Hủy đơn
-                              </button>
+                              <>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-success"
+                                  data-testid={`complete-booking-btn-${booking.id}`}
+                                  onClick={() => handleCompleteBooking(booking)}
+                                >
+                                  Hoàn tất
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-warning"
+                                  data-testid={`no-show-booking-btn-${booking.id}`}
+                                  onClick={() => handleMarkNoShow(booking)}
+                                >
+                                  Không đến
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-danger-outline"
+                                  data-testid={`cancel-booking-btn-${booking.id}`}
+                                  onClick={() => handleOpenCancelModal(booking)}
+                                >
+                                  Hủy đơn
+                                </button>
+                              </>
                             )}
                           </div>
                           {booking.status === 'CANCELLED' && booking.cancellationReason && (

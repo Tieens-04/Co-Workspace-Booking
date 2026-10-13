@@ -104,3 +104,49 @@ export const adminCancelBookingBodySchema = z
   .strict();
 
 export type AdminCancelBookingBodyInput = z.infer<typeof adminCancelBookingBodySchema>;
+
+export const completeBookingParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type CompleteBookingParamsInput = z.infer<typeof completeBookingParamsSchema>;
+
+export const markNoShowParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type MarkNoShowParamsInput = z.infer<typeof markNoShowParamsSchema>;
+
+export const getRevenueQuerySchema = z
+  .object({
+    startDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'startDate phải có định dạng YYYY-MM-DD')
+      .refine(isValidCalendarDate, 'startDate phải là ngày thực tế hợp lệ')
+      .optional(),
+    endDate: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/, 'endDate phải có định dạng YYYY-MM-DD')
+      .refine(isValidCalendarDate, 'endDate phải là ngày thực tế hợp lệ')
+      .optional(),
+    roomId: z.string().uuid('ID phòng không đúng định dạng UUID').optional(),
+  })
+  .strict()
+  .refine(
+    (data) => {
+      if (data.startDate && data.endDate) {
+        return data.startDate <= data.endDate;
+      }
+      return true;
+    },
+    {
+      message: 'startDate không được sau endDate',
+      path: ['startDate'],
+    },
+  );
+
+export type GetRevenueQueryInput = z.infer<typeof getRevenueQuerySchema>;

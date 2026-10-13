@@ -55,6 +55,9 @@ vi.mock('../services/admin-booking.api', () => ({
     createGuestBooking: vi.fn(),
     confirmPayment: vi.fn(),
     cancelBooking: vi.fn(),
+    completeBooking: vi.fn(),
+    markNoShow: vi.fn(),
+    getRevenue: vi.fn(),
   },
 }));
 
@@ -131,6 +134,39 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(adminBookingApi.getBookings).mockResolvedValue(mockBookingsResponse());
+    vi.mocked(adminBookingApi.getRevenue).mockResolvedValue({
+      success: true,
+      message: 'Lấy dữ liệu doanh thu thành công',
+      data: {
+        actualRevenue: '500000.00',
+        potentialRevenue: '800000.00',
+        unpaidRevenue: '300000.00',
+        totalBookings: 2,
+        paidBookings: 1,
+        unpaidBookings: 1,
+        cancelledBookings: 0,
+        period: {
+          startDate: null,
+          endDate: null,
+        },
+      },
+    });
+    vi.mocked(adminBookingApi.completeBooking).mockResolvedValue({
+      success: true,
+      message: 'Đã hoàn tất ca sử dụng thành công',
+      data: {
+        ...mockBookingsList[0],
+        status: 'COMPLETED',
+      },
+    });
+    vi.mocked(adminBookingApi.markNoShow).mockResolvedValue({
+      success: true,
+      message: 'Đã đánh dấu khách không đến thành công',
+      data: {
+        ...mockBookingsList[0],
+        status: 'NO_SHOW',
+      },
+    });
     vi.mocked(roomApi.getRooms).mockResolvedValue({
       success: true,
       message: 'OK',
@@ -572,6 +608,114 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       await waitFor(() => {
         expect(
           screen.getByText('Đơn đặt phòng đã bị hủy, không thể thanh toán'),
+        ).toBeInTheDocument();
+      });
+    });
+  });
+
+  describe('Revenue KPI Summary and State Transition Actions (Complete / No-Show)', () => {
+    it('renders revenue KPI summary card with correct formatted amounts', async () => {
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('revenue-summary-card')).toBeInTheDocument();
+      });
+
+      expect(screen.getByTestId('actual-revenue')).toHaveTextContent('500.000 đ');
+      expect(screen.getByTestId('potential-revenue')).toHaveTextContent('800.000 đ');
+      expect(screen.getByTestId('unpaid-revenue')).toHaveTextContent('300.000 đ');
+      expect(screen.getByText(/Đã thanh toán: 1 đơn/)).toBeInTheDocument();
+      expect(screen.getByText(/Chưa thanh toán: 1 đơn/)).toBeInTheDocument();
+    });
+
+    it('completes confirmed booking when admin clicks Hoàn tất button', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('complete-booking-btn-booking-1')).toBeInTheDocument();
+      });
+
+      const completeBtn = screen.getByTestId('complete-booking-btn-booking-1');
+      await user.click(completeBtn);
+
+      await waitFor(() => {
+        expect(adminBookingApi.completeBooking).toHaveBeenCalledWith('booking-1');
+      });
+
+      expect(
+        screen.getByText('Đã hoàn tất ca cho đơn CS-20261003-USER'),
+      ).toBeInTheDocument();
+    });
+
+    it('marks booking as no-show when admin clicks Không đến button', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('no-show-booking-btn-booking-1')).toBeInTheDocument();
+      });
+
+      const noShowBtn = screen.getByTestId('no-show-booking-btn-booking-1');
+      await user.click(noShowBtn);
+
+      await waitFor(() => {
+        expect(adminBookingApi.markNoShow).toHaveBeenCalledWith('booking-1');
+      });
+
+      expect(
+        screen.getByText('Đã đánh dấu không đến cho đơn CS-20261003-USER'),
+      ).toBeInTheDocument();
+    });
+
+    it('displays error message when completing booking fails', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.completeBooking).mockRejectedValueOnce({
+        response: {
+          data: {
+            message: 'Đơn đặt phòng đã bị hủy hoặc khách vắng mặt',
+          },
+        },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('complete-booking-btn-booking-1')).toBeInTheDocument();
+      });
+
+      const completeBtn = screen.getByTestId('complete-booking-btn-booking-1');
+      await user.click(completeBtn);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Đơn đặt phòng đã bị hủy hoặc khách vắng mặt'),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('displays error message when marking no-show fails', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.markNoShow).mockRejectedValueOnce({
+        response: {
+          data: {
+            message: 'Đơn đặt phòng đã bị hủy hoặc đã hoàn tất',
+          },
+        },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByTestId('no-show-booking-btn-booking-1')).toBeInTheDocument();
+      });
+
+      const noShowBtn = screen.getByTestId('no-show-booking-btn-booking-1');
+      await user.click(noShowBtn);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Đơn đặt phòng đã bị hủy hoặc đã hoàn tất'),
         ).toBeInTheDocument();
       });
     });

@@ -820,4 +820,185 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.body.data.status).toBe('CANCELLED');
     });
   });
+
+  describe('AC5: Check-in / Complete Booking Flow (CONFIRMED -> COMPLETED)', () => {
+    it('successfully transitions CONFIRMED booking to COMPLETED and frees room blocking', async () => {
+      const start = new Date(Date.now() + 180 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261027-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/complete`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('COMPLETED');
+
+      // Verify persisted state in DB
+      const dbBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
+      expect(dbBooking?.status).toBe(BookingStatus.COMPLETED);
+    });
+
+    it('returns 409 BOOKING_STATE_CONFLICT when completing CANCELLED booking', async () => {
+      const start = new Date(Date.now() + 185 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261028-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CANCELLED,
+          cancellationReason: 'Khách bận',
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/complete`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+  });
+
+  describe('AC6: Mark No-Show Flow (CONFIRMED -> NO_SHOW)', () => {
+    it('successfully transitions CONFIRMED booking to NO_SHOW and persists in DB', async () => {
+      const start = new Date(Date.now() + 190 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261029-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/no-show`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('NO_SHOW');
+
+      const dbBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
+      expect(dbBooking?.status).toBe(BookingStatus.NO_SHOW);
+    });
+  });
+
+  describe('AC7: Lazy Evaluation of Overdue Bookings', () => {
+    it('automatically transitions past overdue CONFIRMED bookings to NO_SHOW on query', async () => {
+      // Overdue booking: 5 hours ago to 3 hours ago
+      const pastStart = new Date(Date.now() - 5 * 60 * 60 * 1000);
+      const pastEnd = new Date(Date.now() - 3 * 60 * 60 * 1000);
+
+      const overdueBooking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261030-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: pastStart,
+          endTime: pastEnd,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      // Query bookings as admin
+      const res = await request(app)
+        .get(`/api/v1/admin/bookings?bookingCode=${overdueBooking.bookingCode}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.items).toHaveLength(1);
+      expect(res.body.data.items[0].status).toBe('NO_SHOW');
+
+      // Verify in DB that status transitioned to NO_SHOW
+      const updated = await prisma.booking.findUnique({ where: { id: overdueBooking.id } });
+      expect(updated?.status).toBe(BookingStatus.NO_SHOW);
+    });
+  });
+
+  describe('AC8: Revenue Query (Actual vs Potential Revenue)', () => {
+    it('computes actualRevenue strictly from PAID bookings and potentialRevenue from active bookings', async () => {
+      const codePrefix = randomUUID().slice(0, 6).toUpperCase();
+
+      // Create 1 PAID booking (200.00)
+      const start1 = new Date(Date.now() + 200 * 60 * 60 * 1000);
+      const end1 = new Date(start1.getTime() + 1 * 60 * 60 * 1000);
+      await prisma.booking.create({
+        data: {
+          bookingCode: `CS-${codePrefix}-01`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start1,
+          endTime: end1,
+          totalAmount: new Prisma.Decimal('200.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.QR,
+        },
+      });
+
+      // Create 1 UNPAID booking (400.00)
+      const start2 = new Date(Date.now() + 205 * 60 * 60 * 1000);
+      const end2 = new Date(start2.getTime() + 2 * 60 * 60 * 1000);
+      await prisma.booking.create({
+        data: {
+          bookingCode: `CS-${codePrefix}-02`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start2,
+          endTime: end2,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      // Query revenue for the test room
+      const res = await request(app)
+        .get(`/api/v1/admin/revenue?roomId=${availableRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+
+      const actualNum = Number(res.body.data.actualRevenue);
+      const potentialNum = Number(res.body.data.potentialRevenue);
+      const unpaidNum = Number(res.body.data.unpaidRevenue);
+
+      // actualRevenue must be at least 200.00 and potential at least 600.00
+      expect(actualNum).toBeGreaterThanOrEqual(200);
+      expect(potentialNum).toBeGreaterThanOrEqual(600);
+      expect(unpaidNum).toBeGreaterThanOrEqual(400);
+      expect(potentialNum).toBeCloseTo(actualNum + unpaidNum, 2);
+    });
+  });
 });

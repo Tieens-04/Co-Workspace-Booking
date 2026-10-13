@@ -8,6 +8,8 @@ import {
   AdminBookingListResponseData,
   AdminBookingResponseDto,
   FindAdminBookingsFilter,
+  RevenuePeriodFilter,
+  AdminRevenueResponseDto,
 } from '../types/admin-booking.type.js';
 import { CreateGuestBookingInput } from '../validators/admin-booking.validator.js';
 
@@ -17,7 +19,11 @@ export class AdminBookingService {
     private readonly adminBookingRepo: AdminBookingRepositoryContract = bookingRepository,
   ) {}
 
-  async getBookings(filter: FindAdminBookingsFilter): Promise<AdminBookingListResponseData> {
+  async getBookings(
+    filter: FindAdminBookingsFilter,
+    now = new Date(),
+  ): Promise<AdminBookingListResponseData> {
+    await this.adminBookingRepo.evaluateNoShowBookings(now);
     const [total, items] = await this.adminBookingRepo.findManyAndCountForAdmin(filter);
     const totalPages = total === 0 ? 0 : Math.ceil(total / filter.limit);
 
@@ -53,6 +59,25 @@ export class AdminBookingService {
 
   async cancelBooking(id: string, reason: string): Promise<AdminBookingResponseDto> {
     return this.adminBookingRepo.cancelBookingForAdmin(id, reason);
+  }
+
+  async completeBooking(id: string): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.completeBookingForAdmin(id);
+  }
+
+  async markNoShow(id: string): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.markNoShowForAdmin(id);
+  }
+
+  async evaluateNoShowBookings(now = new Date()): Promise<number> {
+    return this.adminBookingRepo.evaluateNoShowBookings(now);
+  }
+
+  async getRevenue(
+    filter: RevenuePeriodFilter,
+    now = new Date(),
+  ): Promise<AdminRevenueResponseDto> {
+    return this.adminBookingRepo.calculateRevenue(filter, now);
   }
 }
 

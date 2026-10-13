@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import { Role, BookingStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import app from '../app.js';
@@ -55,6 +55,10 @@ const mockAdminBookingFixture = (
 };
 
 describe('Admin Booking Management API Unit Tests', () => {
+  beforeEach(() => {
+    vi.spyOn(bookingRepository, 'evaluateNoShowBookings').mockResolvedValue(0);
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
   });
@@ -604,6 +608,355 @@ describe('Admin Booking Management API Unit Tests', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.data.status).toBe('CANCELLED');
+    });
+  });
+
+  describe('PATCH /api/v1/admin/bookings/:id/complete (Check-in & Complete Flow)', () => {
+    const validBookingId = '22222222-2222-4222-8222-222222222222';
+
+    it('returns 401 UNAUTHORIZED when no token is provided', async () => {
+      const res = await request(app).patch(
+        `/api/v1/admin/bookings/${validBookingId}/complete`,
+      );
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it('returns 403 FORBIDDEN when CUSTOMER accesses complete endpoint', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/complete`)
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    });
+
+    it('rejects invalid booking UUID with 400 VALIDATION_ERROR', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/not-a-valid-uuid/complete')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('successfully completes CONFIRMED booking and returns COMPLETED status', async () => {
+      const completedFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        status: BookingStatus.COMPLETED,
+      });
+
+      const spy = vi
+        .spyOn(bookingRepository, 'completeBookingForAdmin')
+        .mockResolvedValue(completedFixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/complete`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('COMPLETED');
+      expect(spy).toHaveBeenCalledWith(validBookingId);
+    });
+
+    it('returns 200 idempotently when booking is already COMPLETED', async () => {
+      const alreadyCompletedFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        status: BookingStatus.COMPLETED,
+      });
+
+      vi.spyOn(bookingRepository, 'completeBookingForAdmin').mockResolvedValue(
+        alreadyCompletedFixture,
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/complete`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('COMPLETED');
+    });
+
+    it('propagates 409 BOOKING_STATE_CONFLICT when booking is CANCELLED', async () => {
+      vi.spyOn(bookingRepository, 'completeBookingForAdmin').mockRejectedValue(
+        new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hoàn tất đơn đặt phòng đã hủy',
+          409,
+        ),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/complete`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('propagates 409 BOOKING_STATE_CONFLICT when booking is NO_SHOW', async () => {
+      vi.spyOn(bookingRepository, 'completeBookingForAdmin').mockRejectedValue(
+        new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hoàn tất đơn đặt phòng đã đánh dấu không đến',
+          409,
+        ),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/complete`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('propagates 404 BOOKING_NOT_FOUND when booking does not exist', async () => {
+      vi.spyOn(bookingRepository, 'completeBookingForAdmin').mockRejectedValue(
+        new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/complete`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('BOOKING_NOT_FOUND');
+    });
+  });
+
+  describe('PATCH /api/v1/admin/bookings/:id/no-show (Mark No-Show Flow)', () => {
+    const validBookingId = '22222222-2222-4222-8222-222222222222';
+
+    it('returns 401 UNAUTHORIZED when no token is provided', async () => {
+      const res = await request(app).patch(
+        `/api/v1/admin/bookings/${validBookingId}/no-show`,
+      );
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it('returns 403 FORBIDDEN when CUSTOMER accesses no-show endpoint', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/no-show`)
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    });
+
+    it('rejects invalid booking UUID with 400 VALIDATION_ERROR', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/not-a-valid-uuid/no-show')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('successfully marks CONFIRMED booking as NO_SHOW and returns NO_SHOW status', async () => {
+      const noShowFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        status: BookingStatus.NO_SHOW,
+      });
+
+      const spy = vi
+        .spyOn(bookingRepository, 'markNoShowForAdmin')
+        .mockResolvedValue(noShowFixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/no-show`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('NO_SHOW');
+      expect(spy).toHaveBeenCalledWith(validBookingId);
+    });
+
+    it('returns 200 idempotently when booking is already NO_SHOW', async () => {
+      const alreadyNoShowFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        status: BookingStatus.NO_SHOW,
+      });
+
+      vi.spyOn(bookingRepository, 'markNoShowForAdmin').mockResolvedValue(
+        alreadyNoShowFixture,
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/no-show`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('NO_SHOW');
+    });
+
+    it('propagates 409 BOOKING_STATE_CONFLICT when booking is CANCELLED', async () => {
+      vi.spyOn(bookingRepository, 'markNoShowForAdmin').mockRejectedValue(
+        new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể đánh dấu không đến cho đơn đặt phòng đã hủy',
+          409,
+        ),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/no-show`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('propagates 409 BOOKING_STATE_CONFLICT when booking is COMPLETED', async () => {
+      vi.spyOn(bookingRepository, 'markNoShowForAdmin').mockRejectedValue(
+        new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể đánh dấu không đến cho đơn đặt phòng đã hoàn tất',
+          409,
+        ),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/no-show`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('propagates 404 BOOKING_NOT_FOUND when booking does not exist', async () => {
+      vi.spyOn(bookingRepository, 'markNoShowForAdmin').mockRejectedValue(
+        new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/no-show`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('BOOKING_NOT_FOUND');
+    });
+  });
+
+  describe('Lazy Evaluation of Overdue Bookings to NO_SHOW', () => {
+    it('evaluates overdue CONFIRMED bookings and transitions them to NO_SHOW', async () => {
+      const spy = vi
+        .spyOn(bookingRepository, 'evaluateNoShowBookings')
+        .mockResolvedValue(3);
+
+      const count = await bookingRepository.evaluateNoShowBookings(new Date());
+      expect(count).toBe(3);
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('triggers lazy evaluation during getBookings query', async () => {
+      const evalSpy = vi
+        .spyOn(bookingRepository, 'evaluateNoShowBookings')
+        .mockResolvedValue(1);
+
+      vi.spyOn(bookingRepository, 'findManyAndCountForAdmin').mockResolvedValue([
+        0,
+        [],
+      ]);
+
+      const res = await request(app)
+        .get('/api/v1/admin/bookings')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(evalSpy).toHaveBeenCalled();
+    });
+  });
+
+  describe('GET /api/v1/admin/revenue (Revenue Calculation: Actual vs Potential)', () => {
+    it('returns 401 UNAUTHORIZED when no token is provided', async () => {
+      const res = await request(app).get('/api/v1/admin/revenue');
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it('returns 403 FORBIDDEN when CUSTOMER accesses revenue endpoint', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/revenue')
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    });
+
+    it('rejects invalid date format with 400 VALIDATION_ERROR', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/revenue?startDate=invalid-date')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects when startDate is after endDate with 400 VALIDATION_ERROR', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/revenue?startDate=2026-10-15&endDate=2026-10-10')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('calculates actual revenue strictly from PAID bookings, and potential revenue including UNPAID', async () => {
+      const revenueFixture = {
+        period: {
+          startDate: '2026-10-01',
+          endDate: '2026-10-31',
+        },
+        actualRevenue: '600000.00', // only PAID bookings
+        potentialRevenue: '1000000.00', // PAID + UNPAID active bookings
+        unpaidRevenue: '400000.00',
+        totalBookings: 4,
+        paidBookings: 2,
+        unpaidBookings: 2,
+        cancelledBookings: 1,
+      };
+
+      const spy = vi
+        .spyOn(bookingRepository, 'calculateRevenue')
+        .mockResolvedValue(revenueFixture);
+
+      const res = await request(app)
+        .get('/api/v1/admin/revenue?startDate=2026-10-01&endDate=2026-10-31')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.actualRevenue).toBe('600000.00');
+      expect(res.body.data.potentialRevenue).toBe('1000000.00');
+      expect(res.body.data.unpaidRevenue).toBe('400000.00');
+      expect(res.body.data.paidBookings).toBe(2);
+      expect(spy).toHaveBeenCalled();
+    });
+
+    it('supports alias /api/v1/admin/bookings/revenue', async () => {
+      const revenueFixture = {
+        period: {
+          startDate: null,
+          endDate: null,
+        },
+        actualRevenue: '0.00',
+        potentialRevenue: '0.00',
+        unpaidRevenue: '0.00',
+        totalBookings: 0,
+        paidBookings: 0,
+        unpaidBookings: 0,
+        cancelledBookings: 0,
+      };
+
+      vi.spyOn(bookingRepository, 'calculateRevenue').mockResolvedValue(revenueFixture);
+
+      const res = await request(app)
+        .get('/api/v1/admin/bookings/revenue')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.actualRevenue).toBe('0.00');
     });
   });
 });

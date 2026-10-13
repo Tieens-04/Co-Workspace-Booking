@@ -41,3 +41,23 @@ export interface AdminBookingListResponseData {
     totalPages: number;
   };
 }
+
+export interface RevenuePeriodFilter {
+  startDate?: string;
+  endDate?: string;
+  roomId?: string;
+}
+
+export interface AdminRevenueResponseDto {
+  period: {
+    startDate: string | null;
+    endDate: string | null;
+  };
+  actualRevenue: string;
+  potentialRevenue: string;
+  unpaidRevenue: string;
+  totalBookings: number;
+  paidBookings: number;
+  unpaidBookings: number;
+  cancelledBookings: number;
+}

@@ -12,6 +12,9 @@ import {
   confirmPaymentBodySchema,
   adminCancelBookingParamsSchema,
   adminCancelBookingBodySchema,
+  completeBookingParamsSchema,
+  markNoShowParamsSchema,
+  getRevenueQuerySchema,
 } from '../validators/admin-booking.validator.js';
 import { uploadRoomImagesMiddleware } from '../middlewares/room-image-upload.middleware.js';
 
@@ -53,6 +56,26 @@ router.patch(
   validateParams(adminCancelBookingParamsSchema),
   validateBody(adminCancelBookingBodySchema),
   adminBookingController.cancelBooking,
+);
+router.patch(
+  '/bookings/:id/complete',
+  validateParams(completeBookingParamsSchema),
+  adminBookingController.completeBooking,
+);
+router.patch(
+  '/bookings/:id/no-show',
+  validateParams(markNoShowParamsSchema),
+  adminBookingController.markNoShow,
+);
+router.get(
+  '/revenue',
+  validateQuery(getRevenueQuerySchema),
+  adminBookingController.getRevenue,
+);
+router.get(
+  '/bookings/revenue',
+  validateQuery(getRevenueQuerySchema),
+  adminBookingController.getRevenue,
 );
 
 export default router;

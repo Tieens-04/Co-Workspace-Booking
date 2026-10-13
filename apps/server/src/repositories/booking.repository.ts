@@ -10,6 +10,8 @@ import {
   AdminBookingCustomerDto,
   AdminBookingResponseDto,
   FindAdminBookingsFilter,
+  RevenuePeriodFilter,
+  AdminRevenueResponseDto,
 } from '../types/admin-booking.type.js';
 import {
   calculateBookingTotal,
@@ -191,12 +193,17 @@ export interface BookingRepositoryContract {
 export interface AdminBookingRepositoryContract {
   findManyAndCountForAdmin(
     filter: FindAdminBookingsFilter,
+    now?: Date,
   ): Promise<[number, AdminBookingResponseDto[]]>;
   confirmPaymentForAdmin(
     id: string,
     paymentMethod: PaymentMethod,
   ): Promise<AdminBookingResponseDto>;
   cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto>;
+  completeBookingForAdmin(id: string): Promise<AdminBookingResponseDto>;
+  markNoShowForAdmin(id: string): Promise<AdminBookingResponseDto>;
+  evaluateNoShowBookings(now?: Date): Promise<number>;
+  calculateRevenue(filter: RevenuePeriodFilter, now?: Date): Promise<AdminRevenueResponseDto>;
 }
 
 export class BookingRepository
@@ -287,6 +294,8 @@ export class BookingRepository
     filter: FindUserBookingsFilter,
     now: Date,
   ): Promise<[number, BookingResponseDto[]]> {
+    await this.evaluateNoShowBookings(now);
+
     const where: Prisma.BookingWhereInput = {
       userId,
     };
@@ -544,6 +553,208 @@ export class BookingRepository
 
       return mapAdminBookingRecordToDto(updated);
     });
+  }
+
+  async completeBookingForAdmin(id: string): Promise<AdminBookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      // 1. Lock booking row in MySQL with FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: BookingStatus;
+        }>
+      >(Prisma.sql`SELECT id, status FROM bookings WHERE id = ${id} FOR UPDATE`);
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      }
+
+      const lockedBooking = rows[0];
+
+      // 2. Idempotent check: if already COMPLETED, return current record without modification
+      if (lockedBooking.status === BookingStatus.COMPLETED) {
+        const existing = await tx.booking.findUnique({
+          where: { id },
+          select: adminBookingReadSelect,
+        });
+        if (!existing) {
+          throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+        }
+        return mapAdminBookingRecordToDto(existing);
+      }
+
+      // 3. Reject if booking is CANCELLED
+      if (lockedBooking.status === BookingStatus.CANCELLED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hoàn tất đơn đặt phòng đã hủy',
+          409,
+        );
+      }
+
+      // 4. Reject if booking is NO_SHOW
+      if (lockedBooking.status === BookingStatus.NO_SHOW) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hoàn tất đơn đặt phòng đã đánh dấu không đến',
+          409,
+        );
+      }
+
+      // 5. Update status to COMPLETED
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          status: BookingStatus.COMPLETED,
+        },
+        select: adminBookingReadSelect,
+      });
+
+      return mapAdminBookingRecordToDto(updated);
+    });
+  }
+
+  async markNoShowForAdmin(id: string): Promise<AdminBookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      // 1. Lock booking row in MySQL with FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: BookingStatus;
+        }>
+      >(Prisma.sql`SELECT id, status FROM bookings WHERE id = ${id} FOR UPDATE`);
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      }
+
+      const lockedBooking = rows[0];
+
+      // 2. Idempotent check: if already NO_SHOW, return current record without modification
+      if (lockedBooking.status === BookingStatus.NO_SHOW) {
+        const existing = await tx.booking.findUnique({
+          where: { id },
+          select: adminBookingReadSelect,
+        });
+        if (!existing) {
+          throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+        }
+        return mapAdminBookingRecordToDto(existing);
+      }
+
+      // 3. Reject if booking is CANCELLED
+      if (lockedBooking.status === BookingStatus.CANCELLED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể đánh dấu không đến cho đơn đặt phòng đã hủy',
+          409,
+        );
+      }
+
+      // 4. Reject if booking is COMPLETED
+      if (lockedBooking.status === BookingStatus.COMPLETED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể đánh dấu không đến cho đơn đặt phòng đã hoàn tất',
+          409,
+        );
+      }
+
+      // 5. Update status to NO_SHOW
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          status: BookingStatus.NO_SHOW,
+        },
+        select: adminBookingReadSelect,
+      });
+
+      return mapAdminBookingRecordToDto(updated);
+    });
+  }
+
+  async evaluateNoShowBookings(now: Date = new Date()): Promise<number> {
+    const result = await prisma.booking.updateMany({
+      where: {
+        status: BookingStatus.CONFIRMED,
+        endTime: { lte: now },
+      },
+      data: {
+        status: BookingStatus.NO_SHOW,
+      },
+    });
+    return result.count;
+  }
+
+  async calculateRevenue(
+    filter: RevenuePeriodFilter,
+    now: Date = new Date(),
+  ): Promise<AdminRevenueResponseDto> {
+    await this.evaluateNoShowBookings(now);
+
+    const where: Prisma.BookingWhereInput = {};
+    if (filter.roomId) {
+      where.roomId = filter.roomId;
+    }
+    if (filter.startDate || filter.endDate) {
+      where.startTime = {};
+      if (filter.startDate) {
+        const { dayStart } = getDayBounds(filter.startDate);
+        where.startTime.gte = dayStart;
+      }
+      if (filter.endDate) {
+        const { dayEnd } = getDayBounds(filter.endDate);
+        where.startTime.lt = dayEnd;
+      }
+    }
+
+    const records = await prisma.booking.findMany({
+      where,
+      select: {
+        status: true,
+        paymentStatus: true,
+        totalAmount: true,
+      },
+    });
+
+    let actualRevenueDecimal = new Prisma.Decimal(0);
+    let potentialRevenueDecimal = new Prisma.Decimal(0);
+    let paidBookings = 0;
+    let unpaidBookings = 0;
+    let cancelledBookings = 0;
+
+    for (const rec of records) {
+      if (rec.status === BookingStatus.CANCELLED) {
+        cancelledBookings += 1;
+        continue;
+      }
+
+      const amount = new Prisma.Decimal(rec.totalAmount);
+      potentialRevenueDecimal = potentialRevenueDecimal.add(amount);
+
+      if (rec.paymentStatus === PaymentStatus.PAID) {
+        actualRevenueDecimal = actualRevenueDecimal.add(amount);
+        paidBookings += 1;
+      } else {
+        unpaidBookings += 1;
+      }
+    }
+
+    const unpaidRevenueDecimal = potentialRevenueDecimal.sub(actualRevenueDecimal);
+
+    return {
+      period: {
+        startDate: filter.startDate ?? null,
+        endDate: filter.endDate ?? null,
+      },
+      actualRevenue: actualRevenueDecimal.toFixed(2),
+      potentialRevenue: potentialRevenueDecimal.toFixed(2),
+      unpaidRevenue: unpaidRevenueDecimal.toFixed(2),
+      totalBookings: records.length,
+      paidBookings,
+      unpaidBookings,
+      cancelledBookings,
+    };
   }
 }
 

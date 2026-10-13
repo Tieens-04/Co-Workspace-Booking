@@ -60,3 +60,27 @@ export type AdminBookingsApiResponse = ApiResponse<AdminBookingListResponseData>
 export type AdminGuestBookingApiResponse = ApiResponse<AdminBookingItem>;
 export type ConfirmPaymentApiResponse = ApiResponse<AdminBookingItem>;
 export type AdminCancelBookingApiResponse = ApiResponse<AdminBookingItem>;
+export type AdminCompleteBookingApiResponse = ApiResponse<AdminBookingItem>;
+export type AdminNoShowBookingApiResponse = ApiResponse<AdminBookingItem>;
+
+export interface AdminRevenueData {
+  period: {
+    startDate: string | null;
+    endDate: string | null;
+  };
+  actualRevenue: string;
+  potentialRevenue: string;
+  unpaidRevenue: string;
+  totalBookings: number;
+  paidBookings: number;
+  unpaidBookings: number;
+  cancelledBookings: number;
+}
+
+export interface GetAdminRevenueParams {
+  startDate?: string;
+  endDate?: string;
+  roomId?: string;
+}
+
+export type AdminRevenueApiResponse = ApiResponse<AdminRevenueData>;

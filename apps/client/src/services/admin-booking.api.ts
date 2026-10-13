@@ -8,6 +8,10 @@ import {
   ConfirmPaymentApiResponse,
   AdminCancelBookingPayload,
   AdminCancelBookingApiResponse,
+  AdminCompleteBookingApiResponse,
+  AdminNoShowBookingApiResponse,
+  GetAdminRevenueParams,
+  AdminRevenueApiResponse,
 } from '../types/admin-booking';
 
 export const adminBookingApi = {
@@ -63,6 +67,45 @@ export const adminBookingApi = {
         signal,
       },
     );
+    return response.data;
+  },
+
+  completeBooking: async (
+    bookingId: string,
+    signal?: AbortSignal,
+  ): Promise<AdminCompleteBookingApiResponse> => {
+    const response = await apiClient.patch<AdminCompleteBookingApiResponse>(
+      `/admin/bookings/${bookingId}/complete`,
+      {},
+      {
+        signal,
+      },
+    );
+    return response.data;
+  },
+
+  markNoShow: async (
+    bookingId: string,
+    signal?: AbortSignal,
+  ): Promise<AdminNoShowBookingApiResponse> => {
+    const response = await apiClient.patch<AdminNoShowBookingApiResponse>(
+      `/admin/bookings/${bookingId}/no-show`,
+      {},
+      {
+        signal,
+      },
+    );
+    return response.data;
+  },
+
+  getRevenue: async (
+    params?: GetAdminRevenueParams,
+    signal?: AbortSignal,
+  ): Promise<AdminRevenueApiResponse> => {
+    const response = await apiClient.get<AdminRevenueApiResponse>('/admin/revenue', {
+      params,
+      signal,
+    });
     return response.data;
   },
 };

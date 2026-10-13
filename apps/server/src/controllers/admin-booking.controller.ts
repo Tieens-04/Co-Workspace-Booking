@@ -8,6 +8,9 @@ import {
   ConfirmPaymentBodyInput,
   AdminCancelBookingParamsInput,
   AdminCancelBookingBodyInput,
+  CompleteBookingParamsInput,
+  MarkNoShowParamsInput,
+  GetRevenueQueryInput,
 } from '../validators/admin-booking.validator.js';
 
 export class AdminBookingController {
@@ -50,6 +53,36 @@ export class AdminBookingController {
       const { reason } = req.body as AdminCancelBookingBodyInput;
       const data = await this.service.cancelBooking(id, reason);
       return sendSuccess(res, data, 'Hủy đơn đặt phòng thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  completeBooking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params as unknown as CompleteBookingParamsInput;
+      const data = await this.service.completeBooking(id);
+      return sendSuccess(res, data, 'Hoàn tất đơn đặt phòng thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  markNoShow = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params as unknown as MarkNoShowParamsInput;
+      const data = await this.service.markNoShow(id);
+      return sendSuccess(res, data, 'Đánh dấu khách không đến thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  getRevenue = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const query = req.query as unknown as GetRevenueQueryInput;
+      const data = await this.service.getRevenue(query);
+      return sendSuccess(res, data, 'Lấy báo cáo doanh thu thành công', 200);
     } catch (err) {
       return next(err);
     }
