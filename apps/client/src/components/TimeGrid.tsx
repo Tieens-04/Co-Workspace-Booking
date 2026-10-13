@@ -1,10 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { Lock } from 'lucide-react';
 import { RoomAvailabilitySlot } from '../types/room';
 import {
   formatVnTime,
   MIN_LEAD_TIME_MS,
   checkRangeAvailability,
 } from '../utils/bookingTime';
+import styles from './TimeGrid.module.css';
+
 
 export interface TimeGridProps {
   slots: RoomAvailabilitySlot[];
@@ -168,29 +171,48 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
   };
 
   return (
-    <section className="time-grid-container" aria-label="Lịch trống theo khung giờ">
-      <div className="time-grid-legend" role="group" aria-label="Chú thích trạng thái">
-        <div className="legend-item">
-          <span className="legend-swatch swatch-available" aria-hidden="true" />
+    <section
+      className={`time-grid-container ${styles.container}`}
+      aria-label="Lịch trống theo khung giờ"
+    >
+      <div
+        className={`time-grid-legend ${styles.legend}`}
+        role="group"
+        aria-label="Chú thích trạng thái"
+      >
+        <div className={`legend-item ${styles.legendItem}`}>
+          <span
+            className={`legend-swatch swatch-available ${styles.legendSwatch}`}
+            aria-hidden="true"
+          />
           <span>Trống</span>
         </div>
-        <div className="legend-item">
-          <span className="legend-swatch swatch-booked" aria-hidden="true" />
+        <div className={`legend-item ${styles.legendItem}`}>
+          <span
+            className={`legend-swatch swatch-booked ${styles.legendSwatch}`}
+            aria-hidden="true"
+          />
           <span>Đã đặt (không thể chọn)</span>
         </div>
-        <div className="legend-item">
-          <span className="legend-swatch swatch-selected" aria-hidden="true" />
+        <div className={`legend-item ${styles.legendItem}`}>
+          <span
+            className={`legend-swatch swatch-selected ${styles.legendSwatch}`}
+            aria-hidden="true"
+          />
           <span>Đang chọn / Đã chọn</span>
         </div>
-        <div className="legend-item">
-          <span className="legend-swatch swatch-past" aria-hidden="true" />
+        <div className={`legend-item ${styles.legendItem}`}>
+          <span
+            className={`legend-swatch swatch-past ${styles.legendSwatch}`}
+            aria-hidden="true"
+          />
           <span>Đã qua giờ</span>
         </div>
       </div>
 
       {slots.length > 0 && !hasValidOneHourRange && (
         <div
-          className="time-grid-notice"
+          className={`time-grid-notice ${styles.noticeBanner}`}
           role="status"
           data-testid="time-grid-no-valid-range"
         >
@@ -199,19 +221,31 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
       )}
 
       {selectingStartTime && (
-        <div className="time-grid-hint" role="status" data-testid="time-grid-selecting-hint">
+        <div
+          className={`time-grid-hint ${styles.hintBanner}`}
+          role="status"
+          data-testid="time-grid-selecting-hint"
+        >
           📍 Đang chọn từ <strong>{formatVnTime(new Date(selectingStartTime))}</strong>. Vui lòng
           click chọn ô kết thúc (tối thiểu 1 giờ, tối đa 8 giờ).
         </div>
       )}
 
       {gridError && (
-        <div className="alert alert-danger time-grid-error" role="alert" data-testid="time-grid-error">
+        <div
+          className="alert alert-danger time-grid-error"
+          role="alert"
+          data-testid="time-grid-error"
+        >
           {gridError}
         </div>
       )}
 
-      <div className="time-grid" role="group" aria-label="Danh sách 48 khung giờ trong ngày">
+      <div
+        className={`time-grid ${styles.grid}`}
+        role="group"
+        aria-label="Danh sách 48 khung giờ trong ngày"
+      >
         {slots.map((slot) => {
           const slotStartMs = new Date(slot.startTime).getTime();
           const slotEndMs = new Date(slot.endTime).getTime();
@@ -256,15 +290,24 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
             <button
               key={slot.startTime}
               type="button"
-              className={`time-slot-btn ${slotClass}`}
+              className={`time-slot-btn ${slotClass} ${styles.slotBtn}`}
               disabled={isBtnDisabled}
               aria-pressed={isBtnPressed}
               aria-label={`${slotLabel}: ${statusText}`}
               data-testid={`time-slot-${startTimeStr}`}
               onClick={() => handleSlotClick(slot)}
             >
-              <span className="slot-time">{startTimeStr}</span>
-              <span className="slot-status">{statusText}</span>
+              <span className={`slot-time ${styles.slotTime}`}>{startTimeStr}</span>
+              <span className={`slot-status ${styles.slotStatus}`}>
+                {isBooked ? (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+                    <Lock size={10} />
+                    <span>{statusText}</span>
+                  </span>
+                ) : (
+                  statusText
+                )}
+              </span>
             </button>
           );
         })}
@@ -272,3 +315,4 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     </section>
   );
 };
+
