@@ -8,6 +8,7 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { AdminPage } from './pages/AdminPage';
 import { AdminBookingsPage } from './pages/AdminBookingsPage';
+import { AdminDashboardPage } from './pages/AdminDashboardPage';
 import { BookingConfirmationPage } from './pages/BookingConfirmationPage';
 import { BookingHistoryPage } from './pages/BookingHistoryPage';
 import { BookingDetailPage } from './pages/BookingDetailPage';
@@ -66,6 +67,14 @@ export default function App() {
             element={
               <AdminRoute>
                 <AdminPage />
+              </AdminRoute>
+            }
+          />
+          <Route
+            path="/admin/dashboard"
+            element={
+              <AdminRoute>
+                <AdminDashboardPage />
               </AdminRoute>
             }
           />

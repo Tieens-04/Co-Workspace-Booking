@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { adminRoomController } from '../controllers/admin-room.controller.js';
 import { adminRoomImageController } from '../controllers/admin-room-image.controller.js';
 import { adminBookingController } from '../controllers/admin-booking.controller.js';
+import { adminDashboardController } from '../controllers/admin-dashboard.controller.js';
 import { validateQuery, validateBody, validateParams } from '../middlewares/validate.middleware.js';
 import { getRoomsQuerySchema, getRoomByIdParamsSchema } from '../validators/room.validator.js';
 import { createRoomSchema, updateRoomSchema } from '../validators/admin-room.validator.js';
@@ -16,6 +17,10 @@ import {
   markNoShowParamsSchema,
   getRevenueQuerySchema,
 } from '../validators/admin-booking.validator.js';
+import {
+  getDashboardKpiQuerySchema,
+  getDashboardScheduleQuerySchema,
+} from '../validators/admin-dashboard.validator.js';
 import { uploadRoomImagesMiddleware } from '../middlewares/room-image-upload.middleware.js';
 
 const router = Router();
@@ -76,6 +81,17 @@ router.get(
   '/bookings/revenue',
   validateQuery(getRevenueQuerySchema),
   adminBookingController.getRevenue,
+);
+
+router.get(
+  '/dashboard/kpi',
+  validateQuery(getDashboardKpiQuerySchema),
+  adminDashboardController.getKpi,
+);
+router.get(
+  '/dashboard/schedule',
+  validateQuery(getDashboardScheduleQuerySchema),
+  adminDashboardController.getSchedule,
 );
 
 export default router;

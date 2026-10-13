@@ -657,6 +657,13 @@ export const AdminPage: React.FC = () => {
 
         <nav className="nav-actions">
           <Link
+            to="/admin/dashboard"
+            className="btn btn-outline"
+            data-testid="admin-dashboard-link"
+          >
+            Bảng điều khiển
+          </Link>
+          <Link
             to="/admin/bookings"
             className="btn btn-outline"
             data-testid="admin-manage-bookings-link"

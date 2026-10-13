@@ -424,6 +424,13 @@ export const AdminBookingsPage: React.FC = () => {
         </div>
 
         <nav className="nav-actions">
+          <Link
+            to="/admin/dashboard"
+            className="btn btn-outline"
+            data-testid="admin-dashboard-link"
+          >
+            Bảng điều khiển
+          </Link>
           <Link to="/admin" className="btn btn-outline" data-testid="back-to-rooms-link">
             ← Quản lý phòng
           </Link>
