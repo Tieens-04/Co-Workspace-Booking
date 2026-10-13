@@ -1,11 +1,14 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { Link, useSearchParams, useLocation } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
 import { roomApi } from '../services/room.api';
 import { RoomListItem, Amenity, PaginationMeta } from '../types/room';
 import { formatVnd } from '../utils/format';
 import { useDebounce } from '../hooks/useDebounce';
 import { ROOM_PLACEHOLDER_IMAGE } from './RoomDetailPage';
+import { AppHeader } from '../layouts/AppHeader';
+import { AppFooter } from '../layouts/AppFooter';
+import styles from './HomePage.module.css';
+import { SlidersHorizontal, RotateCcw, Sparkles, ArrowRight } from 'lucide-react';
 import {
   MYSQL_INT_MAX,
   normalizeRoomSearchParams,
@@ -16,7 +19,6 @@ import {
 const PAGE_LIMIT = 10;
 
 export const HomePage: React.FC = () => {
-  const { isAuthenticated, principal, logout } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
 
@@ -284,74 +286,44 @@ export const HomePage: React.FC = () => {
   };
 
   return (
-    <main className="page-container discovery-page-container">
-      {/* App Header */}
-      <header className="app-header">
-        <div className="brand-section">
-          <Link to="/" style={{ textDecoration: 'none', color: 'inherit' }}>
-            <h1>🏢 Co-Space Working</h1>
-          </Link>
-          <p>Hệ thống đặt chỗ làm việc thông minh (Co-Workspace Booking)</p>
-        </div>
+    <div className={styles.homeWrapper}>
+      <AppHeader />
 
-        <nav className="nav-actions">
-          {isAuthenticated && principal ? (
-            <>
-              <span className="user-status-text">
-                Xin chào, <strong>{principal.fullName || principal.email || principal.id}</strong>{' '}
-                <span
-                  className={`badge ${principal.role === 'ADMIN' ? 'badge-admin' : 'badge-customer'}`}
-                >
-                  {principal.role}
-                </span>
-              </span>
-              {principal.role === 'ADMIN' && (
-                <Link to="/admin" className="btn btn-outline">
-                  Khu vực Quản trị
-                </Link>
-              )}
-              {principal.role === 'CUSTOMER' && (
-                <Link to="/bookings" className="btn btn-outline">
-                  Lịch sử đặt phòng
-                </Link>
-              )}
-              <button
-                type="button"
-                className="btn btn-danger-outline"
-                onClick={() => logout('userAction')}
-              >
-                Đăng xuất
-              </button>
-            </>
-          ) : (
-            <>
-              <Link to="/login" className="btn btn-primary">
-                Đăng nhập
-              </Link>
-              <Link to="/register" className="btn btn-outline">
-                Đăng ký
-              </Link>
-            </>
-          )}
-        </nav>
-      </header>
-
-      {/* Main Discovery Layout */}
-      <div className="discovery-layout">
-        {/* Sidebar Filters */}
-        <aside className="filter-sidebar card" aria-label="Bộ lọc tìm kiếm phòng">
-          <div className="filter-header-row">
-            <h2 className="filter-title">🔍 Bộ lọc tìm kiếm</h2>
-            {(urlCapacity || urlMinPrice || urlMaxPrice || urlAmenityIds.length > 0) && (
-              <button
-                type="button"
-                className="btn-link clear-filter-btn"
-                onClick={handleClearFilters}
-              >
-                Xóa tất cả
-              </button>
-            )}
+      {/* Hero Section */}
+      <section className={styles.heroSection}>
+        <div className={styles.heroContainer}>
+          <div className={styles.heroBadge}>
+            <Sparkles size={14} />
+            <span>Không gian làm việc linh hoạt & hiện đại</span>
           </div>
+          <h1 className={styles.heroTitle}>Không gian làm việc lý tưởng</h1>
+          <p className={styles.heroSubtitle}>
+            Đặt phòng làm việc chuyên nghiệp, tiện nghi chuẩn mực, linh hoạt theo khung giờ 30 phút.
+          </p>
+        </div>
+      </section>
+
+      <main className={`page-container discovery-page-container ${styles.mainContent}`}>
+        {/* Main Discovery Layout */}
+        <div className={`discovery-layout ${styles.discoveryLayout}`}>
+          {/* Sidebar Filters */}
+          <aside className={`filter-sidebar card ${styles.filterSidebar}`} aria-label="Bộ lọc tìm kiếm phòng">
+            <div className={`filter-header-row ${styles.filterHeader}`}>
+              <h2 className={`filter-title ${styles.filterTitle}`}>
+                <SlidersHorizontal size={18} />
+                <span>Bộ lọc tìm kiếm</span>
+              </h2>
+              {(urlCapacity || urlMinPrice || urlMaxPrice || urlAmenityIds.length > 0) && (
+                <button
+                  type="button"
+                  className={`btn-link clear-filter-btn ${styles.clearFilterBtn}`}
+                  onClick={handleClearFilters}
+                >
+                  <RotateCcw size={14} />
+                  <span>Xóa tất cả</span>
+                </button>
+              )}
+            </div>
 
           {/* Sức chứa */}
           <div className="form-group filter-group">
@@ -627,6 +599,12 @@ export const HomePage: React.FC = () => {
                               )}
                             </div>
                           )}
+
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: '0.75rem', borderTop: '1px solid var(--border-subtle, #e4e4e7)' }}>
+                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-primary, #4f46e5)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
+                              Xem chi tiết & Đặt phòng <ArrowRight size={14} />
+                            </span>
+                          </div>
                         </div>
                       </Link>
                     </article>
@@ -665,11 +643,10 @@ export const HomePage: React.FC = () => {
             </>
           )}
         </section>
-      </div>
+        </div>
+      </main>
 
-      <footer className="app-footer">
-        Co-Space Working Platform — Hệ thống đặt chỗ làm việc thông minh.
-      </footer>
-    </main>
+      <AppFooter />
+    </div>
   );
 };
