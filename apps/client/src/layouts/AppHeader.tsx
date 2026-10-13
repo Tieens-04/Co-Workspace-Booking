@@ -23,7 +23,7 @@ export const AppHeader: React.FC = () => {
           </div>
         </Link>
 
-        <nav className={`${styles.nav} user-nav`} aria-label="Điều hướng chính">
+        <nav className={`${styles.nav} nav-actions user-nav`} aria-label="Điều hướng chính">
           {isAuthenticated && principal ? (
             <>
               <div className={`${styles.userStatus} user-status-text`}>
