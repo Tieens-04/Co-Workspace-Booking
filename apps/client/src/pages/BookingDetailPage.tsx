@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { useToast } from '../hooks/useToast';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult } from '../types/booking';
 import { BookingSummary } from '../components/BookingSummary';
@@ -26,6 +27,7 @@ interface BookingDetailState {
 export const BookingDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { principal, logout } = useAuth();
+  const { showToast } = useToast();
 
   const [state, setState] = useState<BookingDetailState>(() => ({
     sessionUserId: principal?.id,
@@ -192,6 +194,7 @@ export const BookingDetailPage: React.FC = () => {
         return;
       }
 
+      showToast(res.message || 'Hủy đặt phòng thành công', 'success');
       setState((prev) => ({
         ...prev,
         booking: res.data,
@@ -219,6 +222,7 @@ export const BookingDetailPage: React.FC = () => {
         err.response?.data?.message || err.message || 'Không thể hủy đặt phòng';
 
       if (statusCode === 404 || errorCode === 'BOOKING_NOT_FOUND') {
+        showToast(errorMsg, 'error');
         setState((prev) => ({
           ...prev,
           booking: null,
@@ -231,6 +235,7 @@ export const BookingDetailPage: React.FC = () => {
         return;
       }
 
+      showToast(errorMsg, 'error');
       setState((prev) => ({
         ...prev,
         isCancelling: false,
@@ -241,7 +246,7 @@ export const BookingDetailPage: React.FC = () => {
         },
       }));
     }
-  }, [id, effectiveBooking, state.isCancelling, principal?.id]);
+  }, [id, effectiveBooking, state.isCancelling, principal?.id, showToast]);
 
   useEffect(() => {
     fetchDetail();

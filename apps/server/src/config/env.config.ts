@@ -48,4 +48,13 @@ export const ENV = {
   CLOUDINARY_CLOUD_NAME: cloudinaryCloudName,
   CLOUDINARY_API_KEY: cloudinaryApiKey,
   CLOUDINARY_API_SECRET: cloudinaryApiSecret,
+  SMTP_HOST: process.env.SMTP_HOST || 'smtp.gmail.com',
+  SMTP_PORT: process.env.SMTP_PORT ? Number(process.env.SMTP_PORT) : 587,
+  SMTP_SECURE: process.env.SMTP_SECURE === 'true',
+  SMTP_USER: process.env.SMTP_USER || process.env.GMAIL_USER || '',
+  SMTP_PASS: process.env.SMTP_PASS || process.env.GMAIL_APP_PASSWORD || '',
+  SMTP_FROM:
+    process.env.SMTP_FROM ||
+    process.env.EMAIL_FROM ||
+    '"Co-Space Working" <no-reply@co-space.local>',
 };

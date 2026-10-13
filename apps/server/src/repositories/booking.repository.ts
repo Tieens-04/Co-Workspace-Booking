@@ -70,6 +70,7 @@ export const bookingReadSelect = {
   status: true,
   paymentStatus: true,
   paymentMethod: true,
+  cancellationReason: true,
 } satisfies Prisma.BookingSelect;
 
 export type BookingReadRecord = Prisma.BookingGetPayload<{
@@ -99,6 +100,7 @@ export function mapBookingRecordToDto(record: BookingReadRecord): BookingRespons
     status: record.status,
     paymentStatus: record.paymentStatus,
     paymentMethod: record.paymentMethod,
+    cancellationReason: record.cancellationReason ?? null,
   };
 }
 
@@ -123,6 +125,8 @@ export const adminBookingReadSelect = {
   guestPhone: true,
   user: {
     select: {
+      id: true,
+      email: true,
       fullName: true,
       phoneNumber: true,
     },
@@ -149,6 +153,8 @@ export function mapAdminBookingRecordToDto(
         kind: 'USER',
         name: record.user.fullName,
         phone: record.user.phoneNumber,
+        email: record.user.email,
+        id: record.user.id,
       }
     : {
         kind: 'GUEST',
@@ -372,7 +378,9 @@ export class BookingRepository
         if (!existing) {
           throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
         }
-        return mapBookingRecordToDto(existing);
+        const dto = mapBookingRecordToDto(existing);
+        dto.isNewlyCancelled = false;
+        return dto;
       }
 
       // 3. Only CONFIRMED bookings can be cancelled by customer
@@ -398,7 +406,9 @@ export class BookingRepository
         select: bookingReadSelect,
       });
 
-      return mapBookingRecordToDto(updated);
+      const dto = mapBookingRecordToDto(updated);
+      dto.isNewlyCancelled = true;
+      return dto;
     });
   }
 
@@ -528,7 +538,9 @@ export class BookingRepository
         if (!existing) {
           throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
         }
-        return mapAdminBookingRecordToDto(existing);
+        const dto = mapAdminBookingRecordToDto(existing);
+        dto.isNewlyCancelled = false;
+        return dto;
       }
 
       // 3. Reject if booking is already COMPLETED
@@ -550,7 +562,9 @@ export class BookingRepository
         select: adminBookingReadSelect,
       });
 
-      return mapAdminBookingRecordToDto(updated);
+      const dto = mapAdminBookingRecordToDto(updated);
+      dto.isNewlyCancelled = true;
+      return dto;
     });
   }
 

@@ -20,6 +20,8 @@ export interface BookingResponseDto {
   status: BookingStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
+  cancellationReason?: string | null;
+  isNewlyCancelled?: boolean;
 }
 
 export interface FutureBookingWarningItem {

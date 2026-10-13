@@ -7,6 +7,8 @@ export interface AdminBookingCustomerDto {
   kind: AdminCustomerKind;
   name: string;
   phone: string | null;
+  email?: string | null;
+  id?: string | null;
 }
 
 export interface AdminBookingResponseDto {
@@ -21,6 +23,7 @@ export interface AdminBookingResponseDto {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
   cancellationReason?: string | null;
+  isNewlyCancelled?: boolean;
   customer: AdminBookingCustomerDto;
 }
 

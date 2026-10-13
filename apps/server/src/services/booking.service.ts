@@ -14,11 +14,20 @@ import {
 import { validateBookingTime } from '../utils/booking-time.util.js';
 import { generateBookingCode } from '../utils/booking-code.util.js';
 import { AppError } from '../utils/error.util.js';
+import { userRepository, UserRepository } from '../repositories/user.repository.js';
+import {
+  notificationService as defaultNotificationService,
+  NotificationService,
+} from './notification.service.js';
 
 export const MAX_CODE_RETRIES = 5;
 
 export class BookingService {
-  constructor(private readonly bookingRepo: BookingRepositoryContract = bookingRepository) {}
+  constructor(
+    private readonly bookingRepo: BookingRepositoryContract = bookingRepository,
+    private readonly userRepo: UserRepository = userRepository,
+    private readonly notificationService: NotificationService = defaultNotificationService,
+  ) {}
 
   async createBooking(
     userId: string,
@@ -65,7 +74,7 @@ export class BookingService {
     for (let attempt = 0; attempt < MAX_CODE_RETRIES; attempt++) {
       const candidateCode = generateBookingCode(startDate);
       try {
-        return await this.bookingRepo.createBooking({
+        const booking = await this.bookingRepo.createBooking({
           ...identity,
           roomId: input.roomId,
           bookingCode: candidateCode,
@@ -74,6 +83,31 @@ export class BookingService {
           durationMinutes,
           note: input.note,
         });
+
+        if (identity.userId) {
+          void (async () => {
+            try {
+              const user = await this.userRepo.findById(identity.userId!);
+              if (user?.email) {
+                await this.notificationService.sendBookingConfirmation({
+                  recipientEmail: user.email,
+                  customerName: user.fullName,
+                  bookingCode: booking.bookingCode,
+                  roomName: booking.room.name,
+                  startTime: booking.startTime,
+                  endTime: booking.endTime,
+                  totalAmount: booking.totalAmount,
+                });
+              }
+            } catch (notifErr: any) {
+              console.error(
+                `[BookingService] Failed to send booking confirmation email for ${booking.bookingCode}: ${notifErr.message || notifErr}`,
+              );
+            }
+          })().catch(() => {});
+        }
+
+        return booking;
       } catch (err) {
         if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
           const targetStr = Array.isArray(err.meta?.target)
@@ -132,7 +166,32 @@ export class BookingService {
     id: string,
     clock?: (() => Date) | Date,
   ): Promise<BookingResponseDto> {
-    return this.bookingRepo.cancelBooking(userId, id, clock);
+    const booking = await this.bookingRepo.cancelBooking(userId, id, clock);
+
+    if (booking.isNewlyCancelled !== false) {
+      void (async () => {
+        try {
+          const user = await this.userRepo.findById(userId);
+          if (user?.email) {
+            await this.notificationService.sendBookingCancellation({
+              recipientEmail: user.email,
+              customerName: user.fullName,
+              bookingCode: booking.bookingCode,
+              roomName: booking.room.name,
+              startTime: booking.startTime,
+              endTime: booking.endTime,
+              reason: booking.cancellationReason,
+            });
+          }
+        } catch (notifErr: any) {
+          console.error(
+            `[BookingService] Failed to send booking cancellation email for ${booking.bookingCode}: ${notifErr.message || notifErr}`,
+          );
+        }
+      })().catch(() => {});
+    }
+
+    return booking;
   }
 }
 

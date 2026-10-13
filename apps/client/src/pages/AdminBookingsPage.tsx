@@ -6,6 +6,7 @@ import { AdminBookingItem, AdminRevenueData } from '../types/admin-booking';
 import { PaginationMeta } from '../types/room';
 import { AdminGuestBookingForm } from '../components/AdminGuestBookingForm';
 import { formatCurrency } from '../utils/format';
+import { useToast } from '../hooks/useToast';
 
 const PAGE_LIMIT = 10;
 const VALID_STATUSES = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
@@ -48,6 +49,7 @@ const DEFAULT_PAGINATION: PaginationMeta = {
 
 export const AdminBookingsPage: React.FC = () => {
   const { principal, logout } = useAuth();
+  const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
   // Guest booking form toggle
@@ -181,18 +183,24 @@ export const AdminBookingsPage: React.FC = () => {
         paymentMethod,
       });
       if (res.success) {
+        showToast(
+          `Xác nhận thanh toán thành công cho đơn ${paymentModalTarget.bookingCode}`,
+          'success',
+        );
         setActionSuccessMessage(
           `Xác nhận thanh toán thành công cho đơn ${paymentModalTarget.bookingCode}`,
         );
         setPaymentModalTarget(null);
         fetchAdminBookings();
       } else {
-        setPaymentError(res.message || 'Không thể xác nhận thanh toán.');
+        const msg = res.message || 'Không thể xác nhận thanh toán.';
+        setPaymentError(msg);
+        showToast(msg, 'error');
       }
     } catch (err: any) {
-      setPaymentError(
-        err.response?.data?.message || 'Không thể xác nhận thanh toán. Vui lòng thử lại.',
-      );
+      const msg = err.response?.data?.message || 'Không thể xác nhận thanh toán. Vui lòng thử lại.';
+      setPaymentError(msg);
+      showToast(msg, 'error');
     } finally {
       setIsPaymentSubmitting(false);
     }
@@ -232,16 +240,19 @@ export const AdminBookingsPage: React.FC = () => {
         reason: trimmed,
       });
       if (res.success) {
+        showToast(`Đã hủy đơn ${cancelModalTarget.bookingCode} thành công`, 'success');
         setActionSuccessMessage(`Đã hủy đơn ${cancelModalTarget.bookingCode} thành công`);
         setCancelModalTarget(null);
         fetchAdminBookings();
       } else {
-        setCancelError(res.message || 'Không thể hủy đơn đặt phòng.');
+        const msg = res.message || 'Không thể hủy đơn đặt phòng.';
+        setCancelError(msg);
+        showToast(msg, 'error');
       }
     } catch (err: any) {
-      setCancelError(
-        err.response?.data?.message || 'Không thể hủy đơn đặt phòng. Vui lòng thử lại.',
-      );
+      const msg = err.response?.data?.message || 'Không thể hủy đơn đặt phòng. Vui lòng thử lại.';
+      setCancelError(msg);
+      showToast(msg, 'error');
     } finally {
       setIsCancelSubmitting(false);
     }
@@ -251,13 +262,14 @@ export const AdminBookingsPage: React.FC = () => {
     try {
       const res = await adminBookingApi.completeBooking(booking.id);
       if (res.success) {
+        showToast(`Đã hoàn tất ca cho đơn ${booking.bookingCode}`, 'success');
         setActionSuccessMessage(`Đã hoàn tất ca cho đơn ${booking.bookingCode}`);
         setRefreshIndex((prev) => prev + 1);
       }
     } catch (err: any) {
-      setErrorMessage(
-        err.response?.data?.message || 'Không thể hoàn tất đơn đặt phòng. Vui lòng thử lại.',
-      );
+      const msg = err.response?.data?.message || 'Không thể hoàn tất đơn đặt phòng. Vui lòng thử lại.';
+      setErrorMessage(msg);
+      showToast(msg, 'error');
     }
   };
 
@@ -265,13 +277,14 @@ export const AdminBookingsPage: React.FC = () => {
     try {
       const res = await adminBookingApi.markNoShow(booking.id);
       if (res.success) {
+        showToast(`Đã đánh dấu không đến cho đơn ${booking.bookingCode}`, 'success');
         setActionSuccessMessage(`Đã đánh dấu không đến cho đơn ${booking.bookingCode}`);
         setRefreshIndex((prev) => prev + 1);
       }
     } catch (err: any) {
-      setErrorMessage(
-        err.response?.data?.message || 'Không thể đánh dấu khách không đến. Vui lòng thử lại.',
-      );
+      const msg = err.response?.data?.message || 'Không thể đánh dấu khách không đến. Vui lòng thử lại.';
+      setErrorMessage(msg);
+      showToast(msg, 'error');
     }
   };
 

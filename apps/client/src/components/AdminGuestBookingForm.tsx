@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import { AuthContext } from '../context/auth-context-base';
+import { useToast } from '../hooks/useToast';
 import { roomApi } from '../services/room.api';
 import { adminBookingApi } from '../services/admin-booking.api';
 import { RoomListItem, RoomAvailabilitySlot } from '../types/room';
@@ -42,6 +43,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   principalId,
 }) => {
   const authContext = useContext(AuthContext);
+  const { showToast } = useToast();
   const effectivePrincipalId = principalId ?? authContext?.principal?.id;
   const activePrincipalRef = useRef<string | undefined>(effectivePrincipalId);
   activePrincipalRef.current = effectivePrincipalId;
@@ -396,6 +398,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
       }
 
       if (res.success) {
+        showToast('Đặt phòng cho khách vãng lai thành công!', 'success');
         setCreatedBooking(res.data);
         onBookingCreatedRef.current?.(res.data);
         // Refresh availability grid
@@ -416,14 +419,18 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
 
       if (code === 'ROOM_NOT_AVAILABLE') {
         setIsStaleMaintenance(true);
-        setErrors({ general: message || 'Phòng vừa chuyển sang bảo trì, không thể đặt phòng.' });
+        const msg = message || 'Phòng vừa chuyển sang bảo trì, không thể đặt phòng.';
+        setErrors({ general: msg });
+        showToast(msg, 'error');
       } else if (code === 'BOOKING_CONFLICT') {
         setHasBookingConflict(true);
+        const msg =
+          message ||
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.';
         setErrors({
-          general:
-            message ||
-            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+          general: msg,
         });
+        showToast(msg, 'error');
         availability.refresh().catch(() => {});
       } else if (code === 'VALIDATION_ERROR' && Array.isArray(details) && details.length > 0) {
         const fieldErrors: GuestFormErrors = {};
@@ -436,10 +443,13 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
           else if (!fieldErrors.general) fieldErrors.general = item.message;
         }
         setErrors(fieldErrors);
+        showToast('Dữ liệu nhập không hợp lệ, vui lòng kiểm tra lại.', 'error');
       } else {
+        const msg = message || 'Không thể tạo đơn đặt phòng cho khách vãng lai. Vui lòng thử lại.';
         setErrors({
-          general: message || 'Không thể tạo đơn đặt phòng cho khách vãng lai. Vui lòng thử lại.',
+          general: msg,
         });
+        showToast(msg, 'error');
       }
     } finally {
       if (

@@ -1,5 +1,6 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ToastProvider } from './context/ToastContext';
 import { GuestRoute, AdminRoute, CustomerRoute } from './components/RouteGuard';
 import { HomePage } from './pages/HomePage';
 import { RoomDetailPage } from './pages/RoomDetailPage';
@@ -16,7 +17,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
+        <ToastProvider>
+          <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/rooms/:id" element={<RoomDetailPage />} />
           <Route
@@ -77,6 +79,7 @@ export default function App() {
           />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

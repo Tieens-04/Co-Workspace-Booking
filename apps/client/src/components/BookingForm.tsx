@@ -5,6 +5,7 @@ import { RoomStatus, RoomAvailabilitySlot } from '../types/room';
 import { formatVnd, formatCurrency } from '../utils/format';
 import { useRoomAvailability } from '../hooks/useRoomAvailability';
 import { AuthContext } from '../context/auth-context-base';
+import { useToast } from '../hooks/useToast';
 import { TimeGrid } from './TimeGrid';
 import {
   getVietnamTodayString,
@@ -46,6 +47,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   const navigate = useNavigate();
   const auth = useContext(AuthContext);
   const currentUserId = userId || auth?.principal?.id;
+  const { showToast } = useToast();
 
   const [phase, setPhase] = useState<'edit' | 'review'>('edit');
   const [reviewedSnapshot, setReviewedSnapshot] = useState<{
@@ -403,6 +405,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       if (controller.signal.aborted || abortControllerRef.current !== controller) return;
 
       if (res.success) {
+        showToast('Đặt phòng thành công! Email xác nhận đã được gửi.', 'success');
         navigate('/booking-confirmation', {
           state: {
             booking: res.data,
@@ -419,16 +422,20 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
       if (code === 'ROOM_NOT_AVAILABLE') {
         setIsStaleMaintenance(true);
+        const msg = message || 'Phòng vừa được chuyển sang bảo trì, không thể đặt phòng.';
         setErrors({
-          general: message || 'Phòng vừa được chuyển sang bảo trì, không thể đặt phòng.',
+          general: msg,
         });
+        showToast(msg, 'error');
       } else if (code === 'BOOKING_CONFLICT') {
         setHasBookingConflict(true);
+        const msg =
+          message ||
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.';
         setErrors({
-          general:
-            message ||
-            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+          general: msg,
         });
+        showToast(msg, 'error');
         // Refresh availability in background to render newly booked slot as disabled/gray
         availability
           .refresh()
