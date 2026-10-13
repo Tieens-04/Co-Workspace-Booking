@@ -178,14 +178,49 @@ export const AdminDashboardPage: React.FC = () => {
         </div>
       </section>
 
-      {/* Loading state */}
+      {/* Loading state with Skeleton to prevent layout shift */}
       {isLoading && (
         <div
-          className="loading-container card"
-          style={{ padding: '3rem', textAlign: 'center', marginBottom: '1.5rem' }}
-          data-testid="dashboard-loading-state"
+          data-testid="dashboard-kpi-skeleton"
+          role="status"
+          aria-busy="true"
+          aria-live="polite"
+          aria-label="Đang tải dữ liệu dashboard"
         >
-          <p style={{ fontSize: '1.1rem', color: '#4a5568' }}>Đang tải dữ liệu dashboard...</p>
+          <p className="sr-only" data-testid="dashboard-loading-state">
+            Đang tải dữ liệu dashboard...
+          </p>
+          <section
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+              gap: '1.25rem',
+              marginBottom: '1.5rem',
+            }}
+          >
+            {Array.from({ length: 4 }, (_, index) => (
+              <div
+                key={`kpi-skeleton-${index}`}
+                className="card"
+                style={{ padding: '1.25rem', minHeight: '140px' }}
+                data-testid="kpi-skeleton-card"
+              >
+                <div className="skeleton skeleton-title" style={{ width: '60%', height: '14px' }} />
+                <div
+                  className="skeleton skeleton-text"
+                  style={{ width: '40%', height: '32px', margin: '0.75rem 0' }}
+                />
+                <div className="skeleton skeleton-text" style={{ width: '80%', height: '12px' }} />
+              </div>
+            ))}
+          </section>
+          <div className="card" style={{ padding: '2rem', minHeight: '260px' }}>
+            <div
+              className="skeleton skeleton-title"
+              style={{ width: '30%', height: '20px', marginBottom: '1rem' }}
+            />
+            <div className="skeleton skeleton-text" style={{ width: '100%', height: '180px' }} />
+          </div>
         </div>
       )}
 

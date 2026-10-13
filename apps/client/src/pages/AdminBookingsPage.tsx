@@ -673,14 +673,76 @@ export const AdminBookingsPage: React.FC = () => {
           </button>
         </div>
 
-        {/* Loading State */}
+        {/* Loading State with Table Skeletons */}
         {isLoading && (
           <div
-            className="loading-container"
+            className="table-responsive"
             data-testid="admin-bookings-loading"
-            style={{ padding: '2rem', textAlign: 'center' }}
+            role="status"
+            aria-busy="true"
+            aria-live="polite"
+            style={{ marginTop: '1rem' }}
           >
-            <p>Đang tải danh sách đặt phòng...</p>
+            <p className="sr-only">
+              Đang tải danh sách đặt phòng...
+            </p>
+            <table className="admin-room-table" data-testid="admin-bookings-table-skeleton">
+              <thead>
+                <tr>
+                  <th>Mã đơn</th>
+                  <th>Khách hàng</th>
+                  <th>Phòng</th>
+                  <th>Thời gian (Giờ VN)</th>
+                  <th>Tổng tiền</th>
+                  <th>Trạng thái</th>
+                  <th>Thanh toán</th>
+                  <th>Ghi chú</th>
+                  <th>Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Array.from({ length: 5 }, (_, index) => (
+                  <tr key={`skeleton-row-${index}`} data-testid="admin-booking-skeleton-row">
+                    <td>
+                      <div className="skeleton" style={{ width: '110px', height: '16px' }} />
+                    </td>
+                    <td>
+                      <div className="skeleton" style={{ width: '120px', height: '16px' }} />
+                    </td>
+                    <td>
+                      <div className="skeleton" style={{ width: '130px', height: '16px' }} />
+                    </td>
+                    <td>
+                      <div className="skeleton" style={{ width: '140px', height: '16px' }} />
+                    </td>
+                    <td>
+                      <div className="skeleton" style={{ width: '90px', height: '16px' }} />
+                    </td>
+                    <td>
+                      <div
+                        className="skeleton"
+                        style={{ width: '80px', height: '20px', borderRadius: '12px' }}
+                      />
+                    </td>
+                    <td>
+                      <div
+                        className="skeleton"
+                        style={{ width: '80px', height: '20px', borderRadius: '12px' }}
+                      />
+                    </td>
+                    <td>
+                      <div className="skeleton" style={{ width: '90px', height: '16px' }} />
+                    </td>
+                    <td>
+                      <div
+                        className="skeleton"
+                        style={{ width: '100px', height: '28px', borderRadius: '4px' }}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
 
