@@ -10,11 +10,15 @@ import { HealthController } from './controllers/health.controller.js';
 
 const app: Express = express();
 
+if (process.env.TRUST_PROXY === 'true' || ENV.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
+
 // Middlewares
 app.use(helmet());
 app.use(
   cors({
-    origin: ENV.CLIENT_URL,
+    origin: [ENV.CLIENT_URL],
     credentials: true,
   }),
 );
