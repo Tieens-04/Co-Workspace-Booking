@@ -1,7 +1,14 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
-import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/client';
+import {
+  Role,
+  RoomStatus,
+  BookingStatus,
+  PaymentStatus,
+  PaymentMethod,
+  Prisma,
+} from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
@@ -601,6 +608,216 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
           endTime: slot2End.toISOString(),
         });
       expect(customerRes.status).toBe(201);
+    });
+  });
+
+  describe('PATCH /api/v1/admin/bookings/:id/payment (Real DB Transactions & Locking)', () => {
+    it('successfully updates paymentStatus to PAID with CASH', async () => {
+      const start = new Date(Date.now() + 150 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+          paymentMethod: null,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.paymentStatus).toBe('PAID');
+      expect(res.body.data.paymentMethod).toBe('CASH');
+
+      const persisted = await prisma.booking.findUnique({ where: { id: booking.id } });
+      expect(persisted?.paymentStatus).toBe(PaymentStatus.PAID);
+      expect(persisted?.paymentMethod).toBe(PaymentMethod.CASH);
+    });
+
+    it('successfully updates paymentStatus to PAID with QR', async () => {
+      const start = new Date(Date.now() + 155 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          guestName: 'Guest QR Tester',
+          guestPhone: '0904000001',
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+          paymentMethod: null,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'QR' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.paymentStatus).toBe('PAID');
+      expect(res.body.data.paymentMethod).toBe('QR');
+
+      const persisted = await prisma.booking.findUnique({ where: { id: booking.id } });
+      expect(persisted?.paymentStatus).toBe(PaymentStatus.PAID);
+      expect(persisted?.paymentMethod).toBe(PaymentMethod.QR);
+    });
+
+    it('is idempotent when confirming already paid booking', async () => {
+      const start = new Date(Date.now() + 160 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.paymentStatus).toBe('PAID');
+    });
+
+    it('returns 409 when attempting to pay a CANCELLED booking', async () => {
+      const start = new Date(Date.now() + 165 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+  });
+
+  describe('PATCH /api/v1/admin/bookings/:id/cancel (Real DB Transactions & Locking)', () => {
+    it('cancels confirmed booking and stores cancellation reason', async () => {
+      const start = new Date(Date.now() + 170 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Sự cố bảo trì đột xuất' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('CANCELLED');
+      expect(res.body.data.cancellationReason).toBe('Sự cố bảo trì đột xuất');
+
+      const persisted = await prisma.booking.findUnique({ where: { id: booking.id } });
+      expect(persisted?.status).toBe(BookingStatus.CANCELLED);
+      expect(persisted?.cancellationReason).toBe('Sự cố bảo trì đột xuất');
+    });
+
+    it('rejects cancelling COMPLETED booking with 409 BOOKING_STATE_CONFLICT', async () => {
+      const start = new Date(Date.now() - 10 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.COMPLETED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Hủy đơn hoàn tất' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('is idempotent when cancelling already CANCELLED booking', async () => {
+      const start = new Date(Date.now() + 175 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CANCELLED,
+          cancellationReason: 'Đã hủy trước đó',
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${booking.id}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Hủy lần nữa' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CANCELLED');
     });
   });
 });

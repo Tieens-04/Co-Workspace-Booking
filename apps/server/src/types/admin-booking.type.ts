@@ -20,6 +20,7 @@ export interface AdminBookingResponseDto {
   status: BookingStatus;
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
+  cancellationReason?: string | null;
   customer: AdminBookingCustomerDto;
 }
 

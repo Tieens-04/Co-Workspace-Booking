@@ -135,11 +135,115 @@ export const AdminBookingsPage: React.FC = () => {
 
   const [refreshIndex, setRefreshIndex] = useState<number>(0);
 
+  // Payment confirmation modal state
+  const [paymentModalTarget, setPaymentModalTarget] = useState<AdminBookingItem | null>(null);
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'QR'>('CASH');
+  const [isPaymentSubmitting, setIsPaymentSubmitting] = useState<boolean>(false);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
+
+  // Admin cancellation modal state
+  const [cancelModalTarget, setCancelModalTarget] = useState<AdminBookingItem | null>(null);
+  const [cancelReason, setCancelReason] = useState<string>('');
+  const [cancelValidationError, setCancelValidationError] = useState<string | null>(null);
+  const [isCancelSubmitting, setIsCancelSubmitting] = useState<boolean>(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+
+  // Success message banner
+  const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+
   const requestIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
   const activeSessionUserRef = useRef<string | undefined>(principal?.id);
   activeSessionUserRef.current = principal?.id;
   const activeFilterKeyRef = useRef<string>('');
+
+  const handleOpenPaymentModal = (booking: AdminBookingItem) => {
+    setPaymentModalTarget(booking);
+    setPaymentMethod('CASH');
+    setPaymentError(null);
+  };
+
+  const handleClosePaymentModal = () => {
+    setPaymentModalTarget(null);
+    setPaymentError(null);
+  };
+
+  const handleSubmitPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!paymentModalTarget) return;
+
+    setIsPaymentSubmitting(true);
+    setPaymentError(null);
+    try {
+      const res = await adminBookingApi.confirmPayment(paymentModalTarget.id, {
+        paymentMethod,
+      });
+      if (res.success) {
+        setActionSuccessMessage(
+          `Xác nhận thanh toán thành công cho đơn ${paymentModalTarget.bookingCode}`,
+        );
+        setPaymentModalTarget(null);
+        fetchAdminBookings();
+      } else {
+        setPaymentError(res.message || 'Không thể xác nhận thanh toán.');
+      }
+    } catch (err: any) {
+      setPaymentError(
+        err.response?.data?.message || 'Không thể xác nhận thanh toán. Vui lòng thử lại.',
+      );
+    } finally {
+      setIsPaymentSubmitting(false);
+    }
+  };
+
+  const handleOpenCancelModal = (booking: AdminBookingItem) => {
+    setCancelModalTarget(booking);
+    setCancelReason('');
+    setCancelValidationError(null);
+    setCancelError(null);
+  };
+
+  const handleCloseCancelModal = () => {
+    setCancelModalTarget(null);
+    setCancelValidationError(null);
+    setCancelError(null);
+  };
+
+  const handleSubmitCancel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cancelModalTarget) return;
+
+    const trimmed = cancelReason.trim();
+    if (!trimmed) {
+      setCancelValidationError('Vui lòng nhập lý do hủy');
+      return;
+    }
+    if (trimmed.length > 500) {
+      setCancelValidationError('Lý do hủy không được vượt quá 500 ký tự');
+      return;
+    }
+
+    setIsCancelSubmitting(true);
+    setCancelError(null);
+    try {
+      const res = await adminBookingApi.cancelBooking(cancelModalTarget.id, {
+        reason: trimmed,
+      });
+      if (res.success) {
+        setActionSuccessMessage(`Đã hủy đơn ${cancelModalTarget.bookingCode} thành công`);
+        setCancelModalTarget(null);
+        fetchAdminBookings();
+      } else {
+        setCancelError(res.message || 'Không thể hủy đơn đặt phòng.');
+      }
+    } catch (err: any) {
+      setCancelError(
+        err.response?.data?.message || 'Không thể hủy đơn đặt phòng. Vui lòng thử lại.',
+      );
+    } finally {
+      setIsCancelSubmitting(false);
+    }
+  };
 
   const fetchAdminBookings = useCallback(() => {
     const currentRequestId = ++requestIdRef.current;
@@ -265,6 +369,31 @@ export const AdminBookingsPage: React.FC = () => {
           </button>
         </nav>
       </header>
+
+      {/* Action Success Alert Banner */}
+      {actionSuccessMessage && (
+        <div
+          className="alert alert-success"
+          role="alert"
+          data-testid="admin-action-success-banner"
+          style={{
+            marginBottom: '1rem',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}
+        >
+          <span>{actionSuccessMessage}</span>
+          <button
+            type="button"
+            className="btn btn-outline"
+            style={{ padding: '0.2rem 0.5rem', fontSize: '0.8rem' }}
+            onClick={() => setActionSuccessMessage(null)}
+          >
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Guest Booking Form Section */}
       <AdminGuestBookingForm
@@ -451,6 +580,7 @@ export const AdminBookingsPage: React.FC = () => {
                     <th>Trạng thái</th>
                     <th>Thanh toán</th>
                     <th>Ghi chú</th>
+                    <th>Hành động</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -526,6 +656,58 @@ export const AdminBookingsPage: React.FC = () => {
                             <span style={{ color: '#a0aec0' }}>—</span>
                           )}
                         </td>
+                        <td>
+                          <div
+                            style={{
+                              display: 'flex',
+                              gap: '0.4rem',
+                              flexWrap: 'wrap',
+                              alignItems: 'center',
+                            }}
+                          >
+                            {booking.paymentStatus === 'UNPAID' &&
+                              booking.status !== 'CANCELLED' && (
+                                <button
+                                  type="button"
+                                  className="btn btn-sm btn-primary"
+                                  data-testid={`confirm-payment-btn-${booking.id}`}
+                                  onClick={() => handleOpenPaymentModal(booking)}
+                                >
+                                  Thanh toán
+                                </button>
+                              )}
+                            {booking.paymentStatus === 'PAID' && booking.paymentMethod && (
+                              <span
+                                style={{ fontSize: '0.8rem', color: '#38a169', fontWeight: 500 }}
+                                data-testid={`paid-method-label-${booking.id}`}
+                              >
+                                ✓ {booking.paymentMethod}
+                              </span>
+                            )}
+                            {booking.status === 'CONFIRMED' && (
+                              <button
+                                type="button"
+                                className="btn btn-sm btn-danger-outline"
+                                data-testid={`cancel-booking-btn-${booking.id}`}
+                                onClick={() => handleOpenCancelModal(booking)}
+                              >
+                                Hủy đơn
+                              </button>
+                            )}
+                          </div>
+                          {booking.status === 'CANCELLED' && booking.cancellationReason && (
+                            <div
+                              style={{
+                                fontSize: '0.75rem',
+                                color: '#e53e3e',
+                                marginTop: '0.25rem',
+                              }}
+                              data-testid={`cancellation-reason-${booking.id}`}
+                            >
+                              Lý do: {booking.cancellationReason}
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
@@ -571,6 +753,213 @@ export const AdminBookingsPage: React.FC = () => {
           </>
         )}
       </section>
+
+      {/* Confirm Payment Modal */}
+      {paymentModalTarget && (
+        <div
+          className="modal-overlay"
+          data-testid="confirm-payment-modal"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem',
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: '440px',
+              width: '100%',
+              padding: '1.5rem',
+              backgroundColor: '#fff',
+              borderRadius: '8px',
+            }}
+          >
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.25rem' }}>💳 Xác nhận thanh toán</h3>
+            <p style={{ margin: '0 0 1rem 0', color: '#4a5568' }}>
+              Đơn: <strong>{paymentModalTarget.bookingCode}</strong> — Số tiền:{' '}
+              <strong style={{ color: '#2b6cb0' }}>
+                {formatCurrency(paymentModalTarget.totalAmount)}
+              </strong>
+            </p>
+
+            {paymentError && (
+              <div
+                className="alert alert-danger"
+                role="alert"
+                style={{ marginBottom: '1rem', padding: '0.75rem' }}
+              >
+                {paymentError}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitPayment}>
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label
+                  htmlFor="paymentMethodSelect"
+                  style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}
+                >
+                  Phương thức thanh toán
+                </label>
+                <select
+                  id="paymentMethodSelect"
+                  className="form-control"
+                  data-testid="payment-method-select"
+                  value={paymentMethod}
+                  onChange={(e) => setPaymentMethod(e.target.value as 'CASH' | 'QR')}
+                >
+                  <option value="CASH">Tiền mặt (CASH)</option>
+                  <option value="QR">Quét mã QR (QR)</option>
+                </select>
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '0.5rem',
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleClosePaymentModal}
+                  data-testid="cancel-payment-btn"
+                  disabled={isPaymentSubmitting}
+                >
+                  Hủy bỏ
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  data-testid="submit-payment-btn"
+                  disabled={isPaymentSubmitting}
+                >
+                  {isPaymentSubmitting ? 'Đang xác nhận...' : 'Xác nhận thanh toán'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin Cancel Modal */}
+      {cancelModalTarget && (
+        <div
+          className="modal-overlay"
+          data-testid="admin-cancel-modal"
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 1000,
+            padding: '1rem',
+          }}
+        >
+          <div
+            className="card"
+            style={{
+              maxWidth: '460px',
+              width: '100%',
+              padding: '1.5rem',
+              backgroundColor: '#fff',
+              borderRadius: '8px',
+            }}
+          >
+            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.25rem', color: '#c53030' }}>
+              ⚠️ Hủy đơn đặt phòng
+            </h3>
+            <p style={{ margin: '0 0 1rem 0', color: '#4a5568' }}>
+              Đơn: <strong>{cancelModalTarget.bookingCode}</strong> — Phòng:{' '}
+              {cancelModalTarget.room.name}
+            </p>
+
+            {cancelError && (
+              <div
+                className="alert alert-danger"
+                role="alert"
+                style={{ marginBottom: '1rem', padding: '0.75rem' }}
+              >
+                {cancelError}
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitCancel}>
+              <div style={{ marginBottom: '1.25rem' }}>
+                <label
+                  htmlFor="cancelReasonInput"
+                  style={{ display: 'block', marginBottom: '0.5rem', fontWeight: 500 }}
+                >
+                  Lý do hủy đơn <span style={{ color: '#e53e3e' }}>*</span>
+                </label>
+                <textarea
+                  id="cancelReasonInput"
+                  className="form-control"
+                  rows={3}
+                  data-testid="cancel-reason-input"
+                  value={cancelReason}
+                  onChange={(e) => {
+                    setCancelReason(e.target.value);
+                    if (cancelValidationError) setCancelValidationError(null);
+                  }}
+                  placeholder="Nhập lý do hủy (bắt buộc)..."
+                />
+                {cancelValidationError && (
+                  <div
+                    style={{
+                      color: '#e53e3e',
+                      fontSize: '0.85rem',
+                      marginTop: '0.35rem',
+                    }}
+                  >
+                    {cancelValidationError}
+                  </div>
+                )}
+              </div>
+
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  gap: '0.5rem',
+                }}
+              >
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={handleCloseCancelModal}
+                  data-testid="close-cancel-modal-btn"
+                  disabled={isCancelSubmitting}
+                >
+                  Đóng
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-danger"
+                  data-testid="submit-cancel-btn"
+                  disabled={isCancelSubmitting}
+                >
+                  {isCancelSubmitting ? 'Đang hủy...' : 'Xác nhận hủy đơn'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 };

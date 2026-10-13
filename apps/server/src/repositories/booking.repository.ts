@@ -1,4 +1,4 @@
-import { BookingStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { BookingStatus, PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { lockRoomRow } from './room.repository.js';
 import {
@@ -116,6 +116,7 @@ export const adminBookingReadSelect = {
   status: true,
   paymentStatus: true,
   paymentMethod: true,
+  cancellationReason: true,
   guestName: true,
   guestPhone: true,
   user: {
@@ -167,6 +168,7 @@ export function mapAdminBookingRecordToDto(
     status: record.status,
     paymentStatus: record.paymentStatus,
     paymentMethod: record.paymentMethod,
+    cancellationReason: record.cancellationReason ?? null,
     customer,
   };
 }
@@ -190,6 +192,11 @@ export interface AdminBookingRepositoryContract {
   findManyAndCountForAdmin(
     filter: FindAdminBookingsFilter,
   ): Promise<[number, AdminBookingResponseDto[]]>;
+  confirmPaymentForAdmin(
+    id: string,
+    paymentMethod: PaymentMethod,
+  ): Promise<AdminBookingResponseDto>;
+  cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto>;
 }
 
 export class BookingRepository
@@ -428,6 +435,115 @@ export class BookingRepository
     ]);
 
     return [total, records.map(mapAdminBookingRecordToDto)];
+  }
+
+  async confirmPaymentForAdmin(
+    id: string,
+    paymentMethod: PaymentMethod,
+  ): Promise<AdminBookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      // 1. Lock booking row in MySQL with FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: BookingStatus;
+          payment_status: PaymentStatus;
+          payment_method: PaymentMethod | null;
+        }>
+      >(
+        Prisma.sql`SELECT id, status, payment_status, payment_method FROM bookings WHERE id = ${id} FOR UPDATE`,
+      );
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      }
+
+      const lockedBooking = rows[0];
+
+      // 2. Reject if booking is already CANCELLED
+      if (lockedBooking.status === BookingStatus.CANCELLED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể xác nhận thanh toán cho đơn đặt phòng đã hủy',
+          409,
+        );
+      }
+
+      // 3. Idempotent check: if already PAID, return current record without modification
+      if (lockedBooking.payment_status === PaymentStatus.PAID) {
+        const existing = await tx.booking.findUnique({
+          where: { id },
+          select: adminBookingReadSelect,
+        });
+        if (!existing) {
+          throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+        }
+        return mapAdminBookingRecordToDto(existing);
+      }
+
+      // 4. Update payment status to PAID with the specified payment method
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod,
+        },
+        select: adminBookingReadSelect,
+      });
+
+      return mapAdminBookingRecordToDto(updated);
+    });
+  }
+
+  async cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      // 1. Lock booking row in MySQL with FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: BookingStatus;
+        }>
+      >(Prisma.sql`SELECT id, status FROM bookings WHERE id = ${id} FOR UPDATE`);
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      }
+
+      const lockedBooking = rows[0];
+
+      // 2. Idempotent check: if already CANCELLED, return current record without modification
+      if (lockedBooking.status === BookingStatus.CANCELLED) {
+        const existing = await tx.booking.findUnique({
+          where: { id },
+          select: adminBookingReadSelect,
+        });
+        if (!existing) {
+          throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+        }
+        return mapAdminBookingRecordToDto(existing);
+      }
+
+      // 3. Reject if booking is already COMPLETED
+      if (lockedBooking.status === BookingStatus.COMPLETED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hủy đơn đặt phòng đã hoàn tất',
+          409,
+        );
+      }
+
+      // 4. Update status to CANCELLED with cancellation reason
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          status: BookingStatus.CANCELLED,
+          cancellationReason: reason,
+        },
+        select: adminBookingReadSelect,
+      });
+
+      return mapAdminBookingRecordToDto(updated);
+    });
   }
 }
 

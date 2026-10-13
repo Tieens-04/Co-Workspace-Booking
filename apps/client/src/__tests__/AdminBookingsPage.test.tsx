@@ -53,6 +53,8 @@ vi.mock('../services/admin-booking.api', () => ({
   adminBookingApi: {
     getBookings: vi.fn(),
     createGuestBooking: vi.fn(),
+    confirmPayment: vi.fn(),
+    cancelBooking: vi.fn(),
   },
 }));
 
@@ -431,5 +433,147 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
     for (const call of calls) {
       expect(call[0]?.status).toBe('CANCELLED');
     }
+  });
+
+  describe('Payment Confirmation & Admin Cancellation Actions', () => {
+    const unconfirmedBooking: AdminBookingItem = {
+      id: 'booking-unpaid-confirmed',
+      bookingCode: 'CS-20261003-ACT1',
+      room: { id: 'room-1', name: 'Phòng VIP 1' },
+      startTime: '2026-10-03T10:00:00.000Z',
+      endTime: '2026-10-03T12:00:00.000Z',
+      totalAmount: '500000.00',
+      note: null,
+      status: 'CONFIRMED',
+      paymentStatus: 'UNPAID',
+      paymentMethod: null,
+      customer: { kind: 'USER', name: 'Nguyễn Văn Test', phone: '0901234567' },
+    };
+
+    it('opens confirm payment modal, chooses QR, submits successfully, and refetches bookings', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(
+        mockBookingsResponse([unconfirmedBooking], 1, 1, 1),
+      );
+      vi.mocked(adminBookingApi.confirmPayment).mockResolvedValue({
+        success: true,
+        message: 'Xác nhận thanh toán thành công',
+        data: {
+          ...unconfirmedBooking,
+          paymentStatus: 'PAID',
+          paymentMethod: 'QR',
+        },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('CS-20261003-ACT1')).toBeInTheDocument();
+      });
+
+      const confirmBtn = screen.getByTestId('confirm-payment-btn-booking-unpaid-confirmed');
+      await user.click(confirmBtn);
+
+      expect(screen.getByTestId('confirm-payment-modal')).toBeInTheDocument();
+
+      const methodSelect = screen.getByTestId('payment-method-select');
+      await user.selectOptions(methodSelect, 'QR');
+
+      const submitBtn = screen.getByTestId('submit-payment-btn');
+      await user.click(submitBtn);
+
+      await waitFor(() => {
+        expect(adminBookingApi.confirmPayment).toHaveBeenCalledWith('booking-unpaid-confirmed', {
+          paymentMethod: 'QR',
+        });
+      });
+
+      // Refetches bookings after payment confirmation
+      await waitFor(() => {
+        expect(adminBookingApi.getBookings).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it('opens cancel modal, validates required reason, submits successfully, and refetches bookings', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(
+        mockBookingsResponse([unconfirmedBooking], 1, 1, 1),
+      );
+      vi.mocked(adminBookingApi.cancelBooking).mockResolvedValue({
+        success: true,
+        message: 'Hủy đơn đặt phòng thành công',
+        data: {
+          ...unconfirmedBooking,
+          status: 'CANCELLED',
+          cancellationReason: 'Khách có việc bận đột xuất',
+        },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('CS-20261003-ACT1')).toBeInTheDocument();
+      });
+
+      const cancelBtn = screen.getByTestId('cancel-booking-btn-booking-unpaid-confirmed');
+      await user.click(cancelBtn);
+
+      expect(screen.getByTestId('admin-cancel-modal')).toBeInTheDocument();
+
+      // Submit without reason -> validation error
+      const submitBtn = screen.getByTestId('submit-cancel-btn');
+      await user.click(submitBtn);
+
+      expect(screen.getByText('Vui lòng nhập lý do hủy')).toBeInTheDocument();
+      expect(adminBookingApi.cancelBooking).not.toHaveBeenCalled();
+
+      // Enter reason and submit
+      const reasonInput = screen.getByTestId('cancel-reason-input');
+      await user.type(reasonInput, 'Khách có việc bận đột xuất');
+      await user.click(submitBtn);
+
+      await waitFor(() => {
+        expect(adminBookingApi.cancelBooking).toHaveBeenCalledWith('booking-unpaid-confirmed', {
+          reason: 'Khách có việc bận đột xuất',
+        });
+      });
+
+      // Refetches bookings after cancellation
+      await waitFor(() => {
+        expect(adminBookingApi.getBookings).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it('displays error message when confirm payment fails', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(
+        mockBookingsResponse([unconfirmedBooking], 1, 1, 1),
+      );
+      vi.mocked(adminBookingApi.confirmPayment).mockRejectedValue({
+        response: {
+          data: {
+            message: 'Đơn đặt phòng đã bị hủy, không thể thanh toán',
+          },
+        },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('CS-20261003-ACT1')).toBeInTheDocument();
+      });
+
+      const confirmBtn = screen.getByTestId('confirm-payment-btn-booking-unpaid-confirmed');
+      await user.click(confirmBtn);
+
+      const submitBtn = screen.getByTestId('submit-payment-btn');
+      await user.click(submitBtn);
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Đơn đặt phòng đã bị hủy, không thể thanh toán'),
+        ).toBeInTheDocument();
+      });
+    });
   });
 });

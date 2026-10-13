@@ -8,6 +8,10 @@ import { createRoomSchema, updateRoomSchema } from '../validators/admin-room.val
 import {
   getAdminBookingsQuerySchema,
   createGuestBookingSchema,
+  confirmPaymentParamsSchema,
+  confirmPaymentBodySchema,
+  adminCancelBookingParamsSchema,
+  adminCancelBookingBodySchema,
 } from '../validators/admin-booking.validator.js';
 import { uploadRoomImagesMiddleware } from '../middlewares/room-image-upload.middleware.js';
 
@@ -37,6 +41,18 @@ router.post(
   '/bookings/guest',
   validateBody(createGuestBookingSchema),
   adminBookingController.createGuestBooking,
+);
+router.patch(
+  '/bookings/:id/payment',
+  validateParams(confirmPaymentParamsSchema),
+  validateBody(confirmPaymentBodySchema),
+  adminBookingController.confirmPayment,
+);
+router.patch(
+  '/bookings/:id/cancel',
+  validateParams(adminCancelBookingParamsSchema),
+  validateBody(adminCancelBookingBodySchema),
+  adminBookingController.cancelBooking,
 );
 
 export default router;

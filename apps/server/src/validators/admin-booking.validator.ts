@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BookingStatus } from '@prisma/client';
+import { BookingStatus, PaymentMethod } from '@prisma/client';
 import { positiveIntSchema, MYSQL_INT_MAX, isValidCalendarDate } from './room.validator.js';
 
 const noteSchema = z
@@ -66,3 +66,41 @@ export const createGuestBookingSchema = z
   .strict();
 
 export type CreateGuestBookingInput = z.infer<typeof createGuestBookingSchema>;
+
+export const confirmPaymentParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type ConfirmPaymentParamsInput = z.infer<typeof confirmPaymentParamsSchema>;
+
+export const confirmPaymentBodySchema = z
+  .object({
+    paymentMethod: z.nativeEnum(PaymentMethod, {
+      message: 'Phương thức thanh toán phải là CASH hoặc QR',
+    }),
+  })
+  .strict();
+
+export type ConfirmPaymentBodyInput = z.infer<typeof confirmPaymentBodySchema>;
+
+export const adminCancelBookingParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type AdminCancelBookingParamsInput = z.infer<typeof adminCancelBookingParamsSchema>;
+
+export const adminCancelBookingBodySchema = z
+  .object({
+    reason: z
+      .string({ message: 'Lý do hủy không được để trống' })
+      .trim()
+      .min(1, 'Lý do hủy không được để trống')
+      .max(500, 'Lý do hủy không được vượt quá 500 ký tự'),
+  })
+  .strict();
+
+export type AdminCancelBookingBodyInput = z.infer<typeof adminCancelBookingBodySchema>;

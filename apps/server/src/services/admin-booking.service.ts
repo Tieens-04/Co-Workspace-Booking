@@ -1,3 +1,4 @@
+import { PaymentMethod } from '@prisma/client';
 import {
   AdminBookingRepositoryContract,
   bookingRepository,
@@ -44,6 +45,14 @@ export class AdminBookingService {
         phone: input.guestPhone,
       },
     };
+  }
+
+  async confirmPayment(id: string, paymentMethod: PaymentMethod): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.confirmPaymentForAdmin(id, paymentMethod);
+  }
+
+  async cancelBooking(id: string, reason: string): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.cancelBookingForAdmin(id, reason);
   }
 }
 

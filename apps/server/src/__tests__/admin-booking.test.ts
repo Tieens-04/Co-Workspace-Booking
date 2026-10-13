@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import request from 'supertest';
-import { Role, BookingStatus, PaymentStatus } from '@prisma/client';
+import { Role, BookingStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
 import app from '../app.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
@@ -99,6 +99,40 @@ describe('Admin Booking Management API Unit Tests', () => {
           guestName: 'Nguyễn Văn A',
           guestPhone: '0912345678',
         });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    });
+
+    it('returns 401 UNAUTHORIZED when no token is provided to PATCH /api/v1/admin/bookings/:id/payment', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/11111111-1111-4111-8111-111111111111/payment')
+        .send({ paymentMethod: 'CASH' });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it('returns 403 FORBIDDEN when CUSTOMER accesses PATCH /api/v1/admin/bookings/:id/payment', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/11111111-1111-4111-8111-111111111111/payment')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ paymentMethod: 'CASH' });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    });
+
+    it('returns 401 UNAUTHORIZED when no token is provided to PATCH /api/v1/admin/bookings/:id/cancel', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/11111111-1111-4111-8111-111111111111/cancel')
+        .send({ reason: 'Hủy đơn' });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it('returns 403 FORBIDDEN when CUSTOMER accesses PATCH /api/v1/admin/bookings/:id/cancel', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/11111111-1111-4111-8111-111111111111/cancel')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ reason: 'Hủy đơn' });
       expect(res.status).toBe(403);
       expect(res.body.code).toBe('FORBIDDEN');
     });
@@ -329,6 +363,247 @@ describe('Admin Booking Management API Unit Tests', () => {
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('BOOKING_CONFLICT');
+    });
+  });
+
+  describe('PATCH /api/v1/admin/bookings/:id/payment (Confirm Payment)', () => {
+    const validBookingId = '22222222-2222-4222-8222-222222222222';
+
+    it('rejects invalid booking UUID with 400', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/not-a-uuid/payment')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects missing or invalid paymentMethod with 400', async () => {
+      const res1 = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({});
+
+      expect(res1.status).toBe(400);
+      expect(res1.body.code).toBe('VALIDATION_ERROR');
+
+      const res2 = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CRYPTO' });
+
+      expect(res2.status).toBe(400);
+      expect(res2.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('successfully confirms payment with CASH and returns updated booking', async () => {
+      const updatedFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        paymentStatus: PaymentStatus.PAID,
+        paymentMethod: PaymentMethod.CASH,
+      });
+
+      const spy = vi
+        .spyOn(bookingRepository, 'confirmPaymentForAdmin')
+        .mockResolvedValue(updatedFixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.paymentStatus).toBe('PAID');
+      expect(res.body.data.paymentMethod).toBe('CASH');
+      expect(spy).toHaveBeenCalledWith(validBookingId, PaymentMethod.CASH);
+    });
+
+    it('successfully confirms payment with QR and returns updated booking', async () => {
+      const updatedFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        paymentStatus: PaymentStatus.PAID,
+        paymentMethod: PaymentMethod.QR,
+      });
+
+      const spy = vi
+        .spyOn(bookingRepository, 'confirmPaymentForAdmin')
+        .mockResolvedValue(updatedFixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'QR' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.paymentStatus).toBe('PAID');
+      expect(res.body.data.paymentMethod).toBe('QR');
+      expect(spy).toHaveBeenCalledWith(validBookingId, PaymentMethod.QR);
+    });
+
+    it('propagates 404 BOOKING_NOT_FOUND when booking does not exist', async () => {
+      vi.spyOn(bookingRepository, 'confirmPaymentForAdmin').mockRejectedValue(
+        new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('BOOKING_NOT_FOUND');
+    });
+
+    it('propagates 409 BOOKING_STATE_CONFLICT when booking is CANCELLED', async () => {
+      vi.spyOn(bookingRepository, 'confirmPaymentForAdmin').mockRejectedValue(
+        new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể xác nhận thanh toán cho đơn đặt phòng đã hủy',
+          409,
+        ),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('returns 200 idempotently when booking is already PAID', async () => {
+      const alreadyPaidFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        paymentStatus: PaymentStatus.PAID,
+        paymentMethod: PaymentMethod.CASH,
+      });
+
+      vi.spyOn(bookingRepository, 'confirmPaymentForAdmin').mockResolvedValue(alreadyPaidFixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/payment`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ paymentMethod: 'CASH' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.paymentStatus).toBe('PAID');
+    });
+  });
+
+  describe('PATCH /api/v1/admin/bookings/:id/cancel (Admin Cancel Booking)', () => {
+    const validBookingId = '22222222-2222-4222-8222-222222222222';
+
+    it('rejects invalid booking UUID with 400', async () => {
+      const res = await request(app)
+        .patch('/api/v1/admin/bookings/not-a-uuid/cancel')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Khách đổi kế hoạch' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects missing or empty reason with 400', async () => {
+      const res1 = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({});
+
+      expect(res1.status).toBe(400);
+      expect(res1.body.code).toBe('VALIDATION_ERROR');
+
+      const res2 = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: '   ' });
+
+      expect(res2.status).toBe(400);
+      expect(res2.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('rejects reason exceeding 500 characters with 400', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'a'.repeat(501) });
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('successfully cancels booking with reason and returns CANCELLED status', async () => {
+      const cancelledFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        status: BookingStatus.CANCELLED,
+        cancellationReason: 'Khách yêu cầu hủy qua hotline',
+      });
+
+      const spy = vi
+        .spyOn(bookingRepository, 'cancelBookingForAdmin')
+        .mockResolvedValue(cancelledFixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Khách yêu cầu hủy qua hotline' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.status).toBe('CANCELLED');
+      expect(res.body.data.cancellationReason).toBe('Khách yêu cầu hủy qua hotline');
+      expect(spy).toHaveBeenCalledWith(validBookingId, 'Khách yêu cầu hủy qua hotline');
+    });
+
+    it('propagates 404 BOOKING_NOT_FOUND when booking does not exist', async () => {
+      vi.spyOn(bookingRepository, 'cancelBookingForAdmin').mockRejectedValue(
+        new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Hủy phòng' });
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('BOOKING_NOT_FOUND');
+    });
+
+    it('propagates 409 BOOKING_STATE_CONFLICT when booking is COMPLETED', async () => {
+      vi.spyOn(bookingRepository, 'cancelBookingForAdmin').mockRejectedValue(
+        new AppError('BOOKING_STATE_CONFLICT', 'Không thể hủy đơn đặt phòng đã hoàn tất', 409),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Hủy đơn' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('returns 200 idempotently when booking is already CANCELLED', async () => {
+      const alreadyCancelledFixture = mockAdminBookingFixture({
+        id: validBookingId,
+        status: BookingStatus.CANCELLED,
+        cancellationReason: 'Đã hủy trước đó',
+      });
+
+      vi.spyOn(bookingRepository, 'cancelBookingForAdmin').mockResolvedValue(
+        alreadyCancelledFixture,
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Hủy lại' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CANCELLED');
     });
   });
 });

@@ -22,6 +22,7 @@ export interface AdminBookingItem {
   status: string;
   paymentStatus: string;
   paymentMethod: string | null;
+  cancellationReason?: string | null;
   customer: AdminBookingCustomer;
 }
 
@@ -47,5 +48,15 @@ export interface CreateGuestBookingPayload {
   note?: string | null;
 }
 
+export interface ConfirmPaymentPayload {
+  paymentMethod: 'CASH' | 'QR';
+}
+
+export interface AdminCancelBookingPayload {
+  reason: string;
+}
+
 export type AdminBookingsApiResponse = ApiResponse<AdminBookingListResponseData>;
 export type AdminGuestBookingApiResponse = ApiResponse<AdminBookingItem>;
+export type ConfirmPaymentApiResponse = ApiResponse<AdminBookingItem>;
+export type AdminCancelBookingApiResponse = ApiResponse<AdminBookingItem>;
