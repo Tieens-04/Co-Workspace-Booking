@@ -5,6 +5,8 @@ import { useAuth } from '../hooks/useAuth';
 import { authApi } from '../services/auth.api';
 import { ApiErrorResponse } from '../types/auth';
 import { loginSchema } from '../utils/validation';
+import styles from './Auth.module.css';
+import { Boxes, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -117,67 +119,84 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <main className="auth-container">
-      <div className="card auth-card">
-        <div className="auth-header">
-          <Link to="/" className="auth-brand">
-            🏢 Co-Space Working
+    <main className={`auth-container ${styles.container}`}>
+      <div className={`card auth-card ${styles.card}`}>
+        <div className={`auth-header ${styles.header}`}>
+          <Link to="/" className={`auth-brand ${styles.brand}`} aria-label="Về trang chủ Co-Space">
+            <div className={styles.brandIcon}>
+              <Boxes size={20} strokeWidth={2.2} />
+            </div>
+            <div className={styles.brandText}>
+              <span>Co-Space</span>
+              <span className={styles.brandSub}>Working</span>
+            </div>
           </Link>
-          <h1 className="auth-title">Đăng nhập tài khoản</h1>
-          <p className="auth-subtitle">Nhập thông tin xác thực để truy cập hệ thống</p>
+          <h1 className={`auth-title ${styles.title}`}>Đăng nhập tài khoản</h1>
+          <p className={`auth-subtitle ${styles.subtitle}`}>Nhập thông tin xác thực để truy cập hệ thống</p>
         </div>
 
         {showSessionNotice && (
-          <div className="alert alert-danger" role="alert">
-            Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.
+          <div className={`alert alert-danger ${styles.alertDanger}`} role="alert">
+            <AlertCircle size={18} className={styles.alertIcon} />
+            <span>Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.</span>
           </div>
         )}
 
         {successNotice && (
-          <div className="alert alert-success" role="status">
-            {successNotice}
+          <div className={`alert alert-success ${styles.alertSuccess}`} role="status">
+            <CheckCircle2 size={18} className={styles.alertIcon} />
+            <span>{successNotice}</span>
           </div>
         )}
 
         {generalError && (
-          <div className="alert alert-danger" role="alert">
-            {generalError}
+          <div className={`alert alert-danger ${styles.alertDanger}`} role="alert">
+            <AlertCircle size={18} className={styles.alertIcon} />
+            <span>{generalError}</span>
           </div>
         )}
 
-        <form onSubmit={handleSubmit} noValidate>
-          <div className="form-group">
-            <label htmlFor="login-email" className="form-label">
-              Email <span aria-hidden="true">*</span>
+        <form onSubmit={handleSubmit} noValidate className={styles.form}>
+          <div className={`form-group ${styles.field}`}>
+            <label htmlFor="login-email" className={`form-label ${styles.label}`}>
+              Email <span className={styles.requiredStar} aria-hidden="true">*</span>
             </label>
-            <input
-              id="login-email"
-              type="email"
-              className={`form-control ${fieldErrors.email ? 'has-error' : ''}`}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="ten@congty.com"
-              autoComplete="username"
-              aria-describedby={fieldErrors.email ? 'login-email-error' : undefined}
-              disabled={isSubmitting}
-              required
-            />
+            <div className={styles.inputWrapper}>
+              <div className={styles.inputIcon}>
+                <Mail size={16} />
+              </div>
+              <input
+                id="login-email"
+                type="email"
+                className={`form-control ${styles.input} ${styles.inputWithIcon} ${fieldErrors.email ? `has-error ${styles.inputError}` : ''}`}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="ten@congty.com"
+                autoComplete="username"
+                aria-describedby={fieldErrors.email ? 'login-email-error' : undefined}
+                disabled={isSubmitting}
+                required
+              />
+            </div>
             {fieldErrors.email && (
-              <div id="login-email-error" className="field-error" role="alert">
+              <div id="login-email-error" className={`field-error ${styles.errorMessage}`} role="alert">
                 {fieldErrors.email}
               </div>
             )}
           </div>
 
-          <div className="form-group">
-            <label htmlFor="login-password" className="form-label">
-              Mật khẩu <span aria-hidden="true">*</span>
+          <div className={`form-group ${styles.field}`}>
+            <label htmlFor="login-password" className={`form-label ${styles.label}`}>
+              Mật khẩu <span className={styles.requiredStar} aria-hidden="true">*</span>
             </label>
-            <div className="password-input-wrapper">
+            <div className={`password-input-wrapper ${styles.inputWrapper}`}>
+              <div className={styles.inputIcon}>
+                <Lock size={16} />
+              </div>
               <input
                 id="login-password"
                 type={showPassword ? 'text' : 'password'}
-                className={`form-control ${fieldErrors.password ? 'has-error' : ''}`}
+                className={`form-control ${styles.input} ${styles.inputWithIcon} ${styles.inputWithToggle} ${fieldErrors.password ? `has-error ${styles.inputError}` : ''}`}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Nhập mật khẩu"
@@ -188,29 +207,29 @@ export const LoginPage: React.FC = () => {
               />
               <button
                 type="button"
-                className="toggle-password-btn"
+                className={`toggle-password-btn ${styles.toggleBtn}`}
                 onClick={() => setShowPassword((prev) => !prev)}
                 aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
                 disabled={isSubmitting}
               >
-                {showPassword ? 'Ẩn' : 'Hiện'}
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
             {fieldErrors.password && (
-              <div id="login-password-error" className="field-error" role="alert">
+              <div id="login-password-error" className={`field-error ${styles.errorMessage}`} role="alert">
                 {fieldErrors.password}
               </div>
             )}
           </div>
 
-          <button type="submit" className="btn btn-primary btn-block" disabled={isSubmitting}>
+          <button type="submit" className={`btn btn-primary btn-block ${styles.submitBtn}`} disabled={isSubmitting}>
             {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
           </button>
         </form>
 
-        <div className="auth-footer">
+        <div className={`auth-footer ${styles.footer}`}>
           Chưa có tài khoản?{' '}
-          <Link to="/register" className="auth-link">
+          <Link to="/register" className={`auth-link ${styles.footerLink}`}>
             Đăng ký ngay
           </Link>
         </div>
