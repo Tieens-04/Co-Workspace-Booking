@@ -75,7 +75,6 @@ describe('Production Smoke Tests & Release Verification', () => {
           {
             id: '11111111-1111-4111-8111-111111111111',
             name: 'Deluxe Meeting Room',
-            description: 'Spacious workspace',
             capacity: 8,
             pricePerHour: new Prisma.Decimal('200.00'),
             status: RoomStatus.AVAILABLE,
@@ -99,8 +98,6 @@ describe('Production Smoke Tests & Release Verification', () => {
           name: 'High-speed Wi-Fi',
           icon: 'wifi',
           description: 'Gigabit fiber connection',
-          createdAt: new Date(),
-          updatedAt: new Date(),
         },
       ]);
 

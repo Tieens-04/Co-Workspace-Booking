@@ -105,6 +105,7 @@ describe('Booking Notification Integration', () => {
           roomId: validRoomId,
           startTime: '2026-10-14T10:00:00.000Z',
           endTime: '2026-10-14T12:00:00.000Z',
+          note: null,
         },
         now,
       );
@@ -140,6 +141,7 @@ describe('Booking Notification Integration', () => {
           roomId: validRoomId,
           startTime: '2026-10-14T10:00:00.000Z',
           endTime: '2026-10-14T12:00:00.000Z',
+          note: null,
         },
         now,
       );

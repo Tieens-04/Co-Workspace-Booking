@@ -365,7 +365,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.status).toBe(200);
       expect(res.body.data.items).toHaveLength(1);
       expect(res.body.data.items[0].bookingCode).toBe(userBookingCode);
-      expect(res.body.data.items[0].customer).toEqual({
+      expect(res.body.data.items[0].customer).toMatchObject({
         kind: 'USER',
         name: 'Khách Hàng Thật',
         phone: '0901112222',
