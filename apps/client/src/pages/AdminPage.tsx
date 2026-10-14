@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuth } from '../hooks/useAuth';
 import { roomApi } from '../services/room.api';
 import { adminRoomApi } from '../services/admin-room.api';
 import { RoomListItem, Amenity, RoomStatus } from '../types/room';
@@ -14,6 +13,11 @@ import {
   UpdateRoomPayload,
 } from '../types/admin-room';
 
+import { AppHeader } from '../layouts/AppHeader';
+import { AppFooter } from '../layouts/AppFooter';
+import styles from './Admin.module.css';
+import { LayoutDashboard, DoorOpen, BookOpen, Plus } from 'lucide-react';
+
 const initialFormValues: AdminRoomFormValues = {
   name: '',
   description: '',
@@ -25,7 +29,6 @@ const initialFormValues: AdminRoomFormValues = {
 };
 
 export const AdminPage: React.FC = () => {
-  const { principal, logout } = useAuth();
 
   // Room list state
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
@@ -647,49 +650,60 @@ export const AdminPage: React.FC = () => {
   };
 
   return (
-    <main className="page-container admin-page-container">
-      {/* App Header */}
-      <header className="app-header">
-        <div className="brand-section">
-          <h1>🏢 Co-Space Working — Quản Trị Phòng</h1>
-          <p>Quản trị viên: {principal?.fullName || principal?.email}</p>
-        </div>
+    <div className={styles.pageWrapper}>
+      <AppHeader />
 
-        <nav className="nav-actions">
-          <Link
-            to="/admin/dashboard"
-            className="btn btn-outline"
-            data-testid="admin-dashboard-link"
-          >
-            Bảng điều khiển
-          </Link>
-          <Link
-            to="/admin/bookings"
-            className="btn btn-outline"
-            data-testid="admin-manage-bookings-link"
-          >
-            Quản lý đặt phòng
-          </Link>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={(event) => handleOpenCreate(event.currentTarget)}
-            data-testid="admin-add-room-btn"
-          >
-            + Thêm phòng mới
-          </button>
-          <Link to="/" className="btn btn-outline">
-            Về trang chủ
-          </Link>
-          <button
-            type="button"
-            className="btn btn-danger-outline"
-            onClick={() => logout('userAction')}
-          >
-            Đăng xuất
-          </button>
-        </nav>
-      </header>
+      <main className={`page-container admin-page-container ${styles.container}`}>
+        {/* Header Section & Sub-navigation */}
+        <div className={styles.headerSection}>
+          <div className={styles.titleGroup}>
+            <h1 className={styles.pageTitle}>
+              <DoorOpen size={24} style={{ color: 'var(--color-primary)' }} />
+              Quản Lý Phòng Làm Việc
+            </h1>
+            <p className={styles.pageSubtitle}>
+              Thêm mới, cập nhật thông tin tiện ích, giá thuê và bảo trì phòng
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <nav className={styles.subNav} aria-label="Điều hướng quản trị">
+              <Link
+                to="/admin/dashboard"
+                className={styles.subNavLink}
+                data-testid="admin-dashboard-link"
+              >
+                <LayoutDashboard size={14} />
+                <span>Tổng quan</span>
+              </Link>
+              <Link
+                to="/admin"
+                className={`${styles.subNavLink} ${styles.subNavLinkActive}`}
+              >
+                <DoorOpen size={14} />
+                <span>Quản lý phòng</span>
+              </Link>
+              <Link
+                to="/admin/bookings"
+                className={styles.subNavLink}
+                data-testid="admin-manage-bookings-link"
+              >
+                <BookOpen size={14} />
+                <span>Quản lý đặt phòng</span>
+              </Link>
+            </nav>
+
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={(event) => handleOpenCreate(event.currentTarget)}
+              data-testid="admin-add-room-btn"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}
+            >
+              <Plus size={16} /> Thêm phòng mới
+            </button>
+          </div>
+        </div>
 
       {/* Success Notification */}
       {successMessage && (
@@ -1337,6 +1351,9 @@ export const AdminPage: React.FC = () => {
           </form>
         </section>
       )}
-    </main>
+      </main>
+
+      <AppFooter />
+    </div>
   );
 };

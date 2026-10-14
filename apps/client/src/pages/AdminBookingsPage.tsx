@@ -7,6 +7,10 @@ import { PaginationMeta } from '../types/room';
 import { AdminGuestBookingForm } from '../components/AdminGuestBookingForm';
 import { formatCurrency } from '../utils/format';
 import { useToast } from '../hooks/useToast';
+import { AppHeader } from '../layouts/AppHeader';
+import { AppFooter } from '../layouts/AppFooter';
+import styles from './Admin.module.css';
+import { LayoutDashboard, DoorOpen, BookOpen } from 'lucide-react';
 
 const PAGE_LIMIT = 10;
 const VALID_STATUSES = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
@@ -48,7 +52,7 @@ const DEFAULT_PAGINATION: PaginationMeta = {
 };
 
 export const AdminBookingsPage: React.FC = () => {
-  const { principal, logout } = useAuth();
+  const { principal } = useAuth();
   const { showToast } = useToast();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -415,37 +419,51 @@ export const AdminBookingsPage: React.FC = () => {
   };
 
   return (
-    <main className="page-container admin-page-container">
-      {/* App Header */}
-      <header className="app-header">
-        <div className="brand-section">
-          <h1>📋 Quản Lý Đặt Phòng — Admin</h1>
-          <p>Quản trị viên: {principal?.fullName || principal?.email}</p>
-        </div>
+    <div className={styles.pageWrapper}>
+      <AppHeader />
 
-        <nav className="nav-actions">
-          <Link
-            to="/admin/dashboard"
-            className="btn btn-outline"
-            data-testid="admin-dashboard-link"
-          >
-            Bảng điều khiển
-          </Link>
-          <Link to="/admin" className="btn btn-outline" data-testid="back-to-rooms-link">
-            ← Quản lý phòng
-          </Link>
-          <Link to="/" className="btn btn-outline">
-            Về trang chủ
-          </Link>
-          <button
-            type="button"
-            className="btn btn-danger-outline"
-            onClick={() => logout('userAction')}
-          >
-            Đăng xuất
-          </button>
-        </nav>
-      </header>
+      <main className={`page-container admin-page-container ${styles.container}`}>
+        {/* Header Section & Sub-navigation */}
+        <div className={styles.headerSection}>
+          <div className={styles.titleGroup}>
+            <h1 className={styles.pageTitle}>
+              <BookOpen size={24} style={{ color: 'var(--color-primary)' }} />
+              Quản Lý Đặt Phòng
+            </h1>
+            <p className={styles.pageSubtitle}>
+              Theo dõi danh sách đặt phòng, cập nhật trạng thái thanh toán và tạo đơn khách vãng lai
+            </p>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+            <nav className={styles.subNav} aria-label="Điều hướng quản trị">
+              <Link
+                to="/admin/dashboard"
+                className={styles.subNavLink}
+                data-testid="admin-dashboard-link"
+              >
+                <LayoutDashboard size={14} />
+                <span>Tổng quan</span>
+              </Link>
+              <Link
+                to="/admin"
+                className={styles.subNavLink}
+                data-testid="back-to-rooms-link"
+              >
+                <DoorOpen size={14} />
+                <span>Quản lý phòng</span>
+              </Link>
+              <Link
+                to="/admin/bookings"
+                className={`${styles.subNavLink} ${styles.subNavLinkActive}`}
+                data-testid="admin-manage-bookings-link"
+              >
+                <BookOpen size={14} />
+                <span>Quản lý đặt phòng</span>
+              </Link>
+            </nav>
+          </div>
+        </div>
 
       {/* Action Success Alert Banner */}
       {actionSuccessMessage && (
@@ -484,7 +502,7 @@ export const AdminBookingsPage: React.FC = () => {
       />
 
       {/* Filter and Search Section */}
-      <section className="card filter-card" style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
+      <section className={`card filter-card ${styles.card}`} style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
         <form
           onSubmit={handleSearchSubmit}
           style={{
@@ -646,7 +664,7 @@ export const AdminBookingsPage: React.FC = () => {
       )}
 
       {/* Booking List Table Section */}
-      <section className="card admin-table-card">
+      <section className={`card admin-table-card ${styles.tableCard}`}>
         <div
           className="results-header-row"
           style={{
@@ -781,7 +799,7 @@ export const AdminBookingsPage: React.FC = () => {
         {!isLoading && !errorMessage && bookings && bookings.length > 0 && (
           <>
             <div className="table-responsive">
-              <table className="admin-room-table" data-testid="admin-bookings-table">
+              <table className={`admin-room-table ${styles.table}`} data-testid="admin-bookings-table">
                 <thead>
                   <tr>
                     <th>Mã đơn</th>
@@ -1191,5 +1209,7 @@ export const AdminBookingsPage: React.FC = () => {
         </div>
       )}
     </main>
+    <AppFooter />
+  </div>
   );
 };
