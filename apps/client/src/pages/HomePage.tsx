@@ -326,8 +326,8 @@ export const HomePage: React.FC = () => {
             </div>
 
           {/* Sức chứa */}
-          <div className="form-group filter-group">
-            <label htmlFor="capacity-filter" className="form-label">
+          <div className={`form-group filter-group ${styles.filterGroup}`}>
+            <label htmlFor="capacity-filter" className={`form-label ${styles.filterLabel}`}>
               Sức chứa tối thiểu (người)
             </label>
             <input
@@ -335,7 +335,7 @@ export const HomePage: React.FC = () => {
               type="number"
               min="1"
               max={MYSQL_INT_MAX}
-              className={`form-control ${errors.capacity ? 'has-error' : ''}`}
+              className={`form-control ${errors.capacity ? 'has-error' : ''} ${styles.formInput}`}
               placeholder="VD: 4"
               value={capacityInput}
               onChange={(e) => setCapacityInput(e.target.value)}
@@ -349,10 +349,10 @@ export const HomePage: React.FC = () => {
           </div>
 
           {/* Khoảng giá */}
-          <div className="form-group filter-group">
-            <span className="form-label">Khoảng giá (VND/giờ)</span>
-            <div className="price-inputs-row">
-              <div className="price-col">
+          <div className={`form-group filter-group ${styles.filterGroup}`}>
+            <span className={`form-label ${styles.filterLabel}`}>Khoảng giá (VND/giờ)</span>
+            <div className={`price-inputs-row ${styles.priceRow}`}>
+              <div className={`price-col ${styles.priceCol}`}>
                 <label htmlFor="min-price-filter" className="sr-only">
                   Giá tối thiểu
                 </label>
@@ -360,7 +360,7 @@ export const HomePage: React.FC = () => {
                   id="min-price-filter"
                   type="text"
                   inputMode="decimal"
-                  className={`form-control ${errors.minPrice || errors.priceRange ? 'has-error' : ''}`}
+                  className={`form-control ${errors.minPrice || errors.priceRange ? 'has-error' : ''} ${styles.formInput}`}
                   placeholder="Từ..."
                   value={minPriceInput}
                   onChange={(e) => setMinPriceInput(e.target.value)}
@@ -373,8 +373,8 @@ export const HomePage: React.FC = () => {
                   }
                 />
               </div>
-              <span className="price-separator">-</span>
-              <div className="price-col">
+              <span className={`price-separator ${styles.priceSep}`}>-</span>
+              <div className={`price-col ${styles.priceCol}`}>
                 <label htmlFor="max-price-filter" className="sr-only">
                   Giá tối đa
                 </label>
@@ -382,7 +382,7 @@ export const HomePage: React.FC = () => {
                   id="max-price-filter"
                   type="text"
                   inputMode="decimal"
-                  className={`form-control ${errors.maxPrice || errors.priceRange ? 'has-error' : ''}`}
+                  className={`form-control ${errors.maxPrice || errors.priceRange ? 'has-error' : ''} ${styles.formInput}`}
                   placeholder="Đến..."
                   value={maxPriceInput}
                   onChange={(e) => setMaxPriceInput(e.target.value)}
@@ -414,8 +414,8 @@ export const HomePage: React.FC = () => {
           </div>
 
           {/* Tiện ích */}
-          <div className="form-group filter-group">
-            <span className="form-label">Tiện ích yêu cầu (Khớp tất cả)</span>
+          <div className={`form-group filter-group ${styles.filterGroup}`}>
+            <span className={`form-label ${styles.filterLabel}`}>Tiện ích yêu cầu (Khớp tất cả)</span>
 
             {loadingAmenities && <div className="loading-small">⏳ Đang tải tiện ích...</div>}
 
@@ -436,16 +436,16 @@ export const HomePage: React.FC = () => {
             )}
 
             {!loadingAmenities && !amenitiesError && amenities.length > 0 && (
-              <div className="amenity-checkbox-list" role="group" aria-label="Danh sách tiện ích">
+              <div className={`amenity-checkbox-list ${styles.amenitiesList}`} role="group" aria-label="Danh sách tiện ích">
                 {amenities.map((amenity) => {
                   const isChecked = urlAmenityIds.includes(amenity.id);
                   return (
-                    <label key={amenity.id} className="amenity-checkbox-item">
+                    <label key={amenity.id} className={`amenity-checkbox-item ${styles.amenityItem}`}>
                       <input
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => handleAmenityToggle(amenity.id)}
-                        className="amenity-checkbox"
+                        className={`amenity-checkbox ${styles.checkbox}`}
                       />
                       <span className="amenity-name">
                         <span className="amenity-icon" aria-hidden="true">
@@ -471,21 +471,21 @@ export const HomePage: React.FC = () => {
 
         {/* Room Results Section */}
         <section
-          className="rooms-content-section"
+          className={`rooms-content-section ${styles.roomsSection}`}
           aria-label="Danh sách phòng làm việc"
           aria-busy={isFetching}
         >
           {/* Header & Updating indicator */}
-          <div className="results-header-row">
-            <h2 className="results-title">
+          <div className={`results-header-row ${styles.resultsHeader}`}>
+            <h2 className={`results-title ${styles.resultsTitle}`}>
               Không gian làm việc{' '}
               {!isInitialLoading && pagination.total > 0 && (
-                <span className="results-count">({pagination.total} phòng)</span>
+                <span className={`results-count ${styles.resultsCount}`}>({pagination.total} phòng)</span>
               )}
             </h2>
 
             {isFetching && (
-              <div className="updating-badge" role="status" aria-live="polite">
+              <div className={`updating-badge ${styles.updatingBadge}`} role="status" aria-live="polite">
                 🔄 Đang cập nhật...
               </div>
             )}
@@ -537,7 +537,7 @@ export const HomePage: React.FC = () => {
           {/* Room Cards Grid */}
           {!isInitialLoading && !roomsError && rooms && rooms.length > 0 && (
             <>
-              <div className="room-grid">
+              <div className={`room-grid ${styles.roomGrid}`}>
                 {rooms.map((room) => {
                   const hasImgError = imageErrorMap[room.id];
                   const imgSrc = hasImgError
@@ -545,17 +545,17 @@ export const HomePage: React.FC = () => {
                     : room.coverImage || ROOM_PLACEHOLDER_IMAGE;
 
                   return (
-                    <article key={room.id} className="card room-card">
+                    <article key={room.id} className={`card room-card ${styles.roomCard}`}>
                       <Link
                         to={`/rooms/${room.id}`}
                         state={{ from: location.pathname + location.search }}
-                        className="room-card-link"
+                        className={`room-card-link ${styles.roomCardLink}`}
                       >
-                        <div className="room-card-image-wrapper">
+                        <div className={`room-card-image-wrapper ${styles.imageWrapper}`}>
                           <img
                             src={imgSrc}
                             alt={room.name}
-                            className="room-card-image"
+                            className={`room-card-image ${styles.roomImage}`}
                             onError={() => handleCardImageError(room.id)}
                             loading="lazy"
                           />
@@ -564,24 +564,29 @@ export const HomePage: React.FC = () => {
                               room.status === 'MAINTENANCE'
                                 ? 'badge-maintenance'
                                 : 'badge-available'
+                            } ${styles.statusBadge} ${
+                              room.status === 'MAINTENANCE'
+                                ? styles.badgeMaintenance
+                                : styles.badgeAvailable
                             }`}
                           >
+                            <span className={styles.statusDot} />
                             {room.status === 'MAINTENANCE' ? 'Bảo trì' : 'Sẵn sàng'}
                           </span>
                         </div>
 
-                        <div className="room-card-body">
-                          <h3 className="room-card-title">{room.name}</h3>
+                        <div className={`room-card-body ${styles.cardBody}`}>
+                          <h3 className={`room-card-title ${styles.cardTitle}`}>{room.name}</h3>
 
-                          <div className="room-card-info-row">
-                            <span className="room-card-price">{formatVnd(room.pricePerHour)}</span>
-                            <span className="room-card-capacity">👥 {room.capacity} người</span>
+                          <div className={`room-card-info-row ${styles.cardInfoRow}`}>
+                            <span className={`room-card-price ${styles.cardPrice}`}>{formatVnd(room.pricePerHour)}</span>
+                            <span className={`room-card-capacity ${styles.cardCapacity}`}>👥 {room.capacity} người</span>
                           </div>
 
                           {room.amenities.length > 0 && (
-                            <div className="room-card-amenities" aria-label="Tiện ích phòng">
+                            <div className={`room-card-amenities ${styles.amenitiesListRow}`} aria-label="Tiện ích phòng">
                               {room.amenities.slice(0, 3).map((amenity) => (
-                                <span key={amenity.id} className="amenity-pill">
+                                <span key={amenity.id} className={`amenity-pill ${styles.amenityPill}`}>
                                   {amenity.icon === 'wifi'
                                     ? '📶 '
                                     : amenity.icon === 'coffee'
@@ -593,16 +598,16 @@ export const HomePage: React.FC = () => {
                                 </span>
                               ))}
                               {room.amenities.length > 3 && (
-                                <span className="amenity-pill-more">
+                                <span className={`amenity-pill-more ${styles.amenityPillMore}`}>
                                   +{room.amenities.length - 3}
                                 </span>
                               )}
                             </div>
                           )}
 
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'auto', paddingTop: '0.75rem', borderTop: '1px solid var(--border-subtle, #e4e4e7)' }}>
-                            <span style={{ fontSize: '0.8125rem', fontWeight: 600, color: 'var(--color-primary, #4f46e5)', display: 'inline-flex', alignItems: 'center', gap: '0.25rem' }}>
-                              Xem chi tiết & Đặt phòng <ArrowRight size={14} />
+                          <div className={styles.cardFooter}>
+                            <span className={styles.cardAction}>
+                              Xem chi tiết & Đặt phòng <ArrowRight size={14} className={styles.actionArrow} />
                             </span>
                           </div>
                         </div>
@@ -614,7 +619,7 @@ export const HomePage: React.FC = () => {
 
               {/* Pagination Controls */}
               {pagination.totalPages > 1 && (
-                <nav className="pagination-container" aria-label="Điều hướng phân trang">
+                <nav className={`pagination-container ${styles.pagination}`} aria-label="Điều hướng phân trang">
                   <button
                     type="button"
                     className="btn btn-outline pagination-btn"
@@ -625,7 +630,7 @@ export const HomePage: React.FC = () => {
                     ← Trang trước
                   </button>
 
-                  <span className="pagination-info">
+                  <span className={`pagination-info ${styles.pageIndicator}`}>
                     Trang <strong>{pagination.page}</strong> / {pagination.totalPages}
                   </span>
 
