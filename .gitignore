@@ -27,12 +27,21 @@ Thumbs.db
 
 # Other
 Co-Space_Jira_IMPORT_READY.csv
+# Local AI agents, skills, configuration, and workflow artifacts
 AGENTS.md
-.agents/
+CLAUDE.md
+GEMINI.md
+SKILL.md
 skills-lock.json
-
-# AI workflow execution artifacts
-.ai-workflow/tasks/*
-
-# Keep directory
-!.ai-workflow/tasks/.gitkeep
+.agent/
+.agents/
+.codex/
+.claude/
+.cursor/
+.windsurf/
+.gemini/
+.opencode/
+.mcp.json
+.ai-workflow/
+.superpowers/
+/docs/superpowers/
