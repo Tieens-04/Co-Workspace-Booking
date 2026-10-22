@@ -1,14 +1,11 @@
 import { Request, Response, NextFunction } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { sendError } from '../utils/response.util.js';
 
 export const getClientRateLimitKey = (req: Request): string => {
-  if (req.headers['x-forwarded-for']) {
-    const forwarded = req.headers['x-forwarded-for'];
-    const ip = Array.isArray(forwarded) ? forwarded[0] : forwarded.split(',')[0];
-    return ip.trim();
-  }
-  return req.ip || req.socket.remoteAddress || '127.0.0.1';
+  // Express resolves the client through the explicitly configured proxy boundary.
+  // Group IPv6 clients by /56 so rotating addresses cannot bypass the limit.
+  return ipKeyGenerator(req.ip || req.socket.remoteAddress || '127.0.0.1', 56);
 };
 
 /**

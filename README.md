@@ -42,6 +42,7 @@ cp apps/server/.env.example apps/server/.env
 Cấu hình các biến môi trường cần thiết trong `apps/server/.env`:
 
 - `PORT`: Cổng máy chủ backend (mặc định `5000`).
+- `TRUST_PROXY`: Không khai báo hoặc `false` khi backend nhận kết nối trực tiếp, kể cả production. `true` tin đúng một reverse proxy; chỉ bật khi đã chặn truy cập trực tiếp backend. Giá trị khác làm startup thất bại.
 - `DATABASE_URL`: Chuỗi kết nối MySQL (Prisma ORM).
 - `JWT_SECRET`: Khóa bí mật ký xác thực JWT (tối thiểu 32 ký tự).
 - `JWT_EXPIRES_IN`: Thời gian sống của Access Token (ví dụ `1d`, `15m`).
@@ -65,6 +66,15 @@ Cấu hình các biến môi trường cần thiết trong `apps/server/.env`:
   npm run dev:server   # Chỉ chạy Backend
   npm run dev:client   # Chỉ chạy Frontend
   ```
+
+---
+
+### 4. Reverse proxy và giới hạn đăng nhập (CWB-37)
+
+- **Chạy trực tiếp:** Giữ `TRUST_PROXY=false` (hoặc không khai báo), kể cả với `NODE_ENV=production`. Backend dùng IP kết nối do Express xác định và bỏ qua header proxy do client gửi.
+- **Docker Compose:** Backend được cấu hình `TRUST_PROXY=true` để tin đúng một hop Nginx. Cổng backend `5000` chỉ dùng trong mạng Docker, không publish ra host. Truy cập API qua `http://localhost:${CLIENT_PORT:-80}/api/v1/...` và healthcheck qua `/health` trên cùng cổng frontend; không gọi `localhost:5000` với Compose. Các lệnh development ở trên vẫn dùng cổng `5000` như cũ.
+- Nginx là điểm nhận kết nối công khai: ghi đè `X-Forwarded-For` và `X-Real-IP` bằng IP kết nối, ghi đè `X-Forwarded-Host`/`X-Forwarded-Proto`, và xóa `Forwarded` do client gửi. Không bật trust một hop khi backend còn truy cập trực tiếp được; nếu thêm CDN/load balancer phải đánh giá lại chuỗi proxy và cấu hình trust trước khi triển khai.
+- Đăng nhập vẫn giới hạn 10 lần thất bại liên tiếp trong 15 phút. Lượt tiếp theo trả `429 TOO_MANY_REQUESTS` với body và headers hiện có. Đăng nhập thành công reset bộ đếm; lỗi validation không tính vào bộ đếm. IP được chuẩn hóa bằng `ipKeyGenerator(..., 56)`, nên các địa chỉ IPv6 trong cùng `/56` dùng chung giới hạn.
 
 ---
 
