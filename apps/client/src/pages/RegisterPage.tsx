@@ -1,11 +1,19 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { AnimatePresence, m } from 'motion/react';
+import { DURATION, EASE_EDITORIAL } from '@/lib/motion';
 import { authApi } from '../services/auth.api';
 import { ApiErrorResponse, RegisterRequest } from '../types/auth';
 import { registerSchema } from '../utils/validation';
-import styles from './Auth.module.css';
-import { Boxes, User, Mail, Phone, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Field } from '@/components/common/Field';
+import { Stagger, StaggerItem } from '../components/motion/Stagger';
+import { AuthNotice } from '../components/auth/AuthNotice';
+import { PasswordInput } from '../components/auth/PasswordInput';
 
 export const RegisterPage: React.FC = () => {
   const navigate = useNavigate();
@@ -102,202 +110,144 @@ export const RegisterPage: React.FC = () => {
     }
   };
 
+  const requiredMark = (
+    <span aria-hidden="true" className="-ml-1 text-muted-foreground">
+      *
+    </span>
+  );
+
   return (
-    <main className={`auth-container ${styles.container}`}>
-      <div className={`card auth-card ${styles.card} ${styles.cardRegister}`}>
-        <div className={`auth-header ${styles.header}`}>
-          <Link to="/" className={`auth-brand ${styles.brand}`} aria-label="Về trang chủ Co-Space">
-            <div className={styles.brandIcon}>
-              <Boxes size={20} strokeWidth={2.2} />
-            </div>
-            <div className={styles.brandText}>
-              <span>Co-Space</span>
-              <span className={styles.brandSub}>Working</span>
-            </div>
-          </Link>
-          <h1 className={`auth-title ${styles.title}`}>Đăng ký tài khoản</h1>
-          <p className={`auth-subtitle ${styles.subtitle}`}>Tạo tài khoản khách hàng để bắt đầu đặt chỗ</p>
-        </div>
+    <Stagger stagger={0.06} className="grid gap-8">
+      <StaggerItem className="grid gap-3">
+        <p className="eyebrow">Tài khoản khách hàng</p>
+        <h1 className="text-h1 font-bold tracking-[-0.035em]">Đăng ký tài khoản</h1>
+        <p className="text-[0.9375rem] text-muted-foreground">
+          Tạo tài khoản khách hàng để bắt đầu đặt chỗ
+        </p>
+      </StaggerItem>
 
-        {generalError && (
-          <div className={`alert alert-danger ${styles.alertDanger}`} role="alert">
-            <AlertCircle size={18} className={styles.alertIcon} />
-            <span>{generalError}</span>
-          </div>
-        )}
+      <StaggerItem>
+        <Card className="gap-5 px-6 py-7 shadow-soft sm:px-8">
+          <AnimatePresence mode="wait">
+            {generalError && (
+              <m.div
+                key="general-error"
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: DURATION.base, ease: EASE_EDITORIAL }}
+              >
+                <AuthNotice tone="danger">{generalError}</AuthNotice>
+              </m.div>
+            )}
+          </AnimatePresence>
 
-        <form onSubmit={handleSubmit} noValidate className={styles.form}>
-          <div className={`form-group ${styles.field}`}>
-            <label htmlFor="reg-fullName" className={`form-label ${styles.label}`}>
-              Họ và tên <span className={styles.requiredStar} aria-hidden="true">*</span>
-            </label>
-            <div className={styles.inputWrapper}>
-              <div className={styles.inputIcon}>
-                <User size={16} />
-              </div>
-              <input
-                id="reg-fullName"
+          <form onSubmit={handleSubmit} noValidate className="grid gap-5">
+            <Field
+              id="reg-fullName"
+              label={<>Họ và tên {requiredMark}</>}
+              error={fieldErrors.fullName}
+            >
+              <Input
                 type="text"
-                className={`form-control ${styles.input} ${styles.inputWithIcon} ${fieldErrors.fullName ? `has-error ${styles.inputError}` : ''}`}
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="Nguyễn Văn A"
                 autoComplete="name"
-                aria-describedby={fieldErrors.fullName ? 'reg-fullName-error' : undefined}
                 disabled={isSubmitting}
                 required
               />
-            </div>
-            {fieldErrors.fullName && (
-              <div id="reg-fullName-error" className={`field-error ${styles.errorMessage}`} role="alert">
-                {fieldErrors.fullName}
-              </div>
-            )}
-          </div>
+            </Field>
 
-          <div className={`form-group ${styles.field}`}>
-            <label htmlFor="reg-email" className={`form-label ${styles.label}`}>
-              Email <span className={styles.requiredStar} aria-hidden="true">*</span>
-            </label>
-            <div className={styles.inputWrapper}>
-              <div className={styles.inputIcon}>
-                <Mail size={16} />
-              </div>
-              <input
-                id="reg-email"
+            <Field id="reg-email" label={<>Email {requiredMark}</>} error={fieldErrors.email}>
+              <Input
                 type="email"
-                className={`form-control ${styles.input} ${styles.inputWithIcon} ${fieldErrors.email ? `has-error ${styles.inputError}` : ''}`}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="ten@congty.com"
                 autoComplete="email"
-                aria-describedby={fieldErrors.email ? 'reg-email-error' : undefined}
                 disabled={isSubmitting}
                 required
               />
-            </div>
-            {fieldErrors.email && (
-              <div id="reg-email-error" className={`field-error ${styles.errorMessage}`} role="alert">
-                {fieldErrors.email}
-              </div>
-            )}
-          </div>
+            </Field>
 
-          <div className={`form-group ${styles.field}`}>
-            <label htmlFor="reg-phone" className={`form-label ${styles.label}`}>
-              Số điện thoại <span className={styles.optionalTag}>(Tùy chọn)</span>
-            </label>
-            <div className={styles.inputWrapper}>
-              <div className={styles.inputIcon}>
-                <Phone size={16} />
-              </div>
-              <input
-                id="reg-phone"
+            <Field
+              id="reg-phone"
+              label={
+                <>
+                  Số điện thoại <span className="font-normal text-muted-foreground">(Tùy chọn)</span>
+                </>
+              }
+              error={fieldErrors.phoneNumber}
+            >
+              <Input
                 type="tel"
-                className={`form-control ${styles.input} ${styles.inputWithIcon} ${fieldErrors.phoneNumber ? `has-error ${styles.inputError}` : ''}`}
+                className="tabular-nums"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}
                 placeholder="0912345678"
                 autoComplete="tel"
-                aria-describedby={fieldErrors.phoneNumber ? 'reg-phone-error' : undefined}
                 disabled={isSubmitting}
               />
-            </div>
-            {fieldErrors.phoneNumber && (
-              <div id="reg-phone-error" className={`field-error ${styles.errorMessage}`} role="alert">
-                {fieldErrors.phoneNumber}
-              </div>
-            )}
-          </div>
+            </Field>
 
-          <div className={`form-group ${styles.field}`}>
-            <label htmlFor="reg-password" className={`form-label ${styles.label}`}>
-              Mật khẩu <span className={styles.requiredStar} aria-hidden="true">*</span>
-            </label>
-            <div className={`password-input-wrapper ${styles.inputWrapper}`}>
-              <div className={styles.inputIcon}>
-                <Lock size={16} />
-              </div>
-              <input
-                id="reg-password"
-                type={showPassword ? 'text' : 'password'}
-                className={`form-control ${styles.input} ${styles.inputWithIcon} ${styles.inputWithToggle} ${fieldErrors.password ? `has-error ${styles.inputError}` : ''}`}
+            <Field
+              id="reg-password"
+              label={<>Mật khẩu {requiredMark}</>}
+              error={fieldErrors.password}
+            >
+              <PasswordInput
+                visible={showPassword}
+                onToggleVisible={() => setShowPassword((prev) => !prev)}
+                showLabel="Hiện mật khẩu"
+                hideLabel="Ẩn mật khẩu"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Tối thiểu 8 ký tự, tối đa 72 bytes"
                 autoComplete="new-password"
-                aria-describedby={fieldErrors.password ? 'reg-password-error' : undefined}
                 disabled={isSubmitting}
                 required
               />
-              <button
-                type="button"
-                className={`toggle-password-btn ${styles.toggleBtn}`}
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                disabled={isSubmitting}
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            {fieldErrors.password && (
-              <div id="reg-password-error" className={`field-error ${styles.errorMessage}`} role="alert">
-                {fieldErrors.password}
-              </div>
-            )}
-          </div>
+            </Field>
 
-          <div className={`form-group ${styles.field}`}>
-            <label htmlFor="reg-confirmPassword" className={`form-label ${styles.label}`}>
-              Xác nhận mật khẩu <span className={styles.requiredStar} aria-hidden="true">*</span>
-            </label>
-            <div className={`password-input-wrapper ${styles.inputWrapper}`}>
-              <div className={styles.inputIcon}>
-                <Lock size={16} />
-              </div>
-              <input
-                id="reg-confirmPassword"
-                type={showConfirmPassword ? 'text' : 'password'}
-                className={`form-control ${styles.input} ${styles.inputWithIcon} ${styles.inputWithToggle} ${fieldErrors.confirmPassword ? `has-error ${styles.inputError}` : ''}`}
+            <Field
+              id="reg-confirmPassword"
+              label={<>Xác nhận mật khẩu {requiredMark}</>}
+              error={fieldErrors.confirmPassword}
+            >
+              <PasswordInput
+                visible={showConfirmPassword}
+                onToggleVisible={() => setShowConfirmPassword((prev) => !prev)}
+                showLabel="Hiện mật khẩu nhập lại"
+                hideLabel="Ẩn mật khẩu nhập lại"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 placeholder="Nhập lại mật khẩu"
                 autoComplete="new-password"
-                aria-describedby={
-                  fieldErrors.confirmPassword ? 'reg-confirmPassword-error' : undefined
-                }
                 disabled={isSubmitting}
                 required
               />
-              <button
-                type="button"
-                className={`toggle-password-btn ${styles.toggleBtn}`}
-                onClick={() => setShowConfirmPassword((prev) => !prev)}
-                aria-label={showConfirmPassword ? 'Ẩn mật khẩu nhập lại' : 'Hiện mật khẩu nhập lại'}
-                disabled={isSubmitting}
-              >
-                {showConfirmPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            {fieldErrors.confirmPassword && (
-              <div id="reg-confirmPassword-error" className={`field-error ${styles.errorMessage}`} role="alert">
-                {fieldErrors.confirmPassword}
-              </div>
-            )}
-          </div>
+            </Field>
 
-          <button type="submit" className={`btn btn-primary btn-block ${styles.submitBtn}`} disabled={isSubmitting}>
-            {isSubmitting ? 'Đang tạo tài khoản...' : 'Đăng ký'}
-          </button>
-        </form>
+            <Button type="submit" size="lg" className="mt-1 w-full" disabled={isSubmitting}>
+              {isSubmitting && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+              {isSubmitting ? 'Đang tạo tài khoản...' : 'Đăng ký'}
+            </Button>
+          </form>
+        </Card>
+      </StaggerItem>
 
-        <div className={`auth-footer ${styles.footer}`}>
+      <StaggerItem>
+        <p className="text-center text-sm text-muted-foreground">
           Đã có tài khoản?{' '}
-          <Link to="/login" className={`auth-link ${styles.footerLink}`}>
+          <Link
+            to="/login"
+            className="font-medium text-foreground underline decoration-input underline-offset-4 transition-colors duration-150 hover:decoration-foreground"
+          >
             Đăng nhập ngay
           </Link>
-        </div>
-      </div>
-    </main>
+        </p>
+      </StaggerItem>
+    </Stagger>
   );
 };

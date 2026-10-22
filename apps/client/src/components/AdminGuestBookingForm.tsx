@@ -7,8 +7,18 @@ import { RoomListItem, RoomAvailabilitySlot } from '../types/room';
 import { AdminBookingItem } from '../types/admin-booking';
 import { useRoomAvailability } from '../hooks/useRoomAvailability';
 import { TimeGrid } from './TimeGrid';
-import { BookingSummary } from './BookingSummary';
+import { GuestBookingSuccess } from './admin/bookings/GuestBookingSuccess';
 import { formatCurrency } from '../utils/format';
+import { ChevronDown, ChevronUp, CircleAlert, Loader2, UserPlus } from 'lucide-react';
+import { ErrorState } from '@/components/common/EmptyState';
+import { Field } from '@/components/common/Field';
+import { NativeSelect } from '@/components/common/NativeSelect';
+import { Pagination } from '@/components/common/Pagination';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import {
   getVietnamTodayString,
   formatVnDateTimeLocal,
@@ -35,6 +45,9 @@ export interface GuestFormErrors {
   note?: string;
   general?: string;
 }
+
+const FIELDSET_CLASS = 'min-w-0 rounded-lg border p-4 sm:p-5';
+const LEGEND_CLASS = '-ml-1.5 px-1.5 text-sm font-semibold';
 
 export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   onBookingCreated,
@@ -475,120 +488,70 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   };
 
   return (
-    <section className="card admin-guest-booking-section" style={{ marginBottom: '2rem' }}>
+    <Card className="gap-0 py-0">
       <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          cursor: 'pointer',
-        }}
+        className="flex cursor-pointer flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6"
         onClick={onToggleOpen}
       >
-        <h2 style={{ margin: 0, fontSize: '1.25rem' }}>➕ Đặt Phòng Hộ Khách Vãng Lai</h2>
-        <button
+        <div className="flex min-w-0 items-center gap-3">
+          <span
+            aria-hidden="true"
+            className="grid size-9 shrink-0 place-items-center rounded-md bg-primary/10 text-primary"
+          >
+            <UserPlus className="size-4" />
+          </span>
+          <h2 id="guest-booking-title" className="text-lg leading-snug font-semibold sm:text-h3">
+            Đặt Phòng Hộ Khách Vãng Lai
+          </h2>
+        </div>
+        <Button
           type="button"
-          className="btn btn-outline"
+          variant="outline"
+          size="sm"
           onClick={(e) => {
             e.stopPropagation();
             onToggleOpen();
           }}
+          aria-expanded={isOpen}
+          aria-controls="guest-booking-panel"
           data-testid="toggle-guest-form-btn"
         >
-          {isOpen ? 'Thu gọn ▲' : 'Mở biểu mẫu ▼'}
-        </button>
+          {isOpen ? 'Thu gọn' : 'Mở biểu mẫu'}
+          {isOpen ? <ChevronUp aria-hidden="true" /> : <ChevronDown aria-hidden="true" />}
+        </Button>
       </div>
 
       {isOpen && (
-        <div style={{ marginTop: '1.5rem' }}>
+        <div id="guest-booking-panel" className="border-t px-5 py-5 sm:px-6 sm:py-6">
           {createdBooking ? (
-            <div
-              className="alert alert-success"
-              role="status"
-              data-testid="guest-booking-success-box"
-            >
-              <h3 style={{ marginTop: 0 }}>🎉 Đặt phòng cho khách vãng lai thành công!</h3>
-              <p>
-                Khách hàng: <strong>{createdBooking.customer.name}</strong> (
-                {createdBooking.customer.phone})
-              </p>
-              <div
-                style={{
-                  background: '#fff',
-                  padding: '1rem',
-                  borderRadius: '6px',
-                  margin: '1rem 0',
-                }}
-              >
-                <BookingSummary
-                  booking={{
-                    id: createdBooking.id,
-                    bookingCode: createdBooking.bookingCode,
-                    room: createdBooking.room,
-                    startTime: createdBooking.startTime,
-                    endTime: createdBooking.endTime,
-                    totalAmount: createdBooking.totalAmount,
-                    note: createdBooking.note,
-                    status: createdBooking.status,
-                    paymentStatus: createdBooking.paymentStatus,
-                    paymentMethod: createdBooking.paymentMethod,
-                  }}
-                  showPaymentDetails={true}
-                  showNote={true}
-                />
-              </div>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleResetForNewGuest}
-                data-testid="create-another-guest-booking-btn"
-              >
-                + Đặt đơn khác cho khách vãng lai
-              </button>
-            </div>
+            <GuestBookingSuccess
+              booking={createdBooking}
+              onCreateAnother={handleResetForNewGuest}
+            />
           ) : (
-            <form onSubmit={handleSubmit} noValidate>
+            <form onSubmit={handleSubmit} noValidate className="grid gap-6">
               {errors.general && (
-                <div
-                  className="alert alert-danger"
-                  role="alert"
-                  data-testid="guest-booking-error-general"
-                  style={{ marginBottom: '1rem' }}
-                >
-                  {errors.general}
-                </div>
+                <Alert variant="destructive" data-testid="guest-booking-error-general">
+                  <CircleAlert aria-hidden="true" />
+                  <AlertDescription>{errors.general}</AlertDescription>
+                </Alert>
               )}
 
               {/* Guest Information */}
-              <fieldset
-                style={{
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px',
-                  padding: '1rem',
-                  marginBottom: '1.5rem',
-                }}
-              >
-                <legend style={{ fontWeight: 'bold', padding: '0 0.5rem' }}>
-                  Thông tin khách vãng lai
-                </legend>
-                <div
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-                    gap: '1rem',
-                  }}
-                >
-                  <div>
-                    <label
-                      htmlFor="guestName"
-                      style={{ display: 'block', marginBottom: '0.25rem', fontWeight: 500 }}
-                    >
-                      Họ và tên khách <span style={{ color: 'red' }}>*</span>
-                    </label>
-                    <input
-                      id="guestName"
+              <fieldset className={FIELDSET_CLASS}>
+                <legend className={LEGEND_CLASS}>Thông tin khách vãng lai</legend>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field
+                    id="guestName"
+                    label={
+                      <>
+                        Họ và tên khách <span className="text-destructive">*</span>
+                      </>
+                    }
+                    error={errors.guestName}
+                  >
+                    <Input
                       type="text"
-                      className="form-control"
                       value={guestName}
                       onChange={(e) => {
                         setGuestName(e.target.value);
@@ -597,34 +560,23 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                       }}
                       placeholder="Ví dụ: Nguyễn Văn A"
                       maxLength={191}
-                      aria-invalid={Boolean(errors.guestName)}
-                      aria-describedby={errors.guestName ? 'guestName-error' : undefined}
                       disabled={isSubmitting}
                       data-testid="guest-name-input"
                     />
-                    {errors.guestName && (
-                      <span
-                        id="guestName-error"
-                        className="error-text"
-                        role="alert"
-                        style={{ color: 'red', fontSize: '0.85rem' }}
-                      >
-                        {errors.guestName}
-                      </span>
-                    )}
-                  </div>
+                  </Field>
 
-                  <div>
-                    <label
-                      htmlFor="guestPhone"
-                      style={{ display: 'block', marginBottom: '0.25rem', fontWeight: 500 }}
-                    >
-                      Số điện thoại <span style={{ color: 'red' }}>*</span>
-                    </label>
-                    <input
-                      id="guestPhone"
+                  <Field
+                    id="guestPhone"
+                    label={
+                      <>
+                        Số điện thoại <span className="text-destructive">*</span>
+                      </>
+                    }
+                    error={errors.guestPhone}
+                  >
+                    <Input
                       type="tel"
-                      className="form-control"
+                      className="tabular-nums"
                       value={guestPhone}
                       onChange={(e) => {
                         setGuestPhone(e.target.value);
@@ -633,198 +585,112 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                       }}
                       placeholder="Ví dụ: 0912345678"
                       maxLength={191}
-                      aria-invalid={Boolean(errors.guestPhone)}
-                      aria-describedby={errors.guestPhone ? 'guestPhone-error' : undefined}
                       disabled={isSubmitting}
                       data-testid="guest-phone-input"
                     />
-                    {errors.guestPhone && (
-                      <span
-                        id="guestPhone-error"
-                        className="error-text"
-                        role="alert"
-                        style={{ color: 'red', fontSize: '0.85rem' }}
-                      >
-                        {errors.guestPhone}
-                      </span>
-                    )}
-                  </div>
+                  </Field>
                 </div>
               </fieldset>
 
               {/* Room Selection */}
-              <fieldset
-                style={{
-                  border: '1px solid #e2e8f0',
-                  borderRadius: '6px',
-                  padding: '1rem',
-                  marginBottom: '1.5rem',
-                }}
-              >
-                <legend style={{ fontWeight: 'bold', padding: '0 0.5rem' }}>
-                  Chọn phòng làm việc
-                </legend>
-                <div>
-                  <label
-                    htmlFor="selectedRoomId"
-                    style={{ display: 'block', marginBottom: '0.25rem', fontWeight: 500 }}
-                  >
-                    Phòng <span style={{ color: 'red' }}>*</span>
-                  </label>
-                  <select
+              <fieldset className={FIELDSET_CLASS}>
+                <legend className={LEGEND_CLASS}>Chọn phòng làm việc</legend>
+                <div className="grid gap-3">
+                  <Field
                     id="selectedRoomId"
-                    className="form-control"
-                    value={selectedRoomId}
-                    onChange={handleRoomChange}
-                    aria-invalid={Boolean(errors.roomId)}
-                    aria-describedby={errors.roomId ? 'selectedRoomId-error' : undefined}
-                    disabled={isSubmitting || isLoadingRooms}
-                    data-testid="guest-room-select"
+                    label={
+                      <>
+                        Phòng <span className="text-destructive">*</span>
+                      </>
+                    }
+                    error={errors.roomId}
                   >
-                    <option value="">-- Chọn phòng --</option>
-                    {/* Include currently selected room if it was paged out */}
-                    {selectedRoom && !rooms.some((r) => r.id === selectedRoom.id) && (
-                      <option
-                        key={selectedRoom.id}
-                        value={selectedRoom.id}
-                        disabled={selectedRoom.status === 'MAINTENANCE'}
-                      >
-                        {selectedRoom.name} - {formatCurrency(selectedRoom.pricePerHour)}/h (
-                        {selectedRoom.capacity} người)
-                        {selectedRoom.status === 'MAINTENANCE' ? ' (Đang bảo trì)' : ''}
-                      </option>
-                    )}
-                    {rooms.map((room) => (
-                      <option
-                        key={room.id}
-                        value={room.id}
-                        disabled={room.status === 'MAINTENANCE'}
-                      >
-                        {room.name} - {formatCurrency(room.pricePerHour)}/h ({room.capacity} người)
-                        {room.status === 'MAINTENANCE' ? ' (Đang bảo trì)' : ''}
-                      </option>
-                    ))}
-                  </select>
-                  {errors.roomId && (
-                    <span
-                      id="selectedRoomId-error"
-                      className="error-text"
-                      role="alert"
-                      style={{ color: 'red', fontSize: '0.85rem' }}
+                    <NativeSelect
+                      value={selectedRoomId}
+                      onChange={handleRoomChange}
+                      disabled={isSubmitting || isLoadingRooms}
+                      data-testid="guest-room-select"
                     >
-                      {errors.roomId}
-                    </span>
-                  )}
+                      <option value="">-- Chọn phòng --</option>
+                      {/* Include currently selected room if it was paged out */}
+                      {selectedRoom && !rooms.some((r) => r.id === selectedRoom.id) && (
+                        <option
+                          key={selectedRoom.id}
+                          value={selectedRoom.id}
+                          disabled={selectedRoom.status === 'MAINTENANCE'}
+                        >
+                          {selectedRoom.name} - {formatCurrency(selectedRoom.pricePerHour)}/h (
+                          {selectedRoom.capacity} người)
+                          {selectedRoom.status === 'MAINTENANCE' ? ' (Đang bảo trì)' : ''}
+                        </option>
+                      )}
+                      {rooms.map((room) => (
+                        <option
+                          key={room.id}
+                          value={room.id}
+                          disabled={room.status === 'MAINTENANCE'}
+                        >
+                          {room.name} - {formatCurrency(room.pricePerHour)}/h ({room.capacity}{' '}
+                          người)
+                          {room.status === 'MAINTENANCE' ? ' (Đang bảo trì)' : ''}
+                        </option>
+                      ))}
+                    </NativeSelect>
+                  </Field>
+
                   {roomsError && (
-                    <div
-                      className="alert alert-danger"
-                      role="alert"
-                      style={{
-                        marginTop: '0.5rem',
-                        marginBottom: '0.5rem',
-                        padding: '0.5rem 0.75rem',
-                      }}
+                    <ErrorState
+                      className="p-4"
                       data-testid="guest-rooms-error"
-                    >
-                      <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem' }}>{roomsError}</p>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{ padding: '0.2rem 0.6rem', fontSize: '0.85rem' }}
-                        data-testid="guest-retry-rooms-btn"
-                        onClick={() => fetchRoomsForSelector(roomPage)}
-                      >
-                        Thử lại
-                      </button>
-                    </div>
+                      title={roomsError}
+                      onRetry={() => fetchRoomsForSelector(roomPage)}
+                      retryTestId="guest-retry-rooms-btn"
+                    />
                   )}
+
                   {roomTotalPages > 1 && (
-                    <div
-                      style={{
-                        display: 'flex',
-                        gap: '0.5rem',
-                        alignItems: 'center',
-                        marginTop: '0.5rem',
-                      }}
-                    >
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{ padding: '0.2rem 0.6rem', fontSize: '0.85rem' }}
-                        disabled={roomPage <= 1 || isLoadingRooms}
-                        onClick={() => setRoomPage((p) => Math.max(1, p - 1))}
-                      >
-                        ← Trang trước
-                      </button>
-                      <span style={{ fontSize: '0.85rem' }}>
-                        Trang {roomPage} / {roomTotalPages}
-                      </span>
-                      <button
-                        type="button"
-                        className="btn btn-outline"
-                        style={{ padding: '0.2rem 0.6rem', fontSize: '0.85rem' }}
-                        disabled={roomPage >= roomTotalPages || isLoadingRooms}
-                        onClick={() => setRoomPage((p) => p + 1)}
-                      >
-                        Trang sau →
-                      </button>
-                    </div>
+                    <Pagination
+                      ariaLabel="Phân trang danh sách phòng"
+                      page={roomPage}
+                      totalPages={roomTotalPages}
+                      disabled={isLoadingRooms}
+                      onPageChange={(nextPage) => setRoomPage(Math.max(1, nextPage))}
+                      className="border-t-0 pt-0"
+                    />
                   )}
                 </div>
               </fieldset>
 
               {/* Date & Time Selection */}
               {selectedRoomId && selectedRoom?.status === 'AVAILABLE' && (
-                <fieldset
-                  style={{
-                    border: '1px solid #e2e8f0',
-                    borderRadius: '6px',
-                    padding: '1rem',
-                    marginBottom: '1.5rem',
-                  }}
-                >
-                  <legend style={{ fontWeight: 'bold', padding: '0 0.5rem' }}>
-                    Thời gian sử dụng (Giờ Việt Nam)
-                  </legend>
+                <fieldset className={FIELDSET_CLASS}>
+                  <legend className={LEGEND_CLASS}>Thời gian sử dụng (Giờ Việt Nam)</legend>
 
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-                      gap: '1rem',
-                      marginBottom: '1rem',
-                    }}
-                  >
-                    <div>
-                      <label
-                        htmlFor="viewDate"
-                        style={{ display: 'block', marginBottom: '0.25rem', fontWeight: 500 }}
-                      >
-                        Xem lịch ngày
-                      </label>
-                      <input
-                        id="viewDate"
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <Field id="viewDate" label="Xem lịch ngày">
+                      <Input
                         type="date"
-                        className="form-control"
+                        className="tabular-nums"
                         value={viewDate}
                         onChange={handleViewDateChange}
                         disabled={isSubmitting}
                         data-testid="guest-view-date-input"
                       />
-                    </div>
+                    </Field>
 
-                    <div>
-                      <label
-                        htmlFor="guestStartTime"
-                        style={{ display: 'block', marginBottom: '0.25rem', fontWeight: 500 }}
-                      >
-                        Bắt đầu (Giờ VN) <span style={{ color: 'red' }}>*</span>
-                      </label>
-                      <input
-                        id="guestStartTime"
+                    <Field
+                      id="guestStartTime"
+                      label={
+                        <>
+                          Bắt đầu (Giờ VN) <span className="text-destructive">*</span>
+                        </>
+                      }
+                      error={errors.startTime}
+                    >
+                      <Input
                         type="datetime-local"
                         step={1800}
-                        className="form-control"
+                        className="tabular-nums"
                         value={startTime}
                         onChange={(e) => {
                           setStartTime(e.target.value);
@@ -833,34 +699,23 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                             setErrors((prev) => ({ ...prev, startTime: undefined }));
                         }}
                         disabled={isSubmitting}
-                        aria-invalid={Boolean(errors.startTime)}
-                        aria-describedby={errors.startTime ? 'guestStartTime-error' : undefined}
                         data-testid="guest-start-time-input"
                       />
-                      {errors.startTime && (
-                        <span
-                          id="guestStartTime-error"
-                          className="error-text"
-                          role="alert"
-                          style={{ color: 'red', fontSize: '0.85rem' }}
-                        >
-                          {errors.startTime}
-                        </span>
-                      )}
-                    </div>
+                    </Field>
 
-                    <div>
-                      <label
-                        htmlFor="guestEndTime"
-                        style={{ display: 'block', marginBottom: '0.25rem', fontWeight: 500 }}
-                      >
-                        Kết thúc (Giờ VN) <span style={{ color: 'red' }}>*</span>
-                      </label>
-                      <input
-                        id="guestEndTime"
+                    <Field
+                      id="guestEndTime"
+                      label={
+                        <>
+                          Kết thúc (Giờ VN) <span className="text-destructive">*</span>
+                        </>
+                      }
+                      error={errors.endTime}
+                    >
+                      <Input
                         type="datetime-local"
                         step={1800}
-                        className="form-control"
+                        className="tabular-nums"
                         value={endTime}
                         onChange={(e) => {
                           setEndTime(e.target.value);
@@ -869,73 +724,46 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                             setErrors((prev) => ({ ...prev, endTime: undefined }));
                         }}
                         disabled={isSubmitting}
-                        aria-invalid={Boolean(errors.endTime)}
-                        aria-describedby={errors.endTime ? 'guestEndTime-error' : undefined}
                         data-testid="guest-end-time-input"
                       />
-                      {errors.endTime && (
-                        <span
-                          id="guestEndTime-error"
-                          className="error-text"
-                          role="alert"
-                          style={{ color: 'red', fontSize: '0.85rem' }}
-                        >
-                          {errors.endTime}
-                        </span>
-                      )}
-                    </div>
+                    </Field>
                   </div>
 
                   {/* TimeGrid Component */}
-                  <div style={{ marginTop: '1rem' }}>
+                  <div className="mt-5">
                     {availability.loading && (
                       <div
-                        className="time-grid-loading"
                         aria-live="polite"
-                        style={{ padding: '1rem 0' }}
+                        className="flex items-center gap-2 py-4 text-sm text-muted-foreground"
                         data-testid="guest-availability-loading"
                       >
-                        <p className="text-muted" style={{ margin: 0, fontSize: '0.875rem' }}>
-                          Đang tải lịch trống của phòng...
-                        </p>
+                        <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+                        <p>Đang tải lịch trống của phòng...</p>
                       </div>
                     )}
 
                     {!availability.loading && availability.error && (
-                      <div
-                        className="alert alert-danger"
-                        role="alert"
-                        style={{ marginBottom: '1rem' }}
+                      <ErrorState
+                        className="p-4"
                         data-testid="guest-availability-error"
-                      >
-                        <p style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem' }}>
-                          {availability.error}
-                        </p>
-                        <button
-                          type="button"
-                          className="btn btn-outline btn-sm"
-                          data-testid="guest-retry-availability-btn"
-                          onClick={() => {
-                            availability
-                              .refresh()
-                              .then((res) => {
-                                if (res.success) {
-                                  setHasBookingConflict(false);
-                                }
-                              })
-                              .catch(() => {});
-                          }}
-                        >
-                          Thử lại
-                        </button>
-                      </div>
+                        title={availability.error}
+                        retryTestId="guest-retry-availability-btn"
+                        onRetry={() => {
+                          availability
+                            .refresh()
+                            .then((res) => {
+                              if (res.success) {
+                                setHasBookingConflict(false);
+                              }
+                            })
+                            .catch(() => {});
+                        }}
+                      />
                     )}
 
                     {!availability.loading && !availability.error && (
-                      <>
-                        <p
-                          style={{ margin: '0 0 0.5rem 0', fontSize: '0.875rem', color: '#4a5568' }}
-                        >
+                      <div className="grid gap-3">
+                        <p className="text-sm text-muted-foreground">
                           Bấm vào khung giờ để chọn bắt đầu, sau đó bấm khung giờ kết thúc (bước 30
                           phút, tối thiểu 1h, tối đa 8h):
                         </p>
@@ -948,29 +776,26 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                           onSelectRange={handleSelectRange}
                           disabled={isSubmitting || availability.loading}
                         />
-                      </>
+                      </div>
                     )}
                   </div>
 
                   {/* Summary / Price Preview */}
                   {preview && (
                     <div
-                      style={{
-                        marginTop: '1rem',
-                        padding: '0.75rem 1rem',
-                        background: '#f7fafc',
-                        borderLeft: '4px solid #3182ce',
-                        borderRadius: '4px',
-                      }}
+                      className="mt-5 flex animate-rise flex-wrap items-end justify-between gap-4 rounded-lg border border-l-2 border-l-primary bg-primary/[0.05] px-4 py-3"
                       data-testid="guest-booking-price-preview"
                     >
-                      <p style={{ margin: 0 }}>
-                        Thời lượng: <strong>{preview.durationHours} giờ</strong> (
-                        {preview.durationMinutes} phút)
+                      <p className="text-sm text-muted-foreground tabular-nums">
+                        Thời lượng:{' '}
+                        <strong className="font-semibold text-foreground">
+                          {preview.durationHours} giờ
+                        </strong>{' '}
+                        ({preview.durationMinutes} phút)
                       </p>
-                      <p style={{ margin: '0.25rem 0 0 0' }}>
+                      <p className="flex items-baseline gap-2 text-sm text-muted-foreground">
                         Tạm tính:{' '}
-                        <strong style={{ color: '#2b6cb0', fontSize: '1.1rem' }}>
+                        <strong className="text-xl leading-none font-bold text-foreground tabular-nums">
                           {formatCurrency(preview.estimatedTotal)}
                         </strong>
                       </p>
@@ -980,16 +805,8 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
               )}
 
               {/* Note */}
-              <div style={{ marginBottom: '1.5rem' }}>
-                <label
-                  htmlFor="guestNote"
-                  style={{ display: 'block', marginBottom: '0.25rem', fontWeight: 500 }}
-                >
-                  Ghi chú (tối đa 500 ký tự)
-                </label>
-                <textarea
-                  id="guestNote"
-                  className="form-control"
+              <Field id="guestNote" label="Ghi chú (tối đa 500 ký tự)" error={errors.note}>
+                <Textarea
                   rows={2}
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
@@ -998,41 +815,36 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                   disabled={isSubmitting}
                   data-testid="guest-note-input"
                 />
-                {errors.note && (
-                  <span
-                    className="error-text"
-                    role="alert"
-                    style={{ color: 'red', fontSize: '0.85rem' }}
-                  >
-                    {errors.note}
-                  </span>
-                )}
-              </div>
+              </Field>
 
               {/* Submit Button */}
               <div>
-                <button
+                <Button
                   type="submit"
-                  className="btn btn-primary"
+                  size="lg"
                   disabled={
                     isSubmitting ||
                     selectedRoom?.status === 'MAINTENANCE' ||
                     Boolean(availability.error) ||
                     availability.loading
                   }
+                  aria-busy={isSubmitting || availability.loading || undefined}
                   data-testid="guest-submit-btn"
                 >
+                  {(isSubmitting || availability.loading) && (
+                    <Loader2 aria-hidden="true" className="animate-spin" />
+                  )}
                   {availability.loading
                     ? 'Đang kiểm tra lịch trống...'
                     : isSubmitting
                       ? 'Đang xử lý...'
                       : 'Xác nhận đặt phòng vãng lai'}
-                </button>
+                </Button>
               </div>
             </form>
           )}
         </div>
       )}
-    </section>
+    </Card>
   );
 };

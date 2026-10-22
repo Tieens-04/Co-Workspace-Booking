@@ -1,24 +1,44 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Lock } from 'lucide-react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { MapPin } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { RoomAvailabilitySlot } from '../types/room';
-import {
-  formatVnTime,
-  MIN_LEAD_TIME_MS,
-  checkRangeAvailability,
-} from '../utils/bookingTime';
-import styles from './TimeGrid.module.css';
-
+import { formatVnTime, MIN_LEAD_TIME_MS, checkRangeAvailability } from '../utils/bookingTime';
+import { Notice } from './booking/Notice';
 
 export interface TimeGridProps {
   slots: RoomAvailabilitySlot[];
   selectedStartTime?: string | null; // ISO UTC
-  selectedEndTime?: string | null;   // ISO UTC
+  selectedEndTime?: string | null; // ISO UTC
   selectingStartTime?: string | null; // ISO UTC
   onSelectStart: (startIso: string) => void;
   onSelectRange: (startIso: string, endIso: string) => void;
   disabled?: boolean;
   now?: Date;
 }
+
+type SlotState = 'available' | 'booked' | 'past' | 'selected';
+
+const SLOT_STATE_CLASSES: Record<SlotState, string> = {
+  available:
+    'border-input bg-card text-foreground hover:border-primary hover:bg-primary/5 disabled:opacity-50',
+  selected: 'border-primary bg-primary text-primary-foreground',
+  booked: 'border-border bg-muted bg-hatch text-booked-foreground line-through',
+  past: 'border-border bg-transparent text-muted-foreground opacity-40',
+};
+
+const SWATCH_CLASSES: Record<SlotState, string> = {
+  available: 'border-input bg-card',
+  selected: 'border-primary bg-primary',
+  booked: 'border-border bg-muted bg-hatch',
+  past: 'border-border bg-transparent opacity-40',
+};
+
+const LEGEND_ITEMS: { state: SlotState; label: string }[] = [
+  { state: 'available', label: 'Trống' },
+  { state: 'booked', label: 'Đã đặt (không thể chọn)' },
+  { state: 'selected', label: 'Đang chọn / Đã chọn' },
+  { state: 'past', label: 'Đã qua giờ' },
+];
 
 export const TimeGrid: React.FC<TimeGridProps> = ({
   slots,
@@ -32,6 +52,22 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
 }) => {
   const [gridError, setGridError] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState<Date>(() => now || new Date());
+  const gridRef = useRef<HTMLDivElement>(null);
+  const dayKey = slots[0]?.startTime ?? '';
+
+  // When a day's slots load, scroll the grid (not the page) to the first slot that is not past,
+  // so "today" opens at the bookable hours. Runs once per day, never against the user's scroll.
+  useEffect(() => {
+    const grid = gridRef.current;
+    if (!grid || !dayKey) return;
+    const firstOpen = grid.querySelector<HTMLElement>(
+      '[data-slot-state]:not([data-slot-state="past"])',
+    );
+    if (!firstOpen) return;
+    const offset =
+      firstOpen.getBoundingClientRect().top - grid.getBoundingClientRect().top + grid.scrollTop;
+    grid.scrollTop = Math.max(0, offset - 8);
+  }, [dayKey]);
 
   // Update clockNow when now prop changes or when next slot expires lead time
   useEffect(() => {
@@ -90,6 +126,17 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
       }
     }
     return false;
+  }, [slots, currentMs]);
+
+  // Display-only counts for the summary line; selection rules stay in handleSlotClick.
+  const slotCounts = useMemo(() => {
+    let open = 0;
+    let booked = 0;
+    for (const slot of slots) {
+      if (slot.status === 'BOOKED') booked += 1;
+      else if (new Date(slot.startTime).getTime() - currentMs >= MIN_LEAD_TIME_MS) open += 1;
+    }
+    return { open, booked };
   }, [slots, currentMs]);
 
   const handleSlotClick = (slot: RoomAvailabilitySlot) => {
@@ -171,78 +218,70 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
   };
 
   return (
-    <section
-      className={`time-grid-container ${styles.container}`}
-      aria-label="Lịch trống theo khung giờ"
-    >
+    <section className="grid gap-3" aria-label="Lịch trống theo khung giờ">
+      {slots.length > 0 && (
+        <p className="text-sm text-muted-foreground" data-testid="time-grid-summary">
+          <strong className="font-semibold text-foreground tabular-nums">{slotCounts.open}</strong>{' '}
+          khung 30 phút còn đặt được
+          {slotCounts.booked > 0 && (
+            <>
+              {' · '}
+              <span className="tabular-nums">{slotCounts.booked}</span> khung đã có người đặt
+            </>
+          )}
+        </p>
+      )}
+
       <div
-        className={`time-grid-legend ${styles.legend}`}
+        className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-muted-foreground"
         role="group"
         aria-label="Chú thích trạng thái"
       >
-        <div className={`legend-item ${styles.legendItem}`}>
-          <span
-            className={`legend-swatch swatch-available ${styles.legendSwatch}`}
-            aria-hidden="true"
-          />
-          <span>Trống</span>
-        </div>
-        <div className={`legend-item ${styles.legendItem}`}>
-          <span
-            className={`legend-swatch swatch-booked ${styles.legendSwatch}`}
-            aria-hidden="true"
-          />
-          <span>Đã đặt (không thể chọn)</span>
-        </div>
-        <div className={`legend-item ${styles.legendItem}`}>
-          <span
-            className={`legend-swatch swatch-selected ${styles.legendSwatch}`}
-            aria-hidden="true"
-          />
-          <span>Đang chọn / Đã chọn</span>
-        </div>
-        <div className={`legend-item ${styles.legendItem}`}>
-          <span
-            className={`legend-swatch swatch-past ${styles.legendSwatch}`}
-            aria-hidden="true"
-          />
-          <span>Đã qua giờ</span>
-        </div>
+        {LEGEND_ITEMS.map((item) => (
+          <div key={item.state} className="inline-flex items-center gap-2">
+            <span
+              className={cn(
+                'inline-block h-3.5 w-[1.125rem] rounded-sm border',
+                SWATCH_CLASSES[item.state],
+              )}
+              aria-hidden="true"
+            />
+            <span>{item.label}</span>
+          </div>
+        ))}
       </div>
 
       {slots.length > 0 && !hasValidOneHourRange && (
-        <div
-          className={`time-grid-notice ${styles.noticeBanner}`}
-          role="status"
-          data-testid="time-grid-no-valid-range"
-        >
-          ℹ️ Ngày này hiện không còn khoảng giờ trống tối thiểu 1 giờ. Vui lòng chọn ngày khác.
-        </div>
+        <Notice tone="warning" role="status" data-testid="time-grid-no-valid-range">
+          Ngày này hiện không còn khoảng giờ trống tối thiểu 1 giờ. Vui lòng chọn ngày khác.
+        </Notice>
       )}
 
       {selectingStartTime && (
-        <div
-          className={`time-grid-hint ${styles.hintBanner}`}
+        <Notice
+          tone="info"
+          icon={MapPin}
           role="status"
           data-testid="time-grid-selecting-hint"
+          className="animate-rise"
         >
-          📍 Đang chọn từ <strong>{formatVnTime(new Date(selectingStartTime))}</strong>. Vui lòng
-          click chọn ô kết thúc (tối thiểu 1 giờ, tối đa 8 giờ).
-        </div>
+          Đang chọn từ{' '}
+          <strong className="font-semibold tabular-nums">
+            {formatVnTime(new Date(selectingStartTime))}
+          </strong>
+          . Vui lòng click chọn ô kết thúc (tối thiểu 1 giờ, tối đa 8 giờ).
+        </Notice>
       )}
 
       {gridError && (
-        <div
-          className="alert alert-danger time-grid-error"
-          role="alert"
-          data-testid="time-grid-error"
-        >
+        <Notice tone="error" role="alert" data-testid="time-grid-error">
           {gridError}
-        </div>
+        </Notice>
       )}
 
       <div
-        className={`time-grid ${styles.grid}`}
+        ref={gridRef}
+        className="grid max-h-[22rem] grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-1.5 overflow-y-auto rounded-lg border bg-background p-2 [scrollbar-width:thin]"
         role="group"
         aria-label="Danh sách 48 khung giờ trong ngày"
       >
@@ -269,17 +308,17 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
           const slotLabel = `${startTimeStr} - ${endTimeStr}`;
 
           let statusText = 'Trống';
-          let slotClass = 'slot-available';
+          let slotState: SlotState = 'available';
 
           if (isBooked) {
             statusText = 'Đã đặt';
-            slotClass = 'slot-booked';
+            slotState = 'booked';
           } else if (isPast) {
             statusText = 'Đã qua giờ';
-            slotClass = 'slot-past';
+            slotState = 'past';
           } else if (isSelecting || isInSelectedRange) {
             statusText = isSelecting ? 'Đang chọn bắt đầu' : 'Đã chọn';
-            slotClass = 'slot-selected';
+            slotState = 'selected';
           }
 
           const isBtnDisabled = disabled || isBooked || isPast;
@@ -290,24 +329,18 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
             <button
               key={slot.startTime}
               type="button"
-              className={`time-slot-btn ${slotClass} ${styles.slotBtn}`}
+              className={cn(
+                'flex h-9 items-center justify-center rounded-md border text-[0.8125rem] font-medium tabular-nums transition-[background-color,border-color,color,transform] duration-200 ease-editorial outline-none select-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background active:scale-[0.96] disabled:cursor-not-allowed disabled:active:scale-100',
+                SLOT_STATE_CLASSES[slotState],
+              )}
               disabled={isBtnDisabled}
               aria-pressed={isBtnPressed}
               aria-label={`${slotLabel}: ${statusText}`}
+              data-slot-state={slotState}
               data-testid={`time-slot-${startTimeStr}`}
               onClick={() => handleSlotClick(slot)}
             >
-              <span className={`slot-time ${styles.slotTime}`}>{startTimeStr}</span>
-              <span className={`slot-status ${styles.slotStatus}`}>
-                {isBooked ? (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-                    <Lock size={10} />
-                    <span>{statusText}</span>
-                  </span>
-                ) : (
-                  statusText
-                )}
-              </span>
+              {startTimeStr}
             </button>
           );
         })}
@@ -315,4 +348,3 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     </section>
   );
 };
-

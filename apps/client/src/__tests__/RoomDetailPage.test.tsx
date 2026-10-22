@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { RoomDetailPage } from '../pages/RoomDetailPage';
@@ -57,10 +57,7 @@ const mockRoomResponse = (room: RoomDetail = mockRoomDetailData): ApiResponse<Ro
   data: room,
 });
 
-const mockAvailabilityResponse = (
-  date = '2026-10-25',
-  roomId = 'room-101',
-): ApiResponse<any> => ({
+const mockAvailabilityResponse = (date = '2026-10-25', roomId = 'room-101'): ApiResponse<any> => ({
   success: true,
   message: 'Lấy thông tin lịch trống của phòng thành công',
   data: {
@@ -100,7 +97,7 @@ describe('RoomDetailPage', () => {
         <AuthProvider>
           <Routes>
             <Route path="/rooms/:id" element={<RoomDetailPage />} />
-            <Route path="/" element={<div>Discovery List Page</div>} />
+            <Route path="/rooms" element={<div>Discovery List Page</div>} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>,
@@ -217,21 +214,204 @@ describe('RoomDetailPage', () => {
     renderComponent([
       {
         pathname: '/rooms/room-101',
-        state: { from: '/?page=2&capacity=4&minPrice=100000' },
+        state: { from: '/rooms?page=2&capacity=4&minPrice=100000' },
       },
     ]);
 
     expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
-    const backLink = screen.getByRole('link', { name: /← Quay lại danh sách phòng/i });
-    expect(backLink).toHaveAttribute('href', '/?page=2&capacity=4&minPrice=100000');
+    const backLink = screen.getByRole('link', { name: /Quay lại danh sách phòng/i });
+    expect(backLink).toHaveAttribute('href', '/rooms?page=2&capacity=4&minPrice=100000');
   });
 
-  it('defaults back link to root / when accessed without state', async () => {
+  it('defaults back link to the /rooms explorer when accessed without state', async () => {
     renderComponent();
 
     expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
-    const backLink = screen.getByRole('link', { name: /← Quay lại danh sách phòng/i });
-    expect(backLink).toHaveAttribute('href', '/');
+    const backLink = screen.getByRole('link', { name: /Quay lại danh sách phòng/i });
+    expect(backLink).toHaveAttribute('href', '/rooms');
+  });
+
+  describe('Gallery lightbox', () => {
+    it('opens from the main image, navigates by button and arrow keys, closes on Esc and returns focus', async () => {
+      renderComponent();
+      const user = userEvent.setup();
+
+      const trigger = await screen.findByRole('button', { name: 'Phóng to ảnh 1 trên 2' });
+      await user.click(trigger);
+
+      const dialog = await screen.findByRole('dialog');
+      const counter = within(dialog).getByTestId('lightbox-counter');
+      expect(counter).toHaveTextContent('Ảnh 1 / 2');
+      expect(within(dialog).getByAltText('Deluxe Meeting Space - Ảnh 1 trên 2')).toHaveAttribute(
+        'src',
+        'https://images.example.com/primary.jpg',
+      );
+
+      await user.click(within(dialog).getByRole('button', { name: 'Ảnh tiếp theo' }));
+      expect(counter).toHaveTextContent('Ảnh 2 / 2');
+      expect(within(dialog).getByAltText('Deluxe Meeting Space - Ảnh 2 trên 2')).toHaveAttribute(
+        'src',
+        'https://images.example.com/secondary.jpg',
+      );
+
+      // ArrowRight wraps from the last photo to the first; ArrowLeft goes back.
+      await user.keyboard('{ArrowRight}');
+      expect(counter).toHaveTextContent('Ảnh 1 / 2');
+      await user.keyboard('{ArrowLeft}');
+      expect(counter).toHaveTextContent('Ảnh 2 / 2');
+
+      await user.keyboard('{Escape}');
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+
+      // Focus goes back to the trigger, and the gallery keeps the last photo viewed.
+      const sameTrigger = screen.getByRole('button', { name: 'Phóng to ảnh 2 trên 2' });
+      expect(sameTrigger).toBe(trigger);
+      expect(sameTrigger).toHaveFocus();
+      expect(screen.getByAltText('Deluxe Meeting Space - Ảnh 2')).toHaveAttribute(
+        'src',
+        'https://images.example.com/secondary.jpg',
+      );
+    });
+
+    it('closes with the visible "Đóng" button and supports the previous button', async () => {
+      renderComponent();
+      const user = userEvent.setup();
+
+      await user.click(await screen.findByRole('button', { name: 'Phóng to ảnh 1 trên 2' }));
+      const dialog = await screen.findByRole('dialog');
+
+      await user.click(within(dialog).getByRole('button', { name: 'Ảnh trước' }));
+      expect(within(dialog).getByTestId('lightbox-counter')).toHaveTextContent('Ảnh 2 / 2');
+
+      await user.click(within(dialog).getByRole('button', { name: 'Đóng' }));
+      await waitFor(() => {
+        expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      });
+      expect(screen.getByRole('button', { name: 'Phóng to ảnh 2 trên 2' })).toHaveFocus();
+    });
+
+    it('does not offer a lightbox when the room has no photos', async () => {
+      vi.mocked(roomApi.getRoomById).mockResolvedValueOnce(
+        mockRoomResponse({ ...mockRoomDetailData, images: [] }),
+      );
+      renderComponent();
+
+      expect(await screen.findByAltText('Deluxe Meeting Space - Chưa có ảnh')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Phóng to ảnh/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe('Mobile booking bar', () => {
+    const MOBILE_QUERY = '(max-width: 1023px)';
+    const originalMatchMedia = window.matchMedia;
+    const OriginalIntersectionObserver = window.IntersectionObserver;
+
+    const mockViewport = (mobile: boolean) => {
+      window.matchMedia = ((query: string) => ({
+        matches: mobile && query === MOBILE_QUERY,
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      })) as typeof window.matchMedia;
+    };
+
+    afterEach(() => {
+      window.matchMedia = originalMatchMedia;
+      window.IntersectionObserver = OriginalIntersectionObserver;
+    });
+
+    it('renders on small screens and moves scroll + focus to the booking panel', async () => {
+      mockViewport(true);
+      const scrollSpy = vi.spyOn(Element.prototype, 'scrollIntoView');
+      renderComponent();
+
+      const bar = await screen.findByTestId('mobile-booking-bar');
+      expect(bar).toHaveAttribute('data-state', 'visible');
+      expect(within(bar).getByText('250.000 đ/giờ')).toBeInTheDocument();
+
+      const user = userEvent.setup();
+      await user.click(within(bar).getByRole('button', { name: 'Đặt chỗ' }));
+
+      const panel = screen.getByRole('complementary', { name: 'Khu vực đặt phòng' });
+      expect(panel).toHaveAttribute('id', 'booking-panel');
+      expect(panel).toHaveFocus();
+      expect(scrollSpy).toHaveBeenCalledWith(expect.objectContaining({ block: 'start' }));
+      expect(scrollSpy.mock.contexts.at(-1)).toBe(panel);
+      scrollSpy.mockRestore();
+    });
+
+    it('hides while the booking panel is in view and disconnects its observer on unmount', async () => {
+      mockViewport(true);
+      type ObserverCallback = ConstructorParameters<typeof IntersectionObserver>[0];
+      let notify: ObserverCallback | null = null;
+      const observed: Element[] = [];
+      const disconnect = vi.fn();
+      class FakeObserver {
+        constructor(callback: ObserverCallback) {
+          notify = callback;
+        }
+        observe(target: Element) {
+          observed.push(target);
+        }
+        unobserve() {}
+        disconnect = disconnect;
+        takeRecords() {
+          return [];
+        }
+      }
+      window.IntersectionObserver = FakeObserver as unknown as typeof IntersectionObserver;
+
+      const { unmount } = renderComponent();
+      const bar = await screen.findByTestId('mobile-booking-bar');
+      expect(observed[0]).toHaveAttribute('id', 'booking-panel');
+
+      const emit = (isIntersecting: boolean, top: number) =>
+        act(() => {
+          notify?.(
+            [
+              {
+                isIntersecting,
+                boundingClientRect: { top } as DOMRectReadOnly,
+              } as IntersectionObserverEntry,
+            ],
+            {} as IntersectionObserver,
+          );
+        });
+
+      emit(true, 200);
+      expect(bar).toHaveAttribute('data-state', 'hidden');
+      emit(false, 900);
+      expect(bar).toHaveAttribute('data-state', 'visible');
+      // Scrolled past the panel (it is above the viewport): stays hidden.
+      emit(false, -400);
+      expect(bar).toHaveAttribute('data-state', 'hidden');
+
+      unmount();
+      expect(disconnect).toHaveBeenCalled();
+    });
+
+    it('is not rendered on desktop or for rooms under maintenance', async () => {
+      mockViewport(false);
+      const { unmount } = renderComponent();
+      expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
+      expect(screen.queryByTestId('mobile-booking-bar')).not.toBeInTheDocument();
+      unmount();
+
+      mockViewport(true);
+      vi.mocked(roomApi.getRoomById).mockResolvedValueOnce(
+        mockRoomResponse({ ...mockRoomDetailData, status: 'MAINTENANCE' }),
+      );
+      renderComponent();
+      expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
+      expect(screen.getByTestId('room-maintenance-notice')).toHaveTextContent(/bảo trì/i);
+      expect(screen.queryByTestId('mobile-booking-bar')).not.toBeInTheDocument();
+    });
   });
 
   describe('Customer Booking Form Integration (AC2)', () => {

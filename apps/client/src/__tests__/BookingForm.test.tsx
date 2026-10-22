@@ -432,6 +432,56 @@ describe('BookingForm', () => {
       expect(screen.getByLabelText(/Thời gian kết thúc/i)).toHaveValue('2026-10-25T12:00');
     });
 
+    it('explains a 409 BOOKING_CONFLICT as "just booked by someone else" and lets the user pick again with date and note kept', async () => {
+      const user = userEvent.setup();
+      vi.mocked(bookingApi.createBooking).mockRejectedValueOnce({
+        name: 'AxiosError',
+        response: {
+          status: 409,
+          data: {
+            code: 'BOOKING_CONFLICT',
+            message: 'Phòng đã có người đặt trong khoảng thời gian này.',
+          },
+        },
+      });
+
+      renderComponent();
+
+      await user.type(screen.getByLabelText(/Thời gian bắt đầu/i), '2026-10-25T10:00');
+      await user.type(screen.getByLabelText(/Thời gian kết thúc/i), '2026-10-25T12:00');
+      await user.type(screen.getByLabelText(/Ghi chú/i), 'Cần máy chiếu');
+      await user.click(screen.getByTestId('booking-submit-btn'));
+
+      const availabilityCallsBeforeSubmit = vi.mocked(roomApi.getAvailability).mock.calls.length;
+      await user.click(screen.getByTestId('booking-confirm-btn'));
+
+      const alert = await screen.findByTestId('booking-general-error');
+      expect(alert).toHaveAttribute('role', 'alert');
+      expect(alert).toHaveTextContent('Khung giờ vừa có người khác đặt trước');
+      expect(alert).toHaveTextContent('Phòng đã có người đặt trong khoảng thời gian này.');
+      expect(alert).toHaveTextContent(/chọn một khung giờ khác/i);
+
+      // Availability is re-fetched after the conflict (preflight + background refresh).
+      expect(vi.mocked(roomApi.getAvailability).mock.calls.length).toBeGreaterThan(
+        availabilityCallsBeforeSubmit + 1,
+      );
+
+      await user.click(screen.getByTestId('booking-conflict-repick-btn'));
+
+      expect(await screen.findByTestId('customer-booking-form')).toBeInTheDocument();
+      expect(screen.getByTestId('booking-conflict-hint')).toHaveTextContent(
+        /vừa có người khác đặt trước/i,
+      );
+      expect(screen.getByTestId('booking-view-date-input')).toHaveValue('2026-10-25');
+      expect(screen.getByLabelText(/Ghi chú/i)).toHaveValue('Cần máy chiếu');
+
+      // Picking a new range clears the hint.
+      fireEvent.change(screen.getByLabelText(/Thời gian bắt đầu/i), {
+        target: { value: '2026-10-25T14:00' },
+      });
+      expect(screen.queryByTestId('booking-conflict-hint')).not.toBeInTheDocument();
+    });
+
     it('handles 409 ROOM_NOT_AVAILABLE by transitioning component to maintenance alert view', async () => {
       const user = userEvent.setup();
       const maintenanceError = {
@@ -838,11 +888,11 @@ describe('BookingForm', () => {
 
       // TimeGrid slots must NOT be highlighted as slot-selected
       const slot1000 = screen.getByTestId('time-slot-10:00');
-      expect(slot1000).not.toHaveClass('slot-selected');
+      expect(slot1000).not.toHaveAttribute('data-slot-state', 'selected');
       expect(slot1000).toHaveAttribute('aria-pressed', 'false');
 
       const slot1030 = screen.getByTestId('time-slot-10:30');
-      expect(slot1030).toHaveClass('slot-booked');
+      expect(slot1030).toHaveAttribute('data-slot-state', 'booked');
       expect(slot1030).toHaveAttribute('aria-pressed', 'false');
     });
 
@@ -1109,7 +1159,7 @@ describe('BookingForm', () => {
 
       // Slot 10:30 must be displayed as BOOKED and disabled
       const slot1030 = screen.getByTestId('time-slot-10:30');
-      expect(slot1030).toHaveClass('slot-booked');
+      expect(slot1030).toHaveAttribute('data-slot-state', 'booked');
       expect(slot1030).toBeDisabled();
       expect(slot1030).toHaveAttribute('aria-pressed', 'false');
     });

@@ -202,7 +202,11 @@ describe('BookingHistoryPage', () => {
     renderComponent();
 
     expect(await screen.findByText('Bạn chưa có đơn đặt phòng nào.')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Khám phá phòng ngay/i })).toHaveAttribute('href', '/');
+    // The room explorer moved from / to /rooms.
+    expect(screen.getByRole('link', { name: /Khám phá phòng ngay/i })).toHaveAttribute(
+      'href',
+      '/rooms',
+    );
   });
 
   it('displays empty state for UPCOMING view', async () => {
@@ -515,8 +519,14 @@ describe('BookingHistoryPage', () => {
     renderComponent();
 
     expect(await screen.findByText('CS-20261025-CANC')).toBeInTheDocument();
-    expect(screen.getByText('Đã hủy')).toHaveClass('badge-cancelled');
-    expect(screen.getByText('Không đến')).toHaveClass('badge-no-show');
+    expect(screen.getByText('Đã hủy').closest('[data-status]')).toHaveAttribute(
+      'data-status',
+      'CANCELLED',
+    );
+    expect(screen.getByText('Không đến').closest('[data-status]')).toHaveAttribute(
+      'data-status',
+      'NO_SHOW',
+    );
     expect(screen.getByText('1.234.567,5 đ')).toBeInTheDocument();
     // Overnight booking displays both dates in VN timezone
     const timeContainers = screen.getAllByTestId('booking-time-value');

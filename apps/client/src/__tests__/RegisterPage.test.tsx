@@ -163,9 +163,7 @@ describe('RegisterPage', () => {
     await user.click(screen.getByRole('button', { name: /^Đăng ký$/i }));
 
     expect((await screen.findAllByText('Email đã được sử dụng')).length).toBeGreaterThanOrEqual(1);
-    expect(
-      screen.getByText('Email đã được sử dụng', { selector: '.field-error' }),
-    ).toBeInTheDocument();
+    expect(document.getElementById('reg-email-error')).toHaveTextContent('Email đã được sử dụng');
 
     // Verify form values are preserved
     expect(screen.getByLabelText(/Họ và tên/i)).toHaveValue('Nguyen Van A');

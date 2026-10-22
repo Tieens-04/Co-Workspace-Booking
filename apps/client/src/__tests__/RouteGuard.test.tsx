@@ -235,4 +235,22 @@ describe('RouteGuard and Navigation', () => {
     expect(screen.getByText('Không tìm thấy trang')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Về trang chủ/i })).toBeInTheDocument();
   });
+
+  it('404 page offers a way forward to the home page and the room explorer', () => {
+    renderWithRoutes('/khong-ton-tai');
+
+    expect(screen.getByRole('link', { name: /Về trang chủ/i })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: /Khám phá phòng/i })).toHaveAttribute('href', '/rooms');
+  });
+
+  it('403 card keeps role="alert" and links back to the home page and the room explorer', () => {
+    localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'c-1', role: 'CUSTOMER' }));
+
+    renderWithRoutes('/admin');
+
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('403 - Không có quyền truy cập');
+    expect(screen.getByRole('link', { name: /Về trang chủ/i })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('link', { name: /Khám phá phòng/i })).toHaveAttribute('href', '/rooms');
+  });
 });

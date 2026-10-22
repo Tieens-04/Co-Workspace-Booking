@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Calendar, DollarSign, Layers, Percent, RotateCw } from 'lucide-react';
+import { m } from 'motion/react';
+import { staggerChildren } from '@/lib/motion';
 import { adminDashboardApi } from '../services/admin-dashboard.api';
 import {
   DashboardKpiData,
@@ -7,22 +9,16 @@ import {
   DashboardPeriodType,
 } from '../types/admin-dashboard';
 import { RoomOverviewGrid } from '../components/RoomOverviewGrid';
+import { KpiCard, KpiCardSkeleton, KpiMeter } from '../components/admin/dashboard/KpiCard';
 import { formatCurrency } from '../utils/format';
 import { getVietnamTodayString } from '../utils/bookingTime';
-import { AppHeader } from '../layouts/AppHeader';
-import { AppFooter } from '../layouts/AppFooter';
-import styles from './Admin.module.css';
-import {
-  LayoutDashboard,
-  DoorOpen,
-  BookOpen,
-  RotateCw,
-  Calendar,
-  Percent,
-  DollarSign,
-  Layers,
-  AlertTriangle,
-} from 'lucide-react';
+import { PageHeader } from '@/components/common/PageHeader';
+import { ErrorState } from '@/components/common/EmptyState';
+import { SegmentedControl } from '@/components/common/SegmentedControl';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Skeleton } from '@/components/ui/skeleton';
 
 export const AdminDashboardPage: React.FC = () => {
   const [period, setPeriod] = useState<DashboardPeriodType>('day');
@@ -61,7 +57,9 @@ export const AdminDashboardPage: React.FC = () => {
     } catch (err: any) {
       if (controller.signal.aborted) return;
       setError(
-        err.response?.data?.message || err.message || 'Không thể tải dữ liệu dashboard. Vui lòng thử lại.',
+        err.response?.data?.message ||
+          err.message ||
+          'Không thể tải dữ liệu dashboard. Vui lòng thử lại.',
       );
     } finally {
       if (abortControllerRef.current === controller) {
@@ -97,273 +95,180 @@ export const AdminDashboardPage: React.FC = () => {
     scheduleData?.rooms.filter((r) => r.status === 'MAINTENANCE').length || 0;
 
   return (
-    <div className={styles.pageWrapper}>
-      <AppHeader />
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:gap-8">
+      <PageHeader
+        eyebrow="Tổng quan"
+        title="Bảng Điều Khiển Quản Trị"
+        description="Theo dõi tình hình kinh doanh, doanh thu và tỷ lệ sử dụng phòng làm việc"
+        className="gap-4 border-border pb-5"
+      />
 
-      <main className={`page-container admin-dashboard-container ${styles.container}`}>
-        {/* Header & Sub-navigation */}
-        <div className={styles.headerSection}>
-          <div className={styles.titleGroup}>
-            <h1 className={styles.pageTitle}>
-              <LayoutDashboard size={24} style={{ color: 'var(--color-primary)' }} />
-              Bảng Điều Khiển Quản Trị
-            </h1>
-            <p className={styles.pageSubtitle}>
-              Theo dõi tình hình kinh doanh, doanh thu và tỷ lệ sử dụng phòng làm việc
-            </p>
-          </div>
-
-          <nav className={styles.subNav} aria-label="Điều hướng quản trị">
-            <Link
-              to="/admin/dashboard"
-              className={`${styles.subNavLink} ${styles.subNavLinkActive}`}
-            >
-              <LayoutDashboard size={14} />
-              <span>Tổng quan</span>
-            </Link>
-            <Link
-              to="/admin"
-              className={styles.subNavLink}
-              data-testid="nav-admin-rooms-link"
-            >
-              <DoorOpen size={14} />
-              <span>Quản lý phòng</span>
-            </Link>
-            <Link
-              to="/admin/bookings"
-              className={styles.subNavLink}
-              data-testid="nav-admin-bookings-link"
-            >
-              <BookOpen size={14} />
-              <span>Quản lý đặt phòng</span>
-            </Link>
-          </nav>
+      {/* Filter and Period Selection Bar */}
+      <section
+        aria-label="Bộ lọc dashboard"
+        className="flex flex-col gap-4 rounded-xl border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-end sm:justify-between"
+      >
+        <div className="grid gap-1.5">
+          <span className="text-sm font-medium">Khoảng thời gian:</span>
+          <SegmentedControl<DashboardPeriodType>
+            ariaLabel="Khoảng thời gian"
+            value={period}
+            onChange={handlePeriodChange}
+            options={[
+              { value: 'day', label: 'Hôm nay (Ngày)', testId: 'filter-period-day-btn' },
+              { value: 'week', label: 'Tuần này (Tuần)', testId: 'filter-period-week-btn' },
+            ]}
+          />
         </div>
 
-        {/* Filter and Period Selection Bar */}
-        <section className={`card ${styles.filterCard}`}>
-          <div className={styles.filterGroup}>
-            <span className={styles.filterLabel}>Khoảng thời gian:</span>
-            <button
-              type="button"
-              className={`btn ${period === 'day' ? 'btn-primary' : 'btn-outline'} ${styles.filterBtn}`}
-              onClick={() => handlePeriodChange('day')}
-              data-testid="filter-period-day-btn"
-            >
-              Hôm nay (Ngày)
-            </button>
-            <button
-              type="button"
-              className={`btn ${period === 'week' ? 'btn-primary' : 'btn-outline'} ${styles.filterBtn}`}
-              onClick={() => handlePeriodChange('week')}
-              data-testid="filter-period-week-btn"
-            >
-              Tuần này (Tuần)
-            </button>
-          </div>
-
-          <div className={styles.filterGroup}>
-            <label htmlFor="dashboardDate" className={styles.filterLabel}>
+        <div className="flex flex-wrap items-end gap-2">
+          <div className="grid gap-1.5">
+            <Label htmlFor="dashboardDate" className="text-sm font-medium">
               Ngày xem:
-            </label>
-            <input
+            </Label>
+            <Input
               id="dashboardDate"
               type="date"
-              className={`form-control ${styles.dateInput}`}
+              className="w-auto tabular-nums"
               value={selectedDate}
               onChange={handleDateChange}
               data-testid="dashboard-date-picker"
             />
-            <button
-              type="button"
-              className={`btn btn-outline ${styles.filterBtn}`}
-              onClick={() => fetchDashboardData()}
-              data-testid="dashboard-refresh-btn"
-            >
-              <RotateCw size={14} /> Tải lại
-            </button>
           </div>
-        </section>
-
-        {/* Loading state with Skeleton to prevent layout shift */}
-        {isLoading && (
-          <div
-            data-testid="dashboard-kpi-skeleton"
-            role="status"
-            aria-busy="true"
-            aria-live="polite"
-            aria-label="Đang tải dữ liệu dashboard"
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => fetchDashboardData()}
+            data-testid="dashboard-refresh-btn"
           >
-            <p className="sr-only" data-testid="dashboard-loading-state">
-              Đang tải dữ liệu dashboard...
-            </p>
-            <section className={styles.kpiGrid}>
-              {Array.from({ length: 4 }, (_, index) => (
-                <div
-                  key={`kpi-skeleton-${index}`}
-                  className="card"
-                  style={{ padding: '1.25rem', minHeight: '140px' }}
-                  data-testid="kpi-skeleton-card"
-                >
-                  <div className="skeleton skeleton-title" style={{ width: '60%', height: '14px' }} />
-                  <div
-                    className="skeleton skeleton-text"
-                    style={{ width: '40%', height: '32px', margin: '0.75rem 0' }}
-                  />
-                  <div className="skeleton skeleton-text" style={{ width: '80%', height: '12px' }} />
-                </div>
-              ))}
-            </section>
-            <div className="card" style={{ padding: '2rem', minHeight: '260px' }}>
-              <div
-                className="skeleton skeleton-title"
-                style={{ width: '30%', height: '20px', marginBottom: '1rem' }}
-              />
-              <div className="skeleton skeleton-text" style={{ width: '100%', height: '180px' }} />
-            </div>
-          </div>
-        )}
+            <RotateCw aria-hidden="true" />
+            Tải lại
+          </Button>
+        </div>
+      </section>
 
-        {/* Error state */}
-        {!isLoading && error && (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            style={{ marginBottom: '1.5rem', padding: '1.25rem' }}
-            data-testid="dashboard-error-banner"
+      {/* Loading state with Skeleton to prevent layout shift */}
+      {isLoading && (
+        <div
+          data-testid="dashboard-kpi-skeleton"
+          role="status"
+          aria-busy="true"
+          aria-live="polite"
+          aria-label="Đang tải dữ liệu dashboard"
+          className="grid gap-8"
+        >
+          <p className="sr-only" data-testid="dashboard-loading-state">
+            Đang tải dữ liệu dashboard...
+          </p>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            {Array.from({ length: 4 }, (_, index) => (
+              <KpiCardSkeleton key={`kpi-skeleton-${index}`} />
+            ))}
+          </div>
+          <div className="grid min-h-[260px] content-start gap-4 rounded-xl border bg-card p-6">
+            <Skeleton className="h-5 w-1/3" />
+            <Skeleton className="h-[180px] w-full" />
+          </div>
+        </div>
+      )}
+
+      {/* Error state */}
+      {!isLoading && error && (
+        <ErrorState
+          data-testid="dashboard-error-banner"
+          title={error}
+          onRetry={() => fetchDashboardData()}
+          retryTestId="dashboard-retry-btn"
+        />
+      )}
+
+      {/* Dashboard KPI Content */}
+      {!isLoading && !error && kpiData && (
+        <>
+          <m.section
+            aria-label="Chỉ số tổng quan"
+            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+            variants={staggerChildren(0.05)}
+            initial="hidden"
+            animate="show"
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem', marginBottom: '0.75rem' }}>
-              <AlertTriangle size={20} />
-              <p style={{ margin: 0, fontWeight: 600 }}>{error}</p>
-            </div>
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => fetchDashboardData()}
-              data-testid="dashboard-retry-btn"
+            <KpiCard
+              testId="kpi-card-bookings"
+              valueTestId="kpi-today-bookings"
+              icon={Calendar}
+              label={
+                period === 'day'
+                  ? selectedDate === getVietnamTodayString()
+                    ? 'ĐẶT PHÒNG HÔM NAY'
+                    : 'ĐẶT PHÒNG TRONG NGÀY'
+                  : 'ĐẶT PHÒNG TRONG TUẦN'
+              }
+              value={kpiData.periodBookingsCount}
             >
-              Thử lại
-            </button>
-          </div>
-        )}
+              <p>
+                Đã xác nhận:{' '}
+                <strong className="font-semibold text-foreground">
+                  {kpiData.statusBreakdown.confirmed}
+                </strong>{' '}
+                · Hoàn tất:{' '}
+                <strong className="font-semibold text-foreground">
+                  {kpiData.statusBreakdown.completed}
+                </strong>
+              </p>
+              <p>
+                Hủy: {kpiData.statusBreakdown.cancelled} · Không đến:{' '}
+                {kpiData.statusBreakdown.noShow}
+              </p>
+            </KpiCard>
 
-        {/* Dashboard KPI Content */}
-        {!isLoading && !error && kpiData && (
-          <>
-            {/* KPI Cards Grid */}
-            <section className={`kpi-cards-grid ${styles.kpiGrid}`}>
-              {/* Card 1: Bookings */}
-              <div
-                className={`card ${styles.kpiCard} ${styles.kpiCardBlue}`}
-                data-testid="kpi-card-bookings"
-              >
-                <div className={styles.kpiTopRow}>
-                  <span className={styles.kpiTitle}>
-                    {period === 'day'
-                      ? selectedDate === getVietnamTodayString()
-                        ? 'ĐẶT PHÒNG HÔM NAY'
-                        : 'ĐẶT PHÒNG TRONG NGÀY'
-                      : 'ĐẶT PHÒNG TRONG TUẦN'}
-                  </span>
-                  <Calendar size={18} className={styles.kpiIcon} />
-                </div>
-                <div
-                  className={`${styles.kpiValue} ${styles.kpiValueBlue}`}
-                  data-testid="kpi-today-bookings"
-                >
-                  {kpiData.periodBookingsCount}
-                </div>
-                <div className={styles.kpiSub}>
-                  <span>Đã xác nhận: <strong>{kpiData.statusBreakdown.confirmed}</strong></span> •{' '}
-                  <span>Hoàn tất: <strong>{kpiData.statusBreakdown.completed}</strong></span>
-                  <br />
-                  <span>Hủy: {kpiData.statusBreakdown.cancelled}</span> •{' '}
-                  <span>Không đến: {kpiData.statusBreakdown.noShow}</span>
-                </div>
-              </div>
+            <KpiCard
+              testId="kpi-card-occupancy"
+              valueTestId="kpi-occupancy-rate"
+              icon={Percent}
+              label="TỶ LỆ LẤP ĐẦY PHÒNG"
+              value={`${kpiData.occupancyRate}%`}
+              visual={<KpiMeter value={kpiData.occupancyRate} label="Tỷ lệ lấp đầy phòng" />}
+            >
+              <p>
+                Đã đặt: {kpiData.bookedMinutes} / {kpiData.totalRoomMinutes} phút
+              </p>
+            </KpiCard>
 
-              {/* Card 2: Occupancy Rate */}
-              <div
-                className={`card ${styles.kpiCard} ${styles.kpiCardGreen}`}
-                data-testid="kpi-card-occupancy"
-              >
-                <div className={styles.kpiTopRow}>
-                  <span className={styles.kpiTitle}>TỶ LỆ LẤP ĐẦY PHÒNG</span>
-                  <Percent size={18} className={styles.kpiIcon} />
-                </div>
-                <div
-                  className={`${styles.kpiValue} ${styles.kpiValueGreen}`}
-                  data-testid="kpi-occupancy-rate"
-                >
-                  {kpiData.occupancyRate}%
-                </div>
-                <div className={styles.progressBar}>
-                  <div
-                    className={styles.progressBarFill}
-                    style={{
-                      width: `${Math.min(100, Math.max(0, kpiData.occupancyRate))}%`,
-                    }}
-                  />
-                </div>
-                <div className={styles.kpiSub}>
-                  Đã đặt: {kpiData.bookedMinutes} / {kpiData.totalRoomMinutes} phút
-                </div>
-              </div>
+            <KpiCard
+              testId="kpi-card-revenue"
+              valueTestId="kpi-actual-revenue"
+              icon={DollarSign}
+              label="DOANH THU THỰC TẾ (PAID)"
+              value={formatCurrency(kpiData.actualRevenue)}
+            >
+              <p>Tạm tính: {formatCurrency(kpiData.potentialRevenue)}</p>
+              <p>Chưa thu: {formatCurrency(kpiData.unpaidRevenue)}</p>
+            </KpiCard>
 
-              {/* Card 3: Actual Revenue */}
-              <div
-                className={`card ${styles.kpiCard} ${styles.kpiCardAmber}`}
-                data-testid="kpi-card-revenue"
-              >
-                <div className={styles.kpiTopRow}>
-                  <span className={styles.kpiTitle}>DOANH THU THỰC TẾ (PAID)</span>
-                  <DollarSign size={18} className={styles.kpiIcon} />
-                </div>
-                <div
-                  className={`${styles.kpiValue} ${styles.kpiValueAmber}`}
-                  data-testid="kpi-actual-revenue"
-                >
-                  {formatCurrency(kpiData.actualRevenue)}
-                </div>
-                <div className={styles.kpiSub}>
-                  <span>Tạm tính: {formatCurrency(kpiData.potentialRevenue)}</span>
-                  <br />
-                  <span>Chưa thu: {formatCurrency(kpiData.unpaidRevenue)}</span>
-                </div>
-              </div>
+            <KpiCard
+              testId="kpi-card-rooms"
+              valueTestId="kpi-total-rooms"
+              icon={Layers}
+              label="TÌNH TRẠNG PHÒNG"
+              value={`${totalRoomsCount} phòng`}
+            >
+              <p>
+                Khả dụng:{' '}
+                <strong className="font-semibold text-foreground">{availableRoomsCount}</strong>{' '}
+                phòng
+              </p>
+              <p>
+                Bảo trì:{' '}
+                <strong className="font-semibold text-foreground">{maintenanceRoomsCount}</strong>{' '}
+                phòng
+              </p>
+            </KpiCard>
+          </m.section>
 
-              {/* Card 4: Room Status */}
-              <div
-                className={`card ${styles.kpiCard} ${styles.kpiCardPurple}`}
-                data-testid="kpi-card-rooms"
-              >
-                <div className={styles.kpiTopRow}>
-                  <span className={styles.kpiTitle}>TÌNH TRẠNG PHÒNG</span>
-                  <Layers size={18} className={styles.kpiIcon} />
-                </div>
-                <div
-                  className={`${styles.kpiValue} ${styles.kpiValuePurple}`}
-                  data-testid="kpi-total-rooms"
-                >
-                  {totalRoomsCount} phòng
-                </div>
-                <div className={styles.kpiSub}>
-                  <span>Khả dụng: <strong>{availableRoomsCount}</strong> phòng</span>
-                  <br />
-                  <span>Bảo trì: <strong>{maintenanceRoomsCount}</strong> phòng</span>
-                </div>
-              </div>
-            </section>
-
-            {/* Room Time-Grid Overview Section */}
-            {scheduleData && (
-              <RoomOverviewGrid rooms={scheduleData.rooms} date={scheduleData.date} />
-            )}
-          </>
-        )}
-      </main>
-
-      <AppFooter />
+          {/* Room Time-Grid Overview Section */}
+          {scheduleData && <RoomOverviewGrid rooms={scheduleData.rooms} date={scheduleData.date} />}
+        </>
+      )}
     </div>
   );
 };

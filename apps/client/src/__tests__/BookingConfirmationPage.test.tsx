@@ -92,7 +92,8 @@ describe('BookingConfirmationPage', () => {
       expect(backRoomLink).toHaveAttribute('href', '/rooms/room-uuid-1');
 
       const backHomeLink = screen.getByTestId('confirmation-back-home-btn');
-      expect(backHomeLink).toHaveAttribute('href', '/');
+      // "Về danh sách phòng" points at the room explorer, which moved from / to /rooms.
+      expect(backHomeLink).toHaveAttribute('href', '/rooms');
     });
 
     it('renders correctly when booking result is passed directly in router state with customerId', () => {
@@ -214,7 +215,8 @@ describe('BookingConfirmationPage', () => {
           <AuthProvider>
             <Routes>
               <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
-              <Route path="/" element={<div data-testid="home-page">Home Page</div>} />
+              {/* "Về danh sách phòng" now targets the room explorer at /rooms. */}
+              <Route path="/rooms" element={<div data-testid="home-page">Home Page</div>} />
             </Routes>
           </AuthProvider>
         </BrowserRouter>,
@@ -267,7 +269,7 @@ describe('BookingConfirmationPage', () => {
               }
             />
             <Route
-              path="/"
+              path="/rooms"
               element={
                 <div>
                   <div data-testid="home-page">Home Page</div>
@@ -457,7 +459,12 @@ describe('BookingConfirmationPage', () => {
       expect(screen.getByText('Không tìm thấy thông tin đặt phòng')).toBeInTheDocument();
       expect(screen.queryByTestId('booking-confirmation-view')).not.toBeInTheDocument();
       expect(screen.queryByTestId('booking-confirmation-code')).not.toBeInTheDocument();
-      expect(screen.getByTestId('confirmation-back-home-btn')).toHaveAttribute('href', '/');
+      // Room list moved from / to /rooms; the fallback also offers the booking history.
+      expect(screen.getByTestId('confirmation-back-home-btn')).toHaveAttribute('href', '/rooms');
+      expect(screen.getByTestId('confirmation-fallback-history-btn')).toHaveAttribute(
+        'href',
+        '/bookings',
+      );
     });
 
     it('renders fallback notice when router state is primitive string "invalid" without throwing TypeError', () => {
