@@ -1,6 +1,11 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
+const rawTrustProxy = process.env.TRUST_PROXY;
+if (rawTrustProxy !== undefined && rawTrustProxy !== 'true' && rawTrustProxy !== 'false') {
+  throw new Error('TRUST_PROXY must be true or false when specified.');
+}
+
 const jwtSecret = process.env.JWT_SECRET;
 if (!jwtSecret || jwtSecret.length < 32) {
   throw new Error('JWT_SECRET is required and must be at least 32 characters long.');
@@ -41,6 +46,8 @@ if (!cloudinaryApiSecret) {
 export const ENV = {
   PORT: process.env.PORT ? Number(process.env.PORT) : 5000,
   NODE_ENV: process.env.NODE_ENV || 'development',
+  // One trusted hop requires the backend to be reachable only through that proxy.
+  TRUST_PROXY: rawTrustProxy === 'true' ? 1 : false,
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:5173',
   JWT_SECRET: jwtSecret,
   JWT_EXPIRES_IN_SECONDS: jwtExpiresInSeconds,

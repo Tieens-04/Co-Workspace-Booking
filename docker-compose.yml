@@ -36,6 +36,8 @@ services:
     environment:
       PORT: 5000
       NODE_ENV: production
+      # Exactly one Nginx hop; do not publish the backend port to the host.
+      TRUST_PROXY: 'true'
       DATABASE_URL: mysql://${DB_USER:-cospace_user}:${DB_PASSWORD}@db:3306/${DB_NAME:-cospace_db}
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-2h}
@@ -44,8 +46,6 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
-    ports:
-      - "5000:5000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
       interval: 15s

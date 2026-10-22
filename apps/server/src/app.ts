@@ -10,9 +10,7 @@ import { HealthController } from './controllers/health.controller.js';
 
 const app: Express = express();
 
-if (process.env.TRUST_PROXY === 'true' || ENV.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
-}
+app.set('trust proxy', ENV.TRUST_PROXY);
 
 // Middlewares
 app.use(helmet());

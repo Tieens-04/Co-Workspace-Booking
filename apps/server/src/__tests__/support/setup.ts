@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 
 process.env.NODE_ENV = 'test';
+process.env.TRUST_PROXY = 'false';
 process.env.JWT_SECRET = randomBytes(32).toString('hex');
 process.env.JWT_EXPIRES_IN = '1h';
 process.env.BCRYPT_SALT_ROUNDS = '10';

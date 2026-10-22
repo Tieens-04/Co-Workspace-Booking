@@ -1,10 +1,32 @@
 import { afterEach, expect, it, vi } from 'vitest';
 import { validateTestDatabase } from './support/test-database.js';
 
+vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
+
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.resetModules();
 });
+
+it.each([undefined, 'false', 'true'])(
+  'sets explicit proxy trust for TRUST_PROXY=%s even in production',
+  async (value) => {
+    vi.stubEnv('NODE_ENV', 'production');
+    vi.stubEnv('TRUST_PROXY', value);
+    vi.resetModules();
+    const { default: app } = await import('../app.js');
+    expect(app.get('trust proxy')).toBe(value === 'true' ? 1 : false);
+  },
+);
+
+it.each(['', '1', '0', 'TRUE', 'yes', 'loopback', ' true '])(
+  'fails startup for invalid proxy trust %s',
+  async (value) => {
+    vi.stubEnv('TRUST_PROXY', value);
+    vi.resetModules();
+    await expect(import('../config/env.config.js')).rejects.toThrow('TRUST_PROXY');
+  },
+);
 
 it.each(['10.5', '9', '15', 'NaN', 'Infinity'])(
   'fails startup for invalid bcrypt rounds %s',
