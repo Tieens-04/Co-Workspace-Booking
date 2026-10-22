@@ -822,8 +822,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
   });
 
   describe('AC5: Check-in / Complete Booking Flow (CONFIRMED -> COMPLETED)', () => {
-    it('successfully transitions CONFIRMED booking to COMPLETED and frees room blocking', async () => {
-      const start = new Date(Date.now() + 180 * 60 * 60 * 1000);
+    it('successfully transitions an ended CONFIRMED booking to COMPLETED', async () => {
+      const start = new Date(Date.now() - 4 * 60 * 60 * 1000);
       const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
 
       const booking = await prisma.booking.create({
@@ -882,7 +882,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
   describe('AC6: Mark No-Show Flow (CONFIRMED -> NO_SHOW)', () => {
     it('successfully transitions CONFIRMED booking to NO_SHOW and persists in DB', async () => {
-      const start = new Date(Date.now() + 190 * 60 * 60 * 1000);
+      const start = new Date(Date.now() - 4 * 60 * 60 * 1000);
       const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
 
       const booking = await prisma.booking.create({

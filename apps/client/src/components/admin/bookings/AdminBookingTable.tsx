@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { Check, MoveHorizontal, Phone } from 'lucide-react';
 import { AdminBookingItem } from '../../../types/admin-booking';
 import { formatCurrency } from '../../../utils/format';
@@ -16,6 +17,7 @@ import { cn } from '@/lib/utils';
 import { adminHeadClass, stackedTable as st } from '../stackedTable';
 
 const VN_TIME_ZONE = 'Asia/Ho_Chi_Minh';
+const MAX_TIMEOUT_MS = 2_147_483_647;
 
 const formatVietnamDateTime = (isoString: string): string => {
   try {
@@ -181,6 +183,37 @@ export function AdminBookingTable({
   onNoShow,
   onCancel,
 }: AdminBookingTableProps) {
+  const [now, setNow] = useState(Date.now);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const refreshClock = () => {
+      clearTimeout(timer);
+      const currentTime = Date.now();
+      setNow(currentTime);
+
+      let nextEndTime = Infinity;
+      for (const booking of bookings) {
+        const endTime = new Date(booking.endTime).getTime();
+        if (booking.status === 'CONFIRMED' && endTime > currentTime) {
+          nextEndTime = Math.min(nextEndTime, endTime);
+        }
+      }
+
+      if (Number.isFinite(nextEndTime)) {
+        timer = setTimeout(refreshClock, Math.min(nextEndTime - currentTime, MAX_TIMEOUT_MS));
+      }
+    };
+
+    refreshClock();
+    window.addEventListener('focus', refreshClock);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', refreshClock);
+    };
+  }, [bookings]);
+
   return (
     <div className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2">
       <ScrollHint />
@@ -192,6 +225,7 @@ export function AdminBookingTable({
               const isGuest = booking.customer.kind === 'GUEST';
               const canPay = booking.paymentStatus === 'UNPAID' && booking.status !== 'CANCELLED';
               const isConfirmed = booking.status === 'CONFIRMED';
+              const canFinalize = isConfirmed && now >= new Date(booking.endTime).getTime();
 
               return (
                 <TableRow
@@ -325,7 +359,7 @@ export function AdminBookingTable({
                             Thanh toán
                           </Button>
                         )}
-                        {isConfirmed && (
+                        {canFinalize && (
                           <>
                             <Button
                               type="button"
@@ -345,17 +379,19 @@ export function AdminBookingTable({
                             >
                               Không đến
                             </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="text-destructive hover:bg-status-cancelled-bg hover:text-destructive"
-                              data-testid={`cancel-booking-btn-${booking.id}`}
-                              onClick={() => onCancel(booking)}
-                            >
-                              Hủy đơn
-                            </Button>
                           </>
+                        )}
+                        {isConfirmed && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:bg-status-cancelled-bg hover:text-destructive"
+                            data-testid={`cancel-booking-btn-${booking.id}`}
+                            onClick={() => onCancel(booking)}
+                          >
+                            Hủy đơn
+                          </Button>
                         )}
                       </div>
                     )}

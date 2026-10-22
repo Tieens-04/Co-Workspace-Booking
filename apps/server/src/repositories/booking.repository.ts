@@ -205,8 +205,8 @@ export interface AdminBookingRepositoryContract {
     paymentMethod: PaymentMethod,
   ): Promise<AdminBookingResponseDto>;
   cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto>;
-  completeBookingForAdmin(id: string): Promise<AdminBookingResponseDto>;
-  markNoShowForAdmin(id: string): Promise<AdminBookingResponseDto>;
+  completeBookingForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
+  markNoShowForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
   evaluateNoShowBookings(now?: Date, userId?: string): Promise<number>;
   calculateRevenue(filter: RevenuePeriodFilter, now?: Date): Promise<AdminRevenueResponseDto>;
 }
@@ -568,15 +568,19 @@ export class BookingRepository
     });
   }
 
-  async completeBookingForAdmin(id: string): Promise<AdminBookingResponseDto> {
+  async completeBookingForAdmin(
+    id: string,
+    clock: () => Date = () => new Date(),
+  ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       // 1. Lock booking row in MySQL with FOR UPDATE
       const rows = await tx.$queryRaw<
         Array<{
           id: string;
           status: BookingStatus;
+          end_time: Date | string;
         }>
-      >(Prisma.sql`SELECT id, status FROM bookings WHERE id = ${id} FOR UPDATE`);
+      >(Prisma.sql`SELECT id, status, end_time FROM bookings WHERE id = ${id} FOR UPDATE`);
 
       if (!rows || rows.length === 0) {
         throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
@@ -614,6 +618,15 @@ export class BookingRepository
         );
       }
 
+      // Evaluate only after acquiring the lock, including time spent waiting for it.
+      if (clock().getTime() < new Date(lockedBooking.end_time).getTime()) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể hoàn tất đơn đặt phòng khi đã đến giờ kết thúc',
+          409,
+        );
+      }
+
       // 5. Update status to COMPLETED
       const updated = await tx.booking.update({
         where: { id },
@@ -627,15 +640,19 @@ export class BookingRepository
     });
   }
 
-  async markNoShowForAdmin(id: string): Promise<AdminBookingResponseDto> {
+  async markNoShowForAdmin(
+    id: string,
+    clock: () => Date = () => new Date(),
+  ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       // 1. Lock booking row in MySQL with FOR UPDATE
       const rows = await tx.$queryRaw<
         Array<{
           id: string;
           status: BookingStatus;
+          end_time: Date | string;
         }>
-      >(Prisma.sql`SELECT id, status FROM bookings WHERE id = ${id} FOR UPDATE`);
+      >(Prisma.sql`SELECT id, status, end_time FROM bookings WHERE id = ${id} FOR UPDATE`);
 
       if (!rows || rows.length === 0) {
         throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
@@ -669,6 +686,14 @@ export class BookingRepository
         throw new AppError(
           'BOOKING_STATE_CONFLICT',
           'Không thể đánh dấu không đến cho đơn đặt phòng đã hoàn tất',
+          409,
+        );
+      }
+
+      if (clock().getTime() < new Date(lockedBooking.end_time).getTime()) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể đánh dấu không đến khi đã đến giờ kết thúc đặt phòng',
           409,
         );
       }
