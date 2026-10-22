@@ -614,6 +614,56 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
   });
 
   describe('Revenue KPI Summary and State Transition Actions (Complete / No-Show)', () => {
+    it('retains the list and reports both errors if refreshing after a conflict fails', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.completeBooking).mockRejectedValueOnce({
+        response: { status: 409, data: { message: 'Chưa đến giờ kết thúc' } },
+      });
+      vi.mocked(adminBookingApi.getBookings)
+        .mockResolvedValueOnce(mockBookingsResponse())
+        .mockRejectedValueOnce(new Error('Network unavailable'));
+      renderComponent();
+      await user.click(await screen.findByTestId('complete-booking-btn-booking-1'));
+      await waitFor(() =>
+        expect(screen.getByRole('alert')).toHaveTextContent(
+          'Không thể tải danh sách đặt phòng. Vui lòng thử lại.',
+        ),
+      );
+      expect(screen.getByRole('alert')).toHaveTextContent('Chưa đến giờ kết thúc');
+      expect(screen.getByTestId('admin-bookings-table')).toBeInTheDocument();
+      expect(screen.queryByTestId('admin-bookings-error')).not.toBeInTheDocument();
+    });
+
+    it.each([
+      ['completeBooking', 'complete-booking-btn-booking-1'],
+      ['markNoShow', 'no-show-booking-btn-booking-1'],
+    ] as const)('keeps the table and refreshes after %s returns 409', async (method, buttonId) => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi[method]).mockRejectedValueOnce({
+        response: { status: 409, data: { message: 'Trạng thái đặt phòng đã thay đổi' } },
+      });
+      vi.mocked(adminBookingApi.getBookings)
+        .mockResolvedValueOnce(mockBookingsResponse())
+        .mockResolvedValue(
+          mockBookingsResponse([
+            { ...mockBookingsList[0], status: 'NO_SHOW' },
+            mockBookingsList[1],
+          ]),
+        );
+
+      renderComponent();
+      await user.click(await screen.findByTestId(buttonId));
+
+      await waitFor(() => expect(adminBookingApi.getBookings).toHaveBeenCalledTimes(2));
+      expect(await screen.findByTestId('admin-bookings-table')).toBeInTheDocument();
+      expect(screen.getByRole('alert')).toHaveTextContent('Trạng thái đặt phòng đã thay đổi');
+      expect(screen.queryByTestId('admin-bookings-error')).not.toBeInTheDocument();
+      expect(screen.queryByTestId(buttonId)).not.toBeInTheDocument();
+      expect(
+        screen.queryByText(/Đã hoàn tất ca cho đơn|Đã đánh dấu không đến cho đơn/),
+      ).not.toBeInTheDocument();
+    });
+
     it('renders revenue KPI summary card with correct formatted amounts', async () => {
       renderComponent();
 
@@ -643,9 +693,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
         expect(adminBookingApi.completeBooking).toHaveBeenCalledWith('booking-1');
       });
 
-      expect(
-        screen.getByText('Đã hoàn tất ca cho đơn CS-20261003-USER'),
-      ).toBeInTheDocument();
+      expect(screen.getByText('Đã hoàn tất ca cho đơn CS-20261003-USER')).toBeInTheDocument();
     });
 
     it('marks booking as no-show when admin clicks Không đến button', async () => {
@@ -688,9 +736,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       await user.click(completeBtn);
 
       await waitFor(() => {
-        expect(
-          screen.getByText('Đơn đặt phòng đã bị hủy hoặc khách vắng mặt'),
-        ).toBeInTheDocument();
+        expect(screen.getByText('Đơn đặt phòng đã bị hủy hoặc khách vắng mặt')).toBeInTheDocument();
       });
     });
 
@@ -714,9 +760,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       await user.click(noShowBtn);
 
       await waitFor(() => {
-        expect(
-          screen.getByText('Đơn đặt phòng đã bị hủy hoặc đã hoàn tất'),
-        ).toBeInTheDocument();
+        expect(screen.getByText('Đơn đặt phòng đã bị hủy hoặc đã hoàn tất')).toBeInTheDocument();
       });
     });
   });

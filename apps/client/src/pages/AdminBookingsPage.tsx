@@ -137,6 +137,7 @@ export const AdminBookingsPage: React.FC = () => {
 
   // Success message banner
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
+  const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
 
   const requestIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -242,6 +243,8 @@ export const AdminBookingsPage: React.FC = () => {
   };
 
   const handleCompleteBooking = async (booking: AdminBookingItem) => {
+    setActionErrorMessage(null);
+    setActionSuccessMessage(null);
     try {
       const res = await adminBookingApi.completeBooking(booking.id);
       if (res.success) {
@@ -252,12 +255,15 @@ export const AdminBookingsPage: React.FC = () => {
     } catch (err: any) {
       const msg =
         err.response?.data?.message || 'Không thể hoàn tất đơn đặt phòng. Vui lòng thử lại.';
-      setErrorMessage(msg);
+      setActionErrorMessage(msg);
       showToast(msg, 'error');
+      if (err.response?.status === 409) fetchAdminBookings(true);
     }
   };
 
   const handleMarkNoShow = async (booking: AdminBookingItem) => {
+    setActionErrorMessage(null);
+    setActionSuccessMessage(null);
     try {
       const res = await adminBookingApi.markNoShow(booking.id);
       if (res.success) {
@@ -268,97 +274,105 @@ export const AdminBookingsPage: React.FC = () => {
     } catch (err: any) {
       const msg =
         err.response?.data?.message || 'Không thể đánh dấu khách không đến. Vui lòng thử lại.';
-      setErrorMessage(msg);
+      setActionErrorMessage(msg);
       showToast(msg, 'error');
+      if (err.response?.status === 409) fetchAdminBookings(true);
     }
   };
 
-  const fetchAdminBookings = useCallback(() => {
-    const currentRequestId = ++requestIdRef.current;
-    const requestingUser = principal?.id;
-    const requestFilterKey = `${appliedCode}|${appliedDate}|${appliedStatus}|${currentPage}|${requestingUser}`;
-    activeFilterKeyRef.current = requestFilterKey;
+  const fetchAdminBookings = useCallback(
+    (preserveList = false) => {
+      const currentRequestId = ++requestIdRef.current;
+      const requestingUser = principal?.id;
+      const requestFilterKey = `${appliedCode}|${appliedDate}|${appliedStatus}|${currentPage}|${requestingUser}`;
+      activeFilterKeyRef.current = requestFilterKey;
 
-    abortControllerRef.current?.abort();
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
+      abortControllerRef.current?.abort();
+      const controller = new AbortController();
+      abortControllerRef.current = controller;
 
-    setIsLoading(true);
-    setErrorMessage(null);
-    setRevenueError(null);
+      if (!preserveList) setIsLoading(true);
+      setErrorMessage(null);
+      setRevenueError(null);
 
-    adminBookingApi
-      .getRevenue(
-        {
-          startDate: appliedDate,
-          endDate: appliedDate,
-        },
-        controller.signal,
-      )
-      .then((revRes) => {
-        if (!controller.signal.aborted) {
-          if (revRes.success) {
-            setRevenueData(revRes.data);
-          } else {
-            setRevenueError(revRes.message || 'Không thể tải dữ liệu doanh thu.');
+      adminBookingApi
+        .getRevenue(
+          {
+            startDate: appliedDate,
+            endDate: appliedDate,
+          },
+          controller.signal,
+        )
+        .then((revRes) => {
+          if (!controller.signal.aborted) {
+            if (revRes.success) {
+              setRevenueData(revRes.data);
+            } else {
+              setRevenueError(revRes.message || 'Không thể tải dữ liệu doanh thu.');
+            }
           }
-        }
-      })
-      .catch((err) => {
-        if (!controller.signal.aborted) {
-          console.error('Không thể tải dữ liệu doanh thu', err);
-          setRevenueError(
-            err.response?.data?.message || 'Không thể tải dữ liệu doanh thu. Vui lòng thử lại.',
-          );
-        }
-      });
+        })
+        .catch((err) => {
+          if (!controller.signal.aborted) {
+            console.error('Không thể tải dữ liệu doanh thu', err);
+            setRevenueError(
+              err.response?.data?.message || 'Không thể tải dữ liệu doanh thu. Vui lòng thử lại.',
+            );
+          }
+        });
 
-    adminBookingApi
-      .getBookings(
-        {
-          page: currentPage,
-          limit: PAGE_LIMIT,
-          bookingCode: appliedCode,
-          date: appliedDate,
-          status: appliedStatus,
-        },
-        controller.signal,
-      )
-      .then((res) => {
-        if (
-          controller.signal.aborted ||
-          requestIdRef.current !== currentRequestId ||
-          activeSessionUserRef.current !== requestingUser ||
-          activeFilterKeyRef.current !== requestFilterKey
-        ) {
-          return;
-        }
+      adminBookingApi
+        .getBookings(
+          {
+            page: currentPage,
+            limit: PAGE_LIMIT,
+            bookingCode: appliedCode,
+            date: appliedDate,
+            status: appliedStatus,
+          },
+          controller.signal,
+        )
+        .then((res) => {
+          if (
+            controller.signal.aborted ||
+            requestIdRef.current !== currentRequestId ||
+            activeSessionUserRef.current !== requestingUser ||
+            activeFilterKeyRef.current !== requestFilterKey
+          ) {
+            return;
+          }
 
-        if (res.success) {
-          setBookings(res.data.items);
-          setPagination(res.data.pagination);
+          if (res.success) {
+            setBookings(res.data.items);
+            setPagination(res.data.pagination);
+            setIsLoading(false);
+          } else {
+            const msg = res.message || 'Không thể tải danh sách đặt phòng.';
+            if (preserveList)
+              setActionErrorMessage((previous) => `${previous || ''} ${msg}`.trim());
+            else setErrorMessage(msg);
+            setIsLoading(false);
+          }
+        })
+        .catch((err: any) => {
+          if (
+            controller.signal.aborted ||
+            requestIdRef.current !== currentRequestId ||
+            activeSessionUserRef.current !== requestingUser ||
+            activeFilterKeyRef.current !== requestFilterKey
+          ) {
+            return;
+          }
+
+          const msg =
+            err.response?.data?.message || 'Không thể tải danh sách đặt phòng. Vui lòng thử lại.';
+          if (preserveList) setActionErrorMessage((previous) => `${previous || ''} ${msg}`.trim());
+          else setErrorMessage(msg);
           setIsLoading(false);
-        } else {
-          setErrorMessage(res.message || 'Không thể tải danh sách đặt phòng.');
-          setIsLoading(false);
-        }
-      })
-      .catch((err: any) => {
-        if (
-          controller.signal.aborted ||
-          requestIdRef.current !== currentRequestId ||
-          activeSessionUserRef.current !== requestingUser ||
-          activeFilterKeyRef.current !== requestFilterKey
-        ) {
-          return;
-        }
-
-        setErrorMessage(
-          err.response?.data?.message || 'Không thể tải danh sách đặt phòng. Vui lòng thử lại.',
-        );
-        setIsLoading(false);
-      });
-  }, [currentPage, appliedCode, appliedDate, appliedStatus, principal?.id]);
+        });
+    },
+    [currentPage, appliedCode, appliedDate, appliedStatus, principal?.id],
+  );
 
   useEffect(() => {
     fetchAdminBookings();
@@ -409,6 +423,14 @@ export const AdminBookingsPage: React.FC = () => {
       />
 
       {/* Action Success Alert Banner */}
+      {actionErrorMessage && (
+        <p
+          role="alert"
+          className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive"
+        >
+          {actionErrorMessage}
+        </p>
+      )}
       {actionSuccessMessage && (
         <div
           role="alert"
@@ -475,7 +497,7 @@ export const AdminBookingsPage: React.FC = () => {
             type="button"
             variant="outline"
             size="sm"
-            onClick={fetchAdminBookings}
+            onClick={() => fetchAdminBookings()}
             data-testid="refresh-bookings-btn"
           >
             <RotateCw aria-hidden="true" />

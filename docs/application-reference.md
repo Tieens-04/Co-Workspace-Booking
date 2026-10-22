@@ -654,6 +654,12 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - **Mã đặt phòng**: Tạo mã duy nhất `CS-YYYYMMDD-XXXX` (giờ VN) với cơ chế retry tối đa 5 lần.
     - **Transaction & MySQL Row-Locking**: Sử dụng `prisma.$transaction` và khóa dòng `SELECT ... FOR UPDATE` đồng nhất với luồng khách hàng. Chống hoàn toàn tình trạng double-booking giữa khách vãng lai và khách hàng trực tuyến.
     - **Cách ly dữ liệu khách hàng**: Khách hàng thông thường (`CUSTOMER`) tuyệt đối không thể truy cập, xem hoặc thao tác trên đơn của khách vãng lai qua các API cá nhân.
+- **Hoàn tất / Không đến (CWB-38)**:
+  - `PATCH /api/v1/admin/bookings/:id/complete` và `PATCH /api/v1/admin/bookings/:id/no-show` yêu cầu vai trò `ADMIN`, chỉ chuyển từ `CONFIRMED` khi `now >= endTime`. Không hỗ trợ trả phòng sớm; thanh toán vẫn là trạng thái riêng.
+  - Server đọc `end_time` bằng `SELECT ... FOR UPDATE` trong transaction và lấy thời gian đánh giá sau khi đã lấy khóa. Trước giờ kết thúc trả `409 BOOKING_STATE_CONFLICT`, không đổi trạng thái hay giải phóng phòng.
+  - Gọi lại cùng trạng thái đích trả `200` với bản ghi hiện tại. Trạng thái kết thúc khác trả `409 BOOKING_STATE_CONFLICT`; không tìm thấy trả `404 BOOKING_NOT_FOUND`.
+  - Tạo booking vẫn khóa phòng, kiểm tra overlap `existing.start < requested.end AND existing.end > requested.start` với `CONFIRMED`; yêu cầu đặt trùng trả `409 BOOKING_CONFLICT`.
+  - **Giới hạn được giữ nguyên:** luồng đọc danh sách admin/lịch sử khách hàng/doanh thu tự chuyển các đơn `CONFIRMED` đã hết giờ thành `NO_SHOW`. Sau khi đã tự chuyển, không thể hoàn tất đơn đó; CWB-38 không thay đổi policy này.
 - **Giao diện Quản trị Đặt phòng Phía Client (`/admin/bookings`)**:
   - Tích hợp điều hướng từ menu Quản trị (`/admin`).
   - Thanh tìm kiếm và bộ lọc nhanh: Ô nhập mã đơn, bộ chọn ngày (Việt Nam UTC+7), dropdown trạng thái, nút Tìm kiếm, Xóa bộ lọc và Làm mới dữ liệu. Đồng bộ trạng thái URL search params.
@@ -661,6 +667,8 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - Huy hiệu nhận diện loại khách hàng: Tag tông slate cho **Khách vãng lai (Guest)** kèm SĐT; Tag trung tính cho **Tài khoản (User)**.
     - Trạng thái đơn dùng `StatusBadge` theo tông trạng thái của hệ thiết kế (`CONFIRMED` xanh dương, `COMPLETED` xanh lá, `CANCELLED` đỏ, `NO_SHOW` cam đất), luôn kèm nhãn chữ.
     - Phân trang đầy đủ kèm trạng thái trống/rỗng thân thiện.
+    - Chỉ hiện “Hoàn tất” / “Không đến” cho đơn `CONFIRMED` đã đến `endTime`; cập nhật khi tới mốc kết thúc và khi cửa sổ được focus lại. Đồng hồ client chỉ hỗ trợ hiển thị, server quyết định điều kiện thời gian.
+    - Lỗi thao tác hiển thị riêng, không thay thế bảng danh sách. Khi complete/no-show trả `409`, giữ bảng trong lúc tải lại dữ liệu và không báo thành công.
   - **Form Đặt phòng Khách vãng lai (`AdminGuestBookingForm`)**:
     - Nhập họ tên và số điện thoại khách vãng lai.
     - Danh sách chọn phòng làm việc kèm trạng thái và giá. Chặn chọn phòng đang bảo trì (`MAINTENANCE`).
@@ -677,6 +685,9 @@ npm run test --workspace=apps/server -- src/__tests__/admin-booking.test.ts
 
 # Integration tests (MySQL thật, tra cứu exact-match case-insensitive, ngày bắt đầu VN, locking concurrency vãng lai vs online)
 npm run test:integration --workspace=apps/server -- src/__tests__/admin-booking.integration.test.ts
+
+# Lifecycle: endTime ± 1ms, chờ khóa, complete/no-show cạnh tranh với customer/guest create
+npm run test:integration --workspace=apps/server -- src/__tests__/booking-lifecycle.integration.test.ts
 
 # Frontend tests (Giao diện bảng admin bookings, form đặt phòng khách vãng lai, route guard)
 npm run test --workspace=apps/client -- src/__tests__/AdminBookingsPage.test.tsx src/__tests__/AdminGuestBookingForm.test.tsx src/__tests__/AdminPage.test.tsx src/__tests__/RouteGuard.test.tsx
