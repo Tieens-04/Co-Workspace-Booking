@@ -1,0 +1,1175 @@
+{
+  "results": [
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/login",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/register",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "guest",
+      "route": "/khong-ton-tai",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/bookings",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/booking-confirmation",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/admin",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "customer",
+      "route": "/rooms/554d4908-c3ac-4dcf-a479-ee76784f112c",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 360,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 390,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 768,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 1024,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 1440,
+      "scheme": "light",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 360,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 390,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 768,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 1024,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/dashboard",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    },
+    {
+      "who": "admin",
+      "route": "/admin/bookings",
+      "width": 1440,
+      "scheme": "dark",
+      "overflow": false,
+      "hidden": [],
+      "errors": []
+    }
+  ],
+  "reduced": []
+}

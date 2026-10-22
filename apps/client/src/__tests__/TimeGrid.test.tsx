@@ -43,6 +43,37 @@ describe('TimeGrid component', () => {
     expect(buttons).toHaveLength(48);
   });
 
+  it('scrolls the slot list (not the page) to the first bookable slot for the day', () => {
+    const now = new Date('2026-10-25T09:15:00.000+07:00');
+    // jsdom has no layout: give the grid and each slot a deterministic position (40px per slot).
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+      .mockImplementation(function (this: HTMLElement) {
+        const testId = this.getAttribute('data-testid') ?? '';
+        const match = /^time-slot-(\d{2}):(\d{2})$/.exec(testId);
+        const top = match ? 100 + (Number(match[1]) * 2 + Number(match[2]) / 30) * 40 : 100;
+        return {
+          top,
+          bottom: top + 36,
+          left: 0,
+          right: 0,
+          width: 0,
+          height: 36,
+          x: 0,
+          y: top,
+          toJSON: () => ({}),
+        };
+      });
+
+    render(<TimeGrid {...defaultProps} now={now} />);
+
+    const grid = screen.getByRole('group', { name: 'Danh sách 48 khung giờ trong ngày' });
+    // First slot not in the past is 10:00 (index 20) → 20 * 40 = 800px down, minus 8px breathing room.
+    expect(grid.scrollTop).toBe(792);
+    expect(window.scrollTo).not.toHaveBeenCalledWith(expect.anything(), 792);
+    rectSpy.mockRestore();
+  });
+
   describe('AC1: Slot đã đặt bị disable (xám)', () => {
     it('renders BOOKED slot as disabled and with slot-booked class', () => {
       const slots = createMockDaySlots('2026-10-25');
@@ -53,7 +84,7 @@ describe('TimeGrid component', () => {
 
       const bookedBtn = screen.getByTestId('time-slot-09:00');
       expect(bookedBtn).toBeDisabled();
-      expect(bookedBtn).toHaveClass('slot-booked');
+      expect(bookedBtn).toHaveAttribute('data-slot-state', 'booked');
       expect(bookedBtn).toHaveAttribute('aria-label', expect.stringContaining('Đã đặt'));
     });
 
@@ -80,17 +111,17 @@ describe('TimeGrid component', () => {
       // 09:00 is in the past -> disabled, slot-past
       const pastBtn = screen.getByTestId('time-slot-09:00');
       expect(pastBtn).toBeDisabled();
-      expect(pastBtn).toHaveClass('slot-past');
+      expect(pastBtn).toHaveAttribute('data-slot-state', 'past');
 
       // 09:30 is only 15 min from 09:15 (< 30 min lead time) -> disabled, slot-past
       const leadTimeBtn = screen.getByTestId('time-slot-09:30');
       expect(leadTimeBtn).toBeDisabled();
-      expect(leadTimeBtn).toHaveClass('slot-past');
+      expect(leadTimeBtn).toHaveAttribute('data-slot-state', 'past');
 
       // 10:00 is 45 min from 09:15 (>= 30 min lead time) -> available, enabled
       const availableBtn = screen.getByTestId('time-slot-10:00');
       expect(availableBtn).not.toBeDisabled();
-      expect(availableBtn).toHaveClass('slot-available');
+      expect(availableBtn).toHaveAttribute('data-slot-state', 'available');
     });
   });
 
@@ -253,13 +284,19 @@ describe('TimeGrid component', () => {
       );
 
       // 09:00, 09:30, 10:00, 10:30 should all have slot-selected
-      expect(screen.getByTestId('time-slot-09:00')).toHaveClass('slot-selected');
-      expect(screen.getByTestId('time-slot-09:30')).toHaveClass('slot-selected');
-      expect(screen.getByTestId('time-slot-10:00')).toHaveClass('slot-selected');
-      expect(screen.getByTestId('time-slot-10:30')).toHaveClass('slot-selected');
+      expect(screen.getByTestId('time-slot-09:00')).toHaveAttribute('data-slot-state', 'selected');
+      expect(screen.getByTestId('time-slot-09:30')).toHaveAttribute('data-slot-state', 'selected');
+      expect(screen.getByTestId('time-slot-10:00')).toHaveAttribute('data-slot-state', 'selected');
+      expect(screen.getByTestId('time-slot-10:30')).toHaveAttribute('data-slot-state', 'selected');
+      expect(screen.getByTestId('time-slot-09:00')).toHaveAttribute('aria-pressed', 'true');
+      expect(screen.getByTestId('time-slot-10:30')).toHaveAttribute('aria-pressed', 'true');
 
       // 11:00 should not be selected
-      expect(screen.getByTestId('time-slot-11:00')).not.toHaveClass('slot-selected');
+      expect(screen.getByTestId('time-slot-11:00')).not.toHaveAttribute(
+        'data-slot-state',
+        'selected',
+      );
+      expect(screen.getByTestId('time-slot-11:00')).toHaveAttribute('aria-pressed', 'false');
     });
 
     // F2 Regression: BOOKED slot must never have aria-pressed="true"
@@ -279,7 +316,7 @@ describe('TimeGrid component', () => {
       const bookedBtn = screen.getByTestId('time-slot-09:30');
       expect(bookedBtn).toHaveAttribute('aria-pressed', 'false');
       expect(bookedBtn).toBeDisabled();
-      expect(bookedBtn).toHaveClass('slot-booked');
+      expect(bookedBtn).toHaveAttribute('data-slot-state', 'booked');
     });
   });
 
@@ -304,7 +341,7 @@ describe('TimeGrid component', () => {
       );
 
       expect(slot0900).toBeDisabled();
-      expect(slot0900).toHaveClass('slot-past');
+      expect(slot0900).toHaveAttribute('data-slot-state', 'past');
 
       fireEvent.click(slot0900);
       expect(onSelectStart).not.toHaveBeenCalled();
@@ -394,11 +431,7 @@ describe('TimeGrid component', () => {
       const setTimeoutSpy = vi.spyOn(globalThis, 'setTimeout');
 
       const { unmount } = render(
-        <TimeGrid
-          slots={futureSlots}
-          onSelectStart={vi.fn()}
-          onSelectRange={vi.fn()}
-        />,
+        <TimeGrid slots={futureSlots} onSelectStart={vi.fn()} onSelectRange={vi.fn()} />,
       );
 
       // Verify no TimeoutOverflowWarning was triggered
@@ -425,18 +458,12 @@ describe('TimeGrid component', () => {
       vi.setSystemTime(new Date('2026-10-25T08:30:00.000+07:00'));
       const slots = createMockDaySlots('2026-10-25');
 
-      render(
-        <TimeGrid
-          slots={slots}
-          onSelectStart={vi.fn()}
-          onSelectRange={vi.fn()}
-        />,
-      );
+      render(<TimeGrid slots={slots} onSelectStart={vi.fn()} onSelectRange={vi.fn()} />);
 
       // At exact 08:30:00.000, slot 09:00 has exactly 30 minutes lead time (not past)
       const slot0900 = screen.getByTestId('time-slot-09:00');
       expect(slot0900).not.toBeDisabled();
-      expect(slot0900).toHaveClass('slot-available');
+      expect(slot0900).toHaveAttribute('data-slot-state', 'available');
 
       // Advance timers by 100ms (to 08:30:00.100 VN)
       act(() => {
@@ -445,7 +472,7 @@ describe('TimeGrid component', () => {
 
       // Slot 09:00 now has < 30 minutes lead time -> becomes disabled and slot-past
       expect(slot0900).toBeDisabled();
-      expect(slot0900).toHaveClass('slot-past');
+      expect(slot0900).toHaveAttribute('data-slot-state', 'past');
     });
   });
 });

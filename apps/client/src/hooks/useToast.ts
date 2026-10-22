@@ -5,7 +5,6 @@ export function useToast(): ToastContextValue {
   const context = useContext(ToastContext);
   if (!context) {
     return {
-      toasts: [],
       showToast: () => {},
       removeToast: () => {},
     };

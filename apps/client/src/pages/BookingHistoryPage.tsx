@@ -4,13 +4,24 @@ import { useAuth } from '../hooks/useAuth';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult, BookingHistoryView } from '../types/booking';
 import { PaginationMeta } from '../types/room';
-import { BookingSummary } from '../components/BookingSummary';
-import { AppHeader } from '../layouts/AppHeader';
-import { AppFooter } from '../layouts/AppFooter';
-import styles from './BookingHistoryPage.module.css';
+import { ArrowRight, CalendarDays } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { PageHeader } from '../components/common/PageHeader';
+import { SegmentedControl, type SegmentedOption } from '../components/common/SegmentedControl';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
+import { Pagination } from '../components/common/Pagination';
+import { BookingHistoryRow } from '../components/booking/BookingHistoryRow';
+import { Stagger, StaggerItem } from '../components/motion/Stagger';
 
 const PAGE_LIMIT = 10;
 const VALID_VIEWS: BookingHistoryView[] = ['ALL', 'UPCOMING', 'COMPLETED'];
+
+const VIEW_OPTIONS: SegmentedOption<BookingHistoryView>[] = [
+  { value: 'ALL', label: 'Tất cả' },
+  { value: 'UPCOMING', label: 'Sắp tới' },
+  { value: 'COMPLETED', label: 'Đã hoàn tất' },
+];
 
 interface BookingHistoryState {
   sessionUserId: string | undefined;
@@ -239,63 +250,71 @@ export const BookingHistoryPage: React.FC = () => {
     }
   };
 
+  const isPageOutOfRange =
+    effectivePagination.total > 0 && currentPage > effectivePagination.totalPages;
+
   return (
-    <div className={styles.pageWrapper}>
-      <AppHeader />
+    <div className="container-page py-10 md:py-14">
+      <PageHeader
+        eyebrow="Tài khoản của bạn"
+        title="Lịch sử đặt phòng"
+        description="Quản lý và theo dõi các đơn đặt phòng làm việc của bạn"
+        size="display"
+        actions={
+          <Button asChild variant="outline">
+            <Link to="/rooms">
+              Đặt phòng mới
+              <ArrowRight aria-hidden="true" />
+            </Link>
+          </Button>
+        }
+      />
 
-      <main className={`page-container booking-history-container ${styles.container}`}>
-        {/* Main Content */}
-        <div className="history-content-layout">
-          <div className={`history-header-row ${styles.headerSection}`}>
-            <h1 className={`page-heading ${styles.title}`}>📋 Lịch sử đặt phòng</h1>
-            <p className={styles.subtitle}>Quản lý và theo dõi các đơn đặt phòng làm việc của bạn</p>
+      <div className="mt-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <SegmentedControl
+          ariaLabel="Bộ lọc trạng thái đơn đặt phòng"
+          options={VIEW_OPTIONS}
+          value={currentView}
+          onChange={handleViewChange}
+        />
+        <p className="text-sm text-muted-foreground tabular-nums">
+          {!effectiveIsLoading && !effectiveErrorMessage && effectivePagination.total > 0 && (
+            <>
+              <strong className="font-semibold text-foreground">{effectivePagination.total}</strong>{' '}
+              đơn đặt phòng ·{' '}
+            </>
+          )}
+          Giờ Việt Nam (UTC+7)
+        </p>
+      </div>
 
-            {/* View Filter Tabs */}
-            <div
-              className={`history-filter-tabs ${styles.tabsRow}`}
-              role="group"
-              aria-label="Bộ lọc trạng thái đơn đặt phòng"
-            >
-              <button
-                type="button"
-                className={`history-filter-btn ${styles.tabBtn} ${currentView === 'ALL' ? `active ${styles.tabBtnActive}` : ''}`}
-                onClick={() => handleViewChange('ALL')}
-                aria-pressed={currentView === 'ALL'}
-              >
-                Tất cả
-              </button>
-              <button
-                type="button"
-                className={`history-filter-btn ${styles.tabBtn} ${currentView === 'UPCOMING' ? `active ${styles.tabBtnActive}` : ''}`}
-                onClick={() => handleViewChange('UPCOMING')}
-                aria-pressed={currentView === 'UPCOMING'}
-              >
-                Sắp tới
-              </button>
-              <button
-                type="button"
-                className={`history-filter-btn ${styles.tabBtn} ${currentView === 'COMPLETED' ? `active ${styles.tabBtnActive}` : ''}`}
-                onClick={() => handleViewChange('COMPLETED')}
-                aria-pressed={currentView === 'COMPLETED'}
-              >
-                Đã hoàn tất
-              </button>
-            </div>
-          </div>
-
+      <div className="mt-6">
         {/* Loading State */}
         {effectiveIsLoading && (
           <div
-            className="booking-list-loading"
+            className="divide-y border-y"
             role="status"
             aria-busy="true"
             aria-label="Đang tải lịch sử đặt phòng"
           >
             {[1, 2, 3].map((n) => (
-              <div key={n} className="card booking-item-card skeleton-card">
-                <div className="skeleton skeleton-title" style={{ width: '40%' }} />
-                <div className="skeleton skeleton-text" style={{ width: '70%' }} />
-                <div className="skeleton skeleton-text" style={{ width: '50%' }} />
+              <div
+                key={n}
+                className="grid gap-3 py-6 md:grid-cols-[minmax(0,1.35fr)_minmax(0,1.25fr)_minmax(8.5rem,auto)_auto] md:items-center md:gap-8"
+              >
+                <div className="grid gap-2">
+                  <Skeleton className="h-3 w-32" />
+                  <Skeleton className="h-5 w-3/4" />
+                </div>
+                <div className="grid gap-2">
+                  <Skeleton className="h-4 w-36" />
+                  <Skeleton className="h-4 w-24" />
+                </div>
+                <div className="grid gap-2 md:justify-items-end">
+                  <Skeleton className="h-5 w-24" />
+                  <Skeleton className="h-6 w-24 rounded-full" />
+                </div>
+                <Skeleton className="h-9 w-28 rounded-md" />
               </div>
             ))}
           </div>
@@ -303,16 +322,11 @@ export const BookingHistoryPage: React.FC = () => {
 
         {/* Error State */}
         {!effectiveIsLoading && effectiveErrorMessage && (
-          <div className="card error-state-card" role="alert">
-            <div className="state-icon" aria-hidden="true">
-              ⚠️
-            </div>
-            <h3 className="error-title">Không thể tải lịch sử đặt phòng</h3>
-            <p className="error-description">{effectiveErrorMessage}</p>
-            <button type="button" className="btn btn-primary" onClick={fetchHistory}>
-              Thử lại
-            </button>
-          </div>
+          <ErrorState
+            title="Không thể tải lịch sử đặt phòng"
+            description={effectiveErrorMessage}
+            onRetry={fetchHistory}
+          />
         )}
 
         {/* Empty State */}
@@ -320,103 +334,72 @@ export const BookingHistoryPage: React.FC = () => {
           !effectiveErrorMessage &&
           effectiveBookings &&
           effectiveBookings.length === 0 && (
-            <div className="card empty-state-card" data-testid="booking-history-empty">
-              <div className="state-icon" aria-hidden="true">
-                📅
-              </div>
-              <h3 className="empty-title">{getEmptyMessage()}</h3>
-              <p className="empty-description">
-                {effectivePagination.total > 0 && currentPage > effectivePagination.totalPages
+            <EmptyState
+              icon={CalendarDays}
+              data-testid="booking-history-empty"
+              title={getEmptyMessage()}
+              description={
+                isPageOutOfRange
                   ? 'Bạn đang ở trang vượt quá số trang hiện có. Vui lòng quay lại trang đầu tiên.'
-                  : 'Bạn có thể khám phá danh sách không gian làm việc và thực hiện đặt phòng mới bất cứ lúc nào.'}
-              </p>
-              <div className="empty-actions">
-                {effectivePagination.total > 0 && currentPage > effectivePagination.totalPages ? (
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => handlePageChange(1)}
-                  >
+                  : 'Bạn có thể khám phá danh sách không gian làm việc và thực hiện đặt phòng mới bất cứ lúc nào.'
+              }
+              action={
+                isPageOutOfRange ? (
+                  <Button type="button" size="sm" onClick={() => handlePageChange(1)}>
                     Về trang 1
-                  </button>
+                  </Button>
                 ) : (
-                  <Link to="/" className="btn btn-primary">
-                    Khám phá phòng ngay
-                  </Link>
-                )}
-              </div>
-            </div>
+                  <Button asChild size="sm">
+                    <Link to="/rooms">
+                      Khám phá phòng ngay
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                )
+              }
+            />
           )}
 
-        {/* Booking Cards List */}
+        {/* Booking Rows List */}
         {!effectiveIsLoading &&
           !effectiveErrorMessage &&
           effectiveBookings &&
           effectiveBookings.length > 0 && (
             <>
-              <div
-                className="booking-history-list"
+              <Stagger
+                // Replays when the filter or page changes so the new list reads as new.
+                key={`${effectivePagination.page}-${effectiveBookings[0]?.id ?? ''}`}
+                stagger={0.04}
+                className="divide-y border-y"
                 aria-label="Danh sách đơn đặt phòng"
                 data-testid="booking-history-list"
               >
                 {effectiveBookings.map((booking) => (
-                  <article
-                    key={booking.id}
-                    className="card booking-item-card"
-                    data-testid={`booking-item-${booking.id}`}
-                  >
-                    <div className="booking-item-body">
-                      <BookingSummary booking={booking} />
-                    </div>
-                    <div className="booking-item-actions">
-                      <Link
-                        to={`/bookings/${booking.id}`}
-                        className="btn btn-outline booking-detail-link"
-                        aria-label={`Xem chi tiết đơn ${booking.bookingCode}`}
-                        data-testid={`view-detail-${booking.id}`}
-                      >
-                        Xem chi tiết →
-                      </Link>
-                    </div>
-                  </article>
+                  <StaggerItem key={booking.id}>
+                    <BookingHistoryRow booking={booking} />
+                  </StaggerItem>
                 ))}
-              </div>
+              </Stagger>
 
               {/* Pagination Controls */}
               {effectivePagination.totalPages > 1 && (
-                <nav className="pagination-container" aria-label="Điều hướng phân trang lịch sử">
-                  <button
-                    type="button"
-                    className="btn btn-outline pagination-btn"
-                    disabled={effectivePagination.page <= 1}
-                    onClick={() => handlePageChange(effectivePagination.page - 1)}
-                    aria-label="Trang trước"
-                  >
-                    ← Trang trước
-                  </button>
-
-                  <span className="pagination-info">
-                    Trang <strong>{effectivePagination.page}</strong> /{' '}
-                    {effectivePagination.totalPages} (Tổng {effectivePagination.total} đơn)
-                  </span>
-
-                  <button
-                    type="button"
-                    className="btn btn-outline pagination-btn"
-                    disabled={effectivePagination.page >= effectivePagination.totalPages}
-                    onClick={() => handlePageChange(effectivePagination.page + 1)}
-                    aria-label="Trang sau"
-                  >
-                    Trang sau →
-                  </button>
-                </nav>
+                <Pagination
+                  className="mt-6 border-t-0 pt-0"
+                  ariaLabel="Điều hướng phân trang lịch sử"
+                  page={effectivePagination.page}
+                  totalPages={effectivePagination.totalPages}
+                  onPageChange={handlePageChange}
+                  info={
+                    <>
+                      Trang <strong className="text-foreground">{effectivePagination.page}</strong>{' '}
+                      / {effectivePagination.totalPages} (Tổng {effectivePagination.total} đơn)
+                    </>
+                  }
+                />
               )}
             </>
           )}
       </div>
-
-      </main>
-      <AppFooter />
     </div>
   );
 };

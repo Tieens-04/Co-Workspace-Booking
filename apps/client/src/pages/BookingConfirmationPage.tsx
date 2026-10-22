@@ -4,10 +4,16 @@ import { BookingResult } from '../types/booking';
 import { formatCurrency } from '../utils/format';
 import { AuthContext } from '../context/auth-context-base';
 import { isValidBookingResult, sanitizeHistoryState } from '../utils/history';
-import { AppHeader } from '../layouts/AppHeader';
-import { AppFooter } from '../layouts/AppFooter';
-import styles from './BookingConfirmationPage.module.css';
-import { CheckCircle2, Copy, Check, Info } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Banknote, Info } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState } from '../components/common/EmptyState';
+import { StatusBadge } from '../components/common/StatusBadge';
+import { DetailList, DetailRow } from '../components/booking/DetailList';
+import { Notice } from '../components/booking/Notice';
+import { CopyCodeButton } from '../components/booking/CopyCodeButton';
+import { BookingTimeRange } from '../components/booking/BookingTimeRange';
+import { SuccessMark } from '../components/motion/SuccessMark';
 
 export const BookingConfirmationPage: React.FC = () => {
   const location = useLocation();
@@ -15,7 +21,6 @@ export const BookingConfirmationPage: React.FC = () => {
   const isAuthenticated = auth ? auth.isAuthenticated : false;
   const principal = auth ? auth.principal : null;
   const isLoading = auth ? auth.isLoading : false;
-  const [copied, setCopied] = useState(false);
 
   const [snapshot] = useState<{
     booking: BookingResult;
@@ -78,192 +83,234 @@ export const BookingConfirmationPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div className={styles.pageWrapper}>
-        <AppHeader />
-        <main className={`page-container confirmation-page-container ${styles.container}`}>
-          <div className="loading-container" style={{ padding: '4rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-            Đang tải...
-          </div>
-        </main>
-        <AppFooter />
+      <div className="container-page py-10 md:py-14">
+        <div className="mx-auto grid max-w-3xl gap-4" role="status" aria-busy="true">
+          <p className="text-sm text-muted-foreground">Đang tải...</p>
+          <Skeleton className="h-10 w-2/3" />
+          <Skeleton className="h-48 w-full rounded-xl" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className={styles.pageWrapper}>
-      <AppHeader />
-
-      <main className={`page-container confirmation-page-container ${styles.container}`}>
-      {!isValidBooking || !booking ? (
-        <section
-          className="card error-state-card confirmation-empty-card"
-          role="alert"
-          data-testid="confirmation-empty-state"
-        >
-          <div className="state-icon" aria-hidden="true" style={{ display: 'flex', justifyContent: 'center' }}>
-            <Info size={36} color="var(--color-primary)" />
-          </div>
-          <h2 className="error-title">Không tìm thấy thông tin đặt phòng</h2>
-          <p className="error-description">
-            Trang xác nhận không có dữ liệu đặt phòng hợp lệ hoặc phiên làm việc đã kết thúc. Vui
-            lòng kiểm tra lại thông tin và thực hiện đặt chỗ mới.
-          </p>
-          <div className="action-row" style={{ justifyContent: 'center' }}>
-            <Link to="/" className="btn btn-primary" data-testid="confirmation-back-home-btn">
-              Về danh sách phòng
-            </Link>
-          </div>
-        </section>
-      ) : (
-        <article className={`card confirmation-card ${styles.ticketCard}`} data-testid="booking-confirmation-view">
-          <div className={`confirmation-header-banner ${styles.ticketHeader}`} role="status">
-            <div className={styles.successIconBadge} aria-hidden="true">
-              <CheckCircle2 size={28} />
-            </div>
-            <h2 className={`confirmation-title ${styles.ticketTitle}`}>Đặt không gian làm việc thành công!</h2>
-            <p className={`confirmation-subtitle ${styles.ticketSubtitle}`}>
-              Yêu cầu đặt phòng của bạn đã được hệ thống tiếp nhận và xác nhận giữ chỗ.
-            </p>
-          </div>
-
-          <div className={`confirmation-code-wrapper ${styles.codeBox}`}>
-            <div className={styles.codeLabelCol}>
-              <span className={`confirmation-code-label ${styles.codeLabel}`}>MÃ ĐẶT PHÒNG CỦA BẠN</span>
-              <span
-                className={`confirmation-code-value ${styles.codeValue}`}
-                data-testid="booking-confirmation-code"
-                data-booking-code={booking.bookingCode}
-              >
-                <strong data-testid="booking-success-code">{booking.bookingCode}</strong>
-              </span>
-            </div>
-            <button
-              type="button"
-              className={styles.copyBtn}
-              onClick={() => {
-                navigator.clipboard.writeText(booking.bookingCode);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }}
-              aria-label="Sao chép mã đặt phòng"
+    <div className="container-page py-10 md:py-16">
+      <div className="mx-auto max-w-5xl">
+        {!isValidBooking || !booking ? (
+          <EmptyState
+            role="alert"
+            data-testid="confirmation-empty-state"
+            icon={Info}
+            className="mx-auto max-w-3xl"
+            title="Không tìm thấy thông tin đặt phòng"
+            description={
+              <>
+                Trang xác nhận không có dữ liệu đặt phòng hợp lệ hoặc phiên làm việc đã kết thúc.
+                Vui lòng kiểm tra lại thông tin và thực hiện đặt chỗ mới. Nếu bạn vừa đặt phòng, đơn
+                vẫn được lưu trong lịch sử đặt phòng của bạn.
+              </>
+            }
+            action={
+              <div className="flex flex-wrap gap-2">
+                <Button asChild size="sm">
+                  <Link to="/bookings" data-testid="confirmation-fallback-history-btn">
+                    Xem lịch sử đặt phòng
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/rooms" data-testid="confirmation-back-home-btn">
+                    Về danh sách phòng
+                  </Link>
+                </Button>
+              </div>
+            }
+          />
+        ) : (
+          <article className="grid gap-10 animate-rise" data-testid="booking-confirmation-view">
+            <header
+              className="grid justify-items-start gap-4 border-b border-foreground pb-8"
+              role="status"
             >
-              {copied ? (
-                <>
-                  <Check size={14} color="var(--color-success)" />
-                  <span style={{ color: 'var(--color-success)' }}>Đã chép</span>
-                </>
-              ) : (
-                <>
-                  <Copy size={14} />
-                  <span>Sao chép</span>
-                </>
-              )}
-            </button>
-          </div>
+              <SuccessMark />
+              <h1 className="max-w-[20ch] text-display-lg font-bold">
+                Đặt không gian làm việc thành công!
+              </h1>
+              <p className="max-w-[60ch] text-[0.9375rem] text-muted-foreground">
+                Yêu cầu đặt phòng của bạn đã được hệ thống tiếp nhận và xác nhận giữ chỗ.
+              </p>
+            </header>
 
-          <div className="confirmation-details-card">
-            <div className="confirmation-detail-row">
-              <span className="detail-label">Phòng làm việc:</span>
-              <strong className="detail-value" data-testid="booking-confirmation-room">
-                {booking.room.name}
-              </strong>
-            </div>
-
-            <div className="confirmation-detail-row">
-              <span className="detail-label">Thời gian đặt chỗ:</span>
-              <span className="detail-value" data-testid="booking-confirmation-time">
-                {new Date(booking.startTime).toLocaleString('vi-VN', {
-                  timeZone: 'Asia/Ho_Chi_Minh',
-                })}{' '}
-                –{' '}
-                {new Date(booking.endTime).toLocaleString('vi-VN', {
-                  timeZone: 'Asia/Ho_Chi_Minh',
-                })}
-              </span>
-            </div>
-
-            <div className="confirmation-detail-row">
-              <span className="detail-label">Ghi chú:</span>
-              <span className="detail-value" data-testid="booking-confirmation-note">
-                {typeof booking.note === 'string' && booking.note.trim() !== ''
-                  ? booking.note.trim()
-                  : 'Không có'}
-              </span>
-            </div>
-
-            <div className="confirmation-detail-row">
-              <span className="detail-label">Trạng thái đặt chỗ:</span>
-              <span className="detail-value" data-testid="booking-confirmation-status">
-                <span className="badge badge-available">{booking.status}</span>
-              </span>
-            </div>
-
-            <div className="confirmation-detail-row">
-              <span className="detail-label">Trạng thái thanh toán:</span>
-              <span className="detail-value" data-testid="booking-confirmation-payment">
-                <span className="badge badge-unpaid">{booking.paymentStatus}</span>
-              </span>
-            </div>
-
-            <div className="confirmation-detail-row total-row">
-              <span className="detail-label">Tổng tiền (do hệ thống tính):</span>
-              <span
-                className="detail-value price-highlight"
-                data-testid="booking-confirmation-total"
+            <div className="grid gap-8 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-start lg:gap-12">
+              <section
+                className="grid gap-6 rounded-xl border bg-card p-6 text-card-foreground shadow-soft sm:p-8"
+                aria-label="Thông tin đặt phòng"
               >
-                <strong data-testid="booking-success-total">
-                  {formatCurrency(booking.totalAmount)}
-                </strong>
-              </span>
+                <div className="grid gap-4 border-b border-dashed border-input pb-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <div className="grid min-w-0 gap-1.5">
+                    <p className="eyebrow">Mã đặt phòng</p>
+                    <p
+                      className="text-[1.75rem] leading-tight font-bold tracking-[0.01em] break-all tabular-nums sm:text-[2.25rem]"
+                      data-testid="booking-confirmation-code"
+                      data-booking-code={booking.bookingCode}
+                    >
+                      <strong className="font-bold" data-testid="booking-success-code">
+                        {booking.bookingCode}
+                      </strong>
+                    </p>
+                  </div>
+                  <CopyCodeButton code={booking.bookingCode} className="justify-self-start" />
+                </div>
+
+                <DetailList className="border-t-0">
+                  <DetailRow label="Phòng làm việc">
+                    <strong className="font-semibold" data-testid="booking-confirmation-room">
+                      {booking.room.name}
+                    </strong>
+                  </DetailRow>
+
+                  <DetailRow label="Thời gian đặt chỗ">
+                    <span data-testid="booking-confirmation-time">
+                      <BookingTimeRange
+                        startTime={booking.startTime}
+                        endTime={booking.endTime}
+                        showWeekday
+                      />{' '}
+                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                        (Giờ Việt Nam)
+                      </span>
+                    </span>
+                  </DetailRow>
+
+                  <DetailRow label="Ghi chú" valueClassName="font-normal">
+                    <span className="whitespace-pre-line" data-testid="booking-confirmation-note">
+                      {typeof booking.note === 'string' && booking.note.trim() !== ''
+                        ? booking.note.trim()
+                        : 'Không có'}
+                    </span>
+                  </DetailRow>
+
+                  <DetailRow label="Trạng thái đặt chỗ">
+                    <StatusWithCode
+                      kind="booking"
+                      status={booking.status}
+                      testId="booking-confirmation-status"
+                    />
+                  </DetailRow>
+
+                  <DetailRow label="Trạng thái thanh toán">
+                    <StatusWithCode
+                      kind="payment"
+                      status={booking.paymentStatus}
+                      testId="booking-confirmation-payment"
+                    />
+                  </DetailRow>
+
+                  <DetailRow
+                    label={
+                      <span className="font-semibold text-foreground">
+                        Tổng tiền (do hệ thống tính)
+                      </span>
+                    }
+                    className="py-4"
+                  >
+                    <span data-testid="booking-confirmation-total">
+                      <strong
+                        className="text-[1.75rem] leading-tight font-bold tabular-nums"
+                        data-testid="booking-success-total"
+                      >
+                        {formatCurrency(booking.totalAmount)}
+                      </strong>
+                    </span>
+                  </DetailRow>
+                </DetailList>
+              </section>
+
+              <aside className="grid gap-8" aria-labelledby="confirmation-next-heading">
+                <section className="grid gap-4">
+                  <h2 id="confirmation-next-heading" className="text-h3 font-bold">
+                    Bước tiếp theo
+                  </h2>
+                  {/* AC2: Hướng dẫn thanh toán tại quầy */}
+                  <Notice
+                    tone="info"
+                    icon={Banknote}
+                    role="note"
+                    data-testid="booking-payment-instruction"
+                  >
+                    <p className="font-semibold">Hướng dẫn thanh toán tại quầy:</p>
+                    <p className="mt-1 text-muted-foreground">
+                      Đơn đặt phòng của bạn đang ở trạng thái{' '}
+                      <strong className="font-semibold text-foreground">
+                        {booking.paymentStatus}
+                      </strong>
+                      . Vui lòng xuất trình mã đặt phòng{' '}
+                      <strong className="font-semibold text-foreground tabular-nums">
+                        {booking.bookingCode}
+                      </strong>{' '}
+                      và hoàn tất{' '}
+                      <strong className="font-semibold text-foreground">thanh toán tại quầy</strong>{' '}
+                      khi đến nhận phòng tại Co-Space Working.
+                    </p>
+                  </Notice>
+                </section>
+
+                <nav className="grid gap-2" aria-label="Thao tác tiếp theo">
+                  {booking.id && (
+                    <Button asChild className="w-full justify-between">
+                      <Link
+                        to={`/bookings/${booking.id}`}
+                        data-testid="confirmation-view-detail-btn"
+                      >
+                        Xem chi tiết đặt phòng
+                        <ArrowRight aria-hidden="true" />
+                      </Link>
+                    </Button>
+                  )}
+                  <Button asChild variant="outline" className="w-full justify-between">
+                    <Link to="/bookings" data-testid="confirmation-history-btn">
+                      Lịch sử đặt phòng
+                      <ArrowRight aria-hidden="true" />
+                    </Link>
+                  </Button>
+                  <div className="mt-2 flex flex-wrap gap-x-6 gap-y-2 border-t pt-4 text-sm">
+                    {booking.room?.id && (
+                      <Link
+                        to={`/rooms/${booking.room.id}`}
+                        className="inline-flex min-h-11 items-center gap-1.5 text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline"
+                        data-testid="confirmation-back-room-btn"
+                      >
+                        <ArrowLeft aria-hidden="true" className="size-4" />
+                        Quay lại trang phòng
+                      </Link>
+                    )}
+                    <Link
+                      to="/rooms"
+                      className="inline-flex min-h-11 items-center text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline"
+                      data-testid="confirmation-back-home-btn"
+                    >
+                      Về danh sách phòng
+                    </Link>
+                  </div>
+                </nav>
+              </aside>
             </div>
-          </div>
-
-          {/* AC2: Hướng dẫn thanh toán tại quầy */}
-          <div
-            className="booking-payment-instruction-box"
-            role="note"
-            data-testid="booking-payment-instruction"
-          >
-            <div className="payment-instruction-title">💵 Hướng dẫn thanh toán tại quầy:</div>
-            <p className="payment-instruction-text">
-              Đơn đặt phòng của bạn đang ở trạng thái <strong>{booking.paymentStatus}</strong>. Vui
-              lòng xuất trình mã đặt phòng <strong>{booking.bookingCode}</strong> và hoàn tất{' '}
-              <strong>thanh toán tại quầy</strong> khi đến nhận phòng tại Co-Space Working.
-            </p>
-          </div>
-
-          <div className="confirmation-actions">
-            {booking.id && (
-              <Link
-                to={`/bookings/${booking.id}`}
-                className="btn btn-outline"
-                data-testid="confirmation-view-detail-btn"
-              >
-                Xem chi tiết đặt phòng
-              </Link>
-            )}
-            <Link to="/bookings" className="btn btn-outline" data-testid="confirmation-history-btn">
-              Lịch sử đặt phòng
-            </Link>
-            {booking.room?.id && (
-              <Link
-                to={`/rooms/${booking.room.id}`}
-                className="btn btn-outline"
-                data-testid="confirmation-back-room-btn"
-              >
-                ← Quay lại trang phòng
-              </Link>
-            )}
-            <Link to="/" className="btn btn-primary" data-testid="confirmation-back-home-btn">
-              Về danh sách phòng
-            </Link>
-          </div>
-        </article>
-      )}
-      </main>
-
-      <AppFooter />
+          </article>
+        )}
+      </div>
     </div>
   );
 };
+
+/** Vietnamese status badge plus the raw status code staff see at the counter. */
+const StatusWithCode: React.FC<{ kind: 'booking' | 'payment'; status: string; testId: string }> = ({
+  kind,
+  status,
+  testId,
+}) => (
+  <span className="inline-flex flex-wrap items-center gap-2" data-testid={testId}>
+    <StatusBadge kind={kind} status={status} />
+    <span className="text-xs font-normal tracking-wide text-muted-foreground tabular-nums">
+      {status}
+    </span>
+  </span>
+);

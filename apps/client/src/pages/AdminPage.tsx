@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Link } from 'react-router-dom';
 import { roomApi } from '../services/room.api';
 import { adminRoomApi } from '../services/admin-room.api';
 import { RoomListItem, Amenity, RoomStatus } from '../types/room';
@@ -13,10 +12,16 @@ import {
   UpdateRoomPayload,
 } from '../types/admin-room';
 
-import { AppHeader } from '../layouts/AppHeader';
-import { AppFooter } from '../layouts/AppFooter';
-import styles from './Admin.module.css';
-import { LayoutDashboard, DoorOpen, BookOpen, Plus } from 'lucide-react';
+import { DoorOpen, Plus } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { EmptyState, ErrorState } from '@/components/common/EmptyState';
+import { PageHeader } from '@/components/common/PageHeader';
+import { Pagination } from '@/components/common/Pagination';
+import { cn } from '@/lib/utils';
+import { RoomTable } from '../components/admin/rooms/RoomTable';
+import { RoomForm } from '../components/admin/rooms/RoomForm';
+import { RoomNotice } from '../components/admin/rooms/RoomNotice';
 
 const initialFormValues: AdminRoomFormValues = {
   name: '',
@@ -29,7 +34,6 @@ const initialFormValues: AdminRoomFormValues = {
 };
 
 export const AdminPage: React.FC = () => {
-
   // Room list state
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [availableAmenities, setAvailableAmenities] = useState<Amenity[]>([]);
@@ -649,711 +653,160 @@ export const AdminPage: React.FC = () => {
     setFrozenUpdatePayload(null);
   };
 
+  const handleStatusChange = (val: RoomStatus) => {
+    setFormData((prev) => ({ ...prev, status: val }));
+    if (futureBookingWarning) {
+      setFutureBookingWarning(null);
+      setFrozenUpdatePayload(null);
+    }
+  };
+
+  const showRoomList = !isLoadingRooms && !loadError;
+
   return (
-    <div className={styles.pageWrapper}>
-      <AppHeader />
-
-      <main className={`page-container admin-page-container ${styles.container}`}>
-        {/* Header Section & Sub-navigation */}
-        <div className={styles.headerSection}>
-          <div className={styles.titleGroup}>
-            <h1 className={styles.pageTitle}>
-              <DoorOpen size={24} style={{ color: 'var(--color-primary)' }} />
-              Quản Lý Phòng Làm Việc
-            </h1>
-            <p className={styles.pageSubtitle}>
-              Thêm mới, cập nhật thông tin tiện ích, giá thuê và bảo trì phòng
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
-            <nav className={styles.subNav} aria-label="Điều hướng quản trị">
-              <Link
-                to="/admin/dashboard"
-                className={styles.subNavLink}
-                data-testid="admin-dashboard-link"
-              >
-                <LayoutDashboard size={14} />
-                <span>Tổng quan</span>
-              </Link>
-              <Link
-                to="/admin"
-                className={`${styles.subNavLink} ${styles.subNavLinkActive}`}
-              >
-                <DoorOpen size={14} />
-                <span>Quản lý phòng</span>
-              </Link>
-              <Link
-                to="/admin/bookings"
-                className={styles.subNavLink}
-                data-testid="admin-manage-bookings-link"
-              >
-                <BookOpen size={14} />
-                <span>Quản lý đặt phòng</span>
-              </Link>
-            </nav>
-
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={(event) => handleOpenCreate(event.currentTarget)}
-              data-testid="admin-add-room-btn"
-              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.375rem' }}
-            >
-              <Plus size={16} /> Thêm phòng mới
-            </button>
-          </div>
-        </div>
-
-      {/* Success Notification */}
-      {successMessage && (
-        <div className="alert alert-success admin-success-banner" role="status">
-          <span>{successMessage}</span>
-          <button
+    <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:gap-8">
+      <PageHeader
+        eyebrow="Phòng"
+        title="Quản Lý Phòng Làm Việc"
+        description="Thêm mới, cập nhật thông tin tiện ích, giá thuê và bảo trì phòng"
+        className="gap-4 border-border pb-5"
+        actions={
+          <Button
             type="button"
-            className="btn-link"
-            style={{ marginLeft: 'auto', fontWeight: 'bold' }}
-            onClick={() => setSuccessMessage(null)}
-            aria-label="Đóng thông báo thành công"
+            onClick={(event) => handleOpenCreate(event.currentTarget)}
+            data-testid="admin-add-room-btn"
           >
-            ✕
-          </button>
-        </div>
+            <Plus aria-hidden="true" />
+            Thêm phòng mới
+          </Button>
+        }
+      />
+
+      {successMessage && (
+        <RoomNotice
+          tone="success"
+          role="status"
+          dismissLabel="Đóng thông báo thành công"
+          onDismiss={() => setSuccessMessage(null)}
+        >
+          <span>{successMessage}</span>
+        </RoomNotice>
       )}
 
       {detailLoadError && (
-        <div className="alert alert-danger admin-error-box" role="alert">
-          <span>{detailLoadError}</span>
-          <button
-            type="button"
-            className="btn-link"
-            onClick={() => setDetailLoadError(null)}
-            aria-label="Đóng thông báo lỗi"
-          >
-            ✕
-          </button>
-        </div>
-      )}
-
-      {/* Room List Section */}
-      <section className="card admin-table-card">
-        <div className="results-header-row">
-          <h2 className="results-title">
-            Danh sách phòng làm việc <span className="results-count">({totalRooms} phòng)</span>
-          </h2>
-        </div>
-
-        {/* Loading state */}
-        {isLoadingRooms && (
-          <div className="loading-container" data-testid="admin-loading-state">
-            <p>Đang tải danh sách phòng...</p>
-          </div>
-        )}
-
-        {/* Error state */}
-        {!isLoadingRooms && loadError && (
-          <div className="alert alert-danger admin-error-box" role="alert">
-            <p>{loadError}</p>
-            <button
-              type="button"
-              className="btn btn-outline"
-              onClick={() => fetchRooms(currentPage)}
-            >
-              Thử lại
-            </button>
-          </div>
-        )}
-
-        {/* Empty state */}
-        {!isLoadingRooms && !loadError && rooms.length === 0 && (
-          <div className="empty-state-card" data-testid="admin-empty-state">
-            <div className="state-icon">🏢</div>
-            <h3 className="empty-title">Chưa có phòng nào</h3>
-            <p className="empty-description">
-              Hệ thống hiện tại chưa có phòng nào. Nhấn vào nút "+ Thêm phòng mới" ở trên để tạo
-              phòng đầu tiên.
-            </p>
-          </div>
-        )}
-
-        {/* Room Table / List */}
-        {!isLoadingRooms && !loadError && rooms.length > 0 && (
-          <div className="table-responsive">
-            <table className="admin-room-table" data-testid="admin-room-table">
-              <thead>
-                <tr>
-                  <th>Ảnh</th>
-                  <th>Tên phòng</th>
-                  <th>Sức chứa</th>
-                  <th>Đơn giá / giờ</th>
-                  <th>Trạng thái</th>
-                  <th>Tiện ích</th>
-                  <th style={{ textAlign: 'right' }}>Thao tác</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rooms.map((room) => (
-                  <tr key={room.id} data-testid={`admin-room-row-${room.id}`}>
-                    <td className="admin-room-img-col">
-                      {room.coverImage ? (
-                        <img src={room.coverImage} alt={room.name} className="admin-room-thumb" />
-                      ) : (
-                        <div className="admin-room-no-img">Không ảnh</div>
-                      )}
-                    </td>
-                    <td className="admin-room-name-col">
-                      <strong>{room.name}</strong>
-                    </td>
-                    <td>{room.capacity} người</td>
-                    <td className="admin-price-text">
-                      {Number(room.pricePerHour).toLocaleString('vi-VN')} đ/h
-                    </td>
-                    <td>
-                      <span
-                        className={`badge ${
-                          room.status === 'AVAILABLE' ? 'badge-available' : 'badge-maintenance'
-                        }`}
-                      >
-                        {room.status}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="admin-amenities-tags">
-                        {room.amenities.length > 0 ? (
-                          room.amenities.map((am) => (
-                            <span key={am.id} className="amenity-pill">
-                              {am.name}
-                            </span>
-                          ))
-                        ) : (
-                          <span style={{ color: 'var(--color-text-muted)' }}>—</span>
-                        )}
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button
-                        type="button"
-                        className="btn btn-outline btn-sm"
-                        onClick={(event) => handleOpenEdit(room.id, event.currentTarget)}
-                        disabled={loadingDetailId === room.id}
-                        data-testid={`admin-edit-btn-${room.id}`}
-                      >
-                        {loadingDetailId === room.id ? 'Đang tải...' : 'Sửa'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Pagination controls */}
-        {!isLoadingRooms && !loadError && totalPages > 1 && (
-          <div className="pagination-container" data-testid="admin-pagination">
-            <button
-              type="button"
-              className="btn btn-outline pagination-btn"
-              disabled={currentPage <= 1}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            >
-              ← Trang trước
-            </button>
-            <span className="pagination-info">
-              Trang {currentPage} / {totalPages}
-            </span>
-            <button
-              type="button"
-              className="btn btn-outline pagination-btn"
-              disabled={currentPage >= totalPages}
-              onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
-            >
-              Trang sau →
-            </button>
-          </div>
-        )}
-      </section>
-
-      {/* Shared inline Create / Edit Form */}
-      {isFormOpen && (
-        <section
-          className="card admin-room-form-card"
-          data-testid="admin-room-form"
-          aria-labelledby="admin-room-form-title"
+        <RoomNotice
+          tone="error"
+          role="alert"
+          dismissLabel="Đóng thông báo lỗi"
+          onDismiss={() => setDetailLoadError(null)}
         >
-          <div className="admin-form-header">
-            <h2 id="admin-room-form-title" ref={formHeadingRef} tabIndex={-1}>
-              {editingRoomId ? 'Chỉnh Sửa Phòng' : 'Thêm Phòng Mới'}
+          <span>{detailLoadError}</span>
+        </RoomNotice>
+      )}
+
+      <div
+        className={cn(
+          'grid grid-cols-[minmax(0,1fr)] items-start gap-6',
+          isFormOpen && 'xl:grid-cols-[minmax(0,1fr)_420px]',
+        )}
+      >
+        {/* Room list */}
+        <section
+          className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
+          aria-labelledby="admin-room-list-title"
+        >
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 id="admin-room-list-title" className="text-h3">
+              Danh sách phòng làm việc{' '}
+              <span className="text-sm font-medium text-muted-foreground tabular-nums">
+                ({totalRooms} phòng)
+              </span>
             </h2>
-            <button
-              type="button"
-              className="btn-close"
-              onClick={handleCloseForm}
-              disabled={isSubmitting || isUploadingImages}
-              aria-label="Đóng biểu mẫu phòng"
-            >
-              ✕
-            </button>
           </div>
 
-          {/* Status Control for Edit / Notice for Create */}
-          {editingRoomId ? (
-            <div className="form-group admin-status-control-group">
-              <label htmlFor="room-status-select" className="form-label">
-                Trạng thái phòng
-              </label>
-              <select
-                id="room-status-select"
-                name="status"
-                className="form-control"
-                value={formData.status}
-                onChange={(e) => {
-                  const val = e.target.value as RoomStatus;
-                  setFormData((prev) => ({ ...prev, status: val }));
-                  if (futureBookingWarning) {
-                    setFutureBookingWarning(null);
-                    setFrozenUpdatePayload(null);
-                  }
-                }}
-                disabled={isSubmitting || isUploadingImages || isConfirmingMaintenance}
-                data-testid="admin-room-status-select"
-              >
-                <option value="AVAILABLE">AVAILABLE (Sẵn sàng)</option>
-                <option value="MAINTENANCE">MAINTENANCE (Bảo trì)</option>
-              </select>
-            </div>
-          ) : (
-            <div className="admin-status-notice">
-              <p>
-                <strong>Trạng thái ban đầu:</strong>{' '}
-                <span className="badge badge-available">AVAILABLE</span>{' '}
-                <small style={{ color: 'var(--color-text-muted)' }}>(Mặc định cho phòng mới)</small>
-              </p>
-            </div>
-          )}
-
-          {/* Future Booking Warning Dialog / Panel (AC1) */}
-          {futureBookingWarning && (
+          {isLoadingRooms && (
             <div
-              className="alert alert-warning admin-future-booking-warning"
-              role="alertdialog"
-              aria-labelledby="future-booking-warning-title"
-              aria-describedby="future-booking-warning-desc"
-              data-testid="admin-future-booking-warning"
+              className="grid gap-3 rounded-xl border bg-card p-4"
+              data-testid="admin-loading-state"
+              aria-busy="true"
             >
-              <h3 id="future-booking-warning-title" className="warning-title">
-                ⚠️ Cảnh báo: Phòng có {futureBookingWarning.futureBookingCount} booking sắp tới
-              </h3>
-              <p id="future-booking-warning-desc" className="warning-desc">
-                Chuyển phòng sang trạng thái <strong>Bảo trì</strong> sẽ{' '}
-                <strong>không tự động hủy</strong> các booking này. Quản trị viên cần liên hệ khách
-                hàng và xử lý hoặc hủy thủ công các booking dưới đây:
-              </p>
-              <ul className="future-booking-list" data-testid="admin-future-booking-list">
-                {futureBookingWarning.bookings.map((booking) => (
-                  <li key={booking.bookingCode} className="future-booking-item">
-                    <strong>{booking.bookingCode}</strong>:{' '}
-                    {new Date(booking.startTime).toLocaleString('vi-VN')} –{' '}
-                    {new Date(booking.endTime).toLocaleString('vi-VN')}
-                  </li>
-                ))}
-              </ul>
-              <div className="warning-actions">
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={handleDismissWarning}
-                  disabled={isConfirmingMaintenance}
-                  data-testid="admin-warning-cancel-btn"
-                >
-                  Quay lại
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-danger btn-sm"
-                  onClick={handleConfirmMaintenance}
-                  disabled={isConfirmingMaintenance}
-                  data-testid="admin-warning-confirm-btn"
-                >
-                  {isConfirmingMaintenance ? 'Đang chuyển...' : 'Vẫn chuyển sang bảo trì'}
-                </button>
-              </div>
+              <p className="text-sm text-muted-foreground">Đang tải danh sách phòng...</p>
+              {[0, 1, 2].map((row) => (
+                <div key={row} className="flex items-center gap-4">
+                  <Skeleton className="h-11 w-16 rounded-md" />
+                  <Skeleton className="h-4 flex-1" />
+                  <Skeleton className="hidden h-4 w-24 sm:block" />
+                  <Skeleton className="h-8 w-16 rounded-md" />
+                </div>
+              ))}
             </div>
           )}
 
-          {/* General form error banner */}
-          {formErrors.general && (
-            <div className="alert alert-danger" role="alert" data-testid="form-general-error">
-              {formErrors.general}
-            </div>
+          {!isLoadingRooms && loadError && (
+            <ErrorState title={loadError} onRetry={() => fetchRooms(currentPage)} />
           )}
 
-          <form onSubmit={handleSubmit} noValidate aria-busy={isSubmitting || isUploadingImages}>
-            {/* Name */}
-            <div className="form-group">
-              <label htmlFor="room-name" className="form-label">
-                Tên phòng <span style={{ color: 'var(--color-error)' }}>*</span>
-              </label>
-              <input
-                id="room-name"
-                type="text"
-                name="name"
-                className={`form-control ${formErrors.name ? 'has-error' : ''}`}
-                value={formData.name}
-                onChange={handleInputChange}
-                placeholder="Ví dụ: Phòng Họp Sáng Tạo A"
-                maxLength={191}
-                disabled={isSubmitting || isUploadingImages}
-                aria-invalid={Boolean(formErrors.name)}
-                aria-describedby={formErrors.name ? 'error-name' : undefined}
-              />
-              {formErrors.name && (
-                <p id="error-name" className="field-error" data-testid="error-name">
-                  {formErrors.name}
-                </p>
-              )}
-            </div>
+          {showRoomList && rooms.length === 0 && (
+            <EmptyState
+              icon={DoorOpen}
+              title="Chưa có phòng nào"
+              description='Hệ thống hiện tại chưa có phòng nào. Nhấn vào nút "+ Thêm phòng mới" ở trên để tạo phòng đầu tiên.'
+              data-testid="admin-empty-state"
+            />
+          )}
 
-            {/* Description */}
-            <div className="form-group">
-              <label htmlFor="room-description" className="form-label">
-                Mô tả phòng
-              </label>
-              <textarea
-                id="room-description"
-                name="description"
-                className={`form-control ${formErrors.description ? 'has-error' : ''}`}
-                value={formData.description}
-                onChange={handleInputChange}
-                rows={3}
-                placeholder="Mô tả các đặc điểm nổi bật, ánh sáng, thiết bị..."
-                disabled={isSubmitting || isUploadingImages}
-                aria-invalid={Boolean(formErrors.description)}
-                aria-describedby={formErrors.description ? 'error-description' : undefined}
-              />
-              {formErrors.description && (
-                <p id="error-description" className="field-error" data-testid="error-description">
-                  {formErrors.description}
-                </p>
-              )}
-            </div>
+          {showRoomList && rooms.length > 0 && (
+            <RoomTable
+              rooms={rooms}
+              loadingRoomId={loadingDetailId}
+              activeRoomId={isFormOpen ? editingRoomId : null}
+              onEdit={handleOpenEdit}
+            />
+          )}
 
-            {/* Capacity & Price Per Hour */}
-            <div className="admin-form-row">
-              <div className="form-group" style={{ flex: 1 }}>
-                <label htmlFor="room-capacity" className="form-label">
-                  Sức chứa (người) <span style={{ color: 'var(--color-error)' }}>*</span>
-                </label>
-                <input
-                  id="room-capacity"
-                  type="number"
-                  name="capacity"
-                  min="1"
-                  className={`form-control ${formErrors.capacity ? 'has-error' : ''}`}
-                  value={formData.capacity}
-                  onChange={handleInputChange}
-                  placeholder="Ví dụ: 8"
-                  disabled={isSubmitting || isUploadingImages}
-                  aria-invalid={Boolean(formErrors.capacity)}
-                  aria-describedby={formErrors.capacity ? 'error-capacity' : undefined}
-                />
-                {formErrors.capacity && (
-                  <p id="error-capacity" className="field-error" data-testid="error-capacity">
-                    {formErrors.capacity}
-                  </p>
-                )}
-              </div>
-
-              <div className="form-group" style={{ flex: 1 }}>
-                <label htmlFor="room-price" className="form-label">
-                  Đơn giá mỗi giờ (VNĐ) <span style={{ color: 'var(--color-error)' }}>*</span>
-                </label>
-                <input
-                  id="room-price"
-                  type="text"
-                  name="pricePerHour"
-                  className={`form-control ${formErrors.pricePerHour ? 'has-error' : ''}`}
-                  value={formData.pricePerHour}
-                  onChange={handleInputChange}
-                  placeholder="Ví dụ: 150000.00"
-                  disabled={isSubmitting || isUploadingImages}
-                  aria-invalid={Boolean(formErrors.pricePerHour)}
-                  aria-describedby={formErrors.pricePerHour ? 'error-pricePerHour' : undefined}
-                />
-                {formErrors.pricePerHour && (
-                  <p
-                    id="error-pricePerHour"
-                    className="field-error"
-                    data-testid="error-pricePerHour"
-                  >
-                    {formErrors.pricePerHour}
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Amenities Checklist */}
-            <div className="form-group">
-              <span id="room-amenities-label" className="form-label">
-                Tiện ích phòng
-              </span>
-              <div
-                className="admin-amenities-checklist"
-                role="group"
-                aria-labelledby="room-amenities-label"
-                aria-busy={isLoadingAmenities}
-                aria-describedby={formErrors.amenityIds ? 'error-amenityIds' : undefined}
-              >
-                {isLoadingAmenities ? (
-                  <p className="admin-amenities-message">Đang tải danh sách tiện ích...</p>
-                ) : amenitiesError ? (
-                  <div className="admin-amenity-error-box" role="alert">
-                    <p>{amenitiesError}</p>
-                    <button
-                      type="button"
-                      className="btn btn-outline btn-sm"
-                      onClick={fetchAmenities}
-                    >
-                      Thử tải lại
-                    </button>
-                  </div>
-                ) : availableAmenities.length > 0 ? (
-                  availableAmenities.map((amenity) => (
-                    <label
-                      key={amenity.id}
-                      className="amenity-checkbox-item"
-                      data-testid={`amenity-item-${amenity.id}`}
-                    >
-                      <input
-                        type="checkbox"
-                        className="amenity-checkbox"
-                        checked={formData.amenityIds.includes(amenity.id)}
-                        onChange={() => handleAmenityToggle(amenity.id)}
-                        disabled={
-                          isSubmitting ||
-                          isUploadingImages ||
-                          isLoadingAmenities ||
-                          Boolean(amenitiesError)
-                        }
-                      />
-                      <span>{amenity.name}</span>
-                    </label>
-                  ))
-                ) : (
-                  <p className="admin-amenities-message">Chưa có tiện ích nào trong hệ thống.</p>
-                )}
-              </div>
-              {formErrors.amenityIds && (
-                <p id="error-amenityIds" className="field-error" data-testid="error-amenityIds">
-                  {formErrors.amenityIds}
-                </p>
-              )}
-            </div>
-
-            {/* Image URLs Dynamic List */}
-            <div className="form-group">
-              <div className="admin-images-header">
-                <span className="form-label" style={{ margin: 0 }}>
-                  Danh sách URL ảnh
-                </span>
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  onClick={handleAddImage}
-                  disabled={isSubmitting || isUploadingImages}
-                  data-testid="admin-add-image-btn"
-                >
-                  + Thêm URL ảnh
-                </button>
-              </div>
-              <small
-                style={{
-                  display: 'block',
-                  color: 'var(--color-text-muted)',
-                  marginBottom: '0.75rem',
-                }}
-              >
-                Nhập URL ảnh (HTTP/HTTPS). Nếu có ảnh, phải chọn đúng 1 ảnh chính.
-              </small>
-
-              {formErrors.images && (
-                <p
-                  id="error-images"
-                  className="field-error"
-                  style={{ marginBottom: '0.75rem' }}
-                  data-testid="error-images"
-                >
-                  {formErrors.images}
-                </p>
-              )}
-
-              <div className="admin-images-list">
-                {formData.images.map((img, idx) => (
-                  <div key={idx} className="admin-image-row" data-testid={`admin-image-row-${idx}`}>
-                    <label htmlFor={`room-image-url-${idx}`} className="sr-only">
-                      URL ảnh {idx + 1}
-                    </label>
-                    <input
-                      id={`room-image-url-${idx}`}
-                      type="url"
-                      className="form-control admin-image-url-input"
-                      placeholder="https://example.com/image.jpg"
-                      value={img.imageUrl}
-                      onChange={(e) => handleImageUrlChange(idx, e.target.value)}
-                      disabled={isSubmitting || isUploadingImages}
-                      maxLength={500}
-                      aria-invalid={Boolean(formErrors.images)}
-                      aria-describedby={formErrors.images ? 'error-images' : undefined}
-                      data-testid={`admin-image-input-${idx}`}
-                    />
-                    <label className="admin-primary-radio-label">
-                      <input
-                        type="radio"
-                        name="primaryImage"
-                        checked={img.isPrimary}
-                        onChange={() => handleSetPrimaryImage(idx)}
-                        disabled={isSubmitting || isUploadingImages}
-                        data-testid={`admin-primary-radio-${idx}`}
-                      />
-                      <span>Ảnh chính</span>
-                    </label>
-                    <button
-                      type="button"
-                      className="btn btn-danger-outline btn-sm"
-                      onClick={() => handleRemoveImage(idx)}
-                      disabled={isSubmitting || isUploadingImages}
-                      data-testid={`admin-remove-image-${idx}`}
-                    >
-                      Xóa
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Direct File Upload Section (Cloudinary) */}
-            <div className="form-group admin-upload-section">
-              <div className="admin-upload-header">
-                <label htmlFor="room-image-files" className="form-label" style={{ margin: 0 }}>
-                  Tải ảnh trực tiếp (Cloudinary)
-                </label>
-              </div>
-              <p className="admin-upload-helptext">
-                Hỗ trợ JPEG, PNG, WebP. Tối đa 10 ảnh, dung lượng tối đa 5MB mỗi ảnh.
-              </p>
-
-              {imageUploadError && (
-                <div
-                  className="alert alert-danger"
-                  role="alert"
-                  id="error-image-upload"
-                  data-testid="image-upload-error"
-                  style={{ marginBottom: '0.75rem' }}
-                >
-                  <span>{imageUploadError}</span>
-                </div>
-              )}
-
-              <div className="admin-file-input-wrapper">
-                <input
-                  id="room-image-files"
-                  type="file"
-                  multiple
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={handleFileSelect}
-                  disabled={isSubmitting || isUploadingImages}
-                  aria-describedby={imageUploadError ? 'error-image-upload' : undefined}
-                  data-testid="admin-room-files-input"
-                  className="admin-file-input"
-                />
-              </div>
-
-              {/* Selected pending files list */}
-              {pendingImageFiles.length > 0 && (
-                <div className="admin-pending-files-list" data-testid="admin-pending-files-list">
-                  <p className="admin-pending-files-count">
-                    Đã chọn {pendingImageFiles.length} file chờ tải lên:
-                  </p>
-                  <ul className="admin-pending-files-items">
-                    {pendingImageFiles.map((file, idx) => (
-                      <li
-                        key={`${file.name}-${idx}`}
-                        className="admin-pending-file-item"
-                        data-testid={`admin-pending-file-${idx}`}
-                      >
-                        <span className="admin-pending-file-name" title={file.name}>
-                          📷 {file.name}
-                        </span>
-                        <span className="admin-pending-file-size">
-                          ({(file.size / 1024 / 1024).toFixed(2)} MB)
-                        </span>
-                        <button
-                          type="button"
-                          className="btn-link admin-remove-file-btn"
-                          onClick={() => handleRemovePendingFile(idx)}
-                          disabled={isSubmitting || isUploadingImages}
-                          aria-label={`Xóa file ${file.name}`}
-                          data-testid={`admin-remove-file-${idx}`}
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Upload loading state indicator */}
-              {isUploadingImages && (
-                <div
-                  className="admin-uploading-indicator"
-                  aria-live="polite"
-                  data-testid="uploading-indicator"
-                >
-                  <span>Đang tải ảnh...</span>
-                </div>
-              )}
-            </div>
-
-            {/* Form Action Buttons */}
-            <div className="admin-form-actions">
-              <button
-                type="button"
-                className="btn btn-outline"
-                onClick={handleCloseForm}
-                disabled={isSubmitting || isUploadingImages || isConfirmingMaintenance}
-              >
-                Hủy
-              </button>
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={
-                  isSubmitting ||
-                  isUploadingImages ||
-                  isConfirmingMaintenance ||
-                  isLoadingAmenities ||
-                  Boolean(amenitiesError)
-                }
-                data-testid="admin-submit-room-btn"
-              >
-                {isUploadingImages
-                  ? 'Đang tải ảnh...'
-                  : isSubmitting
-                    ? 'Đang lưu...'
-                    : imageUploadError && pendingImageFiles.length > 0
-                      ? 'Thử lại tải ảnh'
-                      : editingRoomId
-                        ? 'Lưu thay đổi'
-                        : 'Tạo phòng'}
-              </button>
-            </div>
-          </form>
+          {showRoomList && totalPages > 1 && (
+            <Pagination
+              page={currentPage}
+              totalPages={totalPages}
+              onPageChange={(page) => setCurrentPage(Math.min(totalPages, Math.max(1, page)))}
+              testId="admin-pagination"
+            />
+          )}
         </section>
-      )}
-      </main>
 
-      <AppFooter />
+        {/* Shared inline create / edit form */}
+        {isFormOpen && (
+          <RoomForm
+            isEditing={Boolean(editingRoomId)}
+            headingRef={formHeadingRef}
+            values={formData}
+            errors={formErrors}
+            isSubmitting={isSubmitting}
+            isUploadingImages={isUploadingImages}
+            isConfirmingMaintenance={isConfirmingMaintenance}
+            amenities={availableAmenities}
+            isLoadingAmenities={isLoadingAmenities}
+            amenitiesError={amenitiesError}
+            pendingImageFiles={pendingImageFiles}
+            imageUploadError={imageUploadError}
+            futureBookingWarning={futureBookingWarning}
+            onClose={handleCloseForm}
+            onSubmit={handleSubmit}
+            onInputChange={handleInputChange}
+            onStatusChange={handleStatusChange}
+            onAmenityToggle={handleAmenityToggle}
+            onRetryAmenities={fetchAmenities}
+            onAddImage={handleAddImage}
+            onRemoveImage={handleRemoveImage}
+            onSetPrimaryImage={handleSetPrimaryImage}
+            onImageUrlChange={handleImageUrlChange}
+            onFileSelect={handleFileSelect}
+            onRemovePendingFile={handleRemovePendingFile}
+            onDismissWarning={handleDismissWarning}
+            onConfirmMaintenance={handleConfirmMaintenance}
+          />
+        )}
+      </div>
     </div>
   );
 };

@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { HomePage } from '../pages/HomePage';
+import { RoomsPage } from '../pages/RoomsPage';
+import { PublicLayout } from '../layouts/PublicLayout';
 import { AuthProvider } from '../context/AuthContext';
 import { roomApi } from '../services/room.api';
 import { RoomListItem, Amenity, ApiResponse, GetRoomsResponseData } from '../types/room';
@@ -35,6 +36,16 @@ const mockAmenitiesData: Amenity[] = [
 const LocationProbe = () => {
   const location = useLocation();
   return <output data-testid="location-search">{location.search}</output>;
+};
+
+const DetailStateProbe = () => {
+  const location = useLocation();
+  return (
+    <div>
+      Room Detail Mock
+      <output data-testid="detail-from">{(location.state as { from?: string })?.from}</output>
+    </div>
+  );
 };
 
 const HistoryControls = () => {
@@ -86,7 +97,7 @@ const mockRoomsResponse = (
   },
 });
 
-describe('Room Discovery - HomePage', () => {
+describe('Room Discovery - RoomsPage (/rooms)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.clear();
@@ -98,38 +109,45 @@ describe('Room Discovery - HomePage', () => {
     vi.mocked(roomApi.getRooms).mockResolvedValue(mockRoomsResponse());
   });
 
-  const renderComponent = (initialEntry = '/') => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const renderComponent = (initialEntry = '/rooms') => {
     return render(
       <MemoryRouter initialEntries={[initialEntry]}>
         <AuthProvider>
           <Routes>
-            <Route
-              path="/"
-              element={
-                <>
-                  <HomePage />
-                  <LocationProbe />
-                </>
-              }
-            />
-            <Route path="/rooms/:id" element={<div>Room Detail Mock</div>} />
+            <Route element={<PublicLayout />}>
+              <Route
+                path="/rooms"
+                element={
+                  <>
+                    <RoomsPage />
+                    <LocationProbe />
+                  </>
+                }
+              />
+              <Route path="/rooms/:id" element={<DetailStateProbe />} />
+            </Route>
           </Routes>
         </AuthProvider>
       </MemoryRouter>,
     );
   };
 
-  it('renders room list with formatted VND price, capacity, and status badges', async () => {
+  it('renders room list with formatted VND price, capacity, and a badge only for maintenance', async () => {
     renderComponent();
 
     expect(await screen.findByText('Focus Room Creative')).toBeInTheDocument();
     expect(screen.getByText('180.000 đ/giờ')).toBeInTheDocument();
-    expect(screen.getByText('👥 4 người')).toBeInTheDocument();
-    expect(screen.getByText('Sẵn sàng')).toBeInTheDocument();
+    expect(screen.getByText('4 người')).toBeInTheDocument();
+    // The list never claims a room is free/ready: availability depends on the chosen date.
+    expect(screen.queryByText('Sẵn sàng')).not.toBeInTheDocument();
 
     expect(screen.getByText('Meeting Room Grand')).toBeInTheDocument();
     expect(screen.getByText('450.000 đ/giờ')).toBeInTheDocument();
-    expect(screen.getByText('👥 12 người')).toBeInTheDocument();
+    expect(screen.getByText('12 người')).toBeInTheDocument();
     expect(screen.getByText('Bảo trì')).toBeInTheDocument();
   });
 
@@ -149,7 +167,7 @@ describe('Room Discovery - HomePage', () => {
   it('displays empty state with clear filters button when no rooms match', async () => {
     vi.mocked(roomApi.getRooms).mockResolvedValueOnce(mockRoomsResponse([], 0, 0, 1));
 
-    renderComponent('/?capacity=50');
+    renderComponent('/rooms?capacity=50');
 
     expect(await screen.findByText('Không tìm thấy phòng phù hợp')).toBeInTheDocument();
     const clearBtn = screen.getByRole('button', { name: /Xóa bộ lọc/i });
@@ -210,46 +228,71 @@ describe('Room Discovery - HomePage', () => {
     renderComponent();
     await screen.findByText('Focus Room Creative');
 
-    const user = userEvent.setup();
+    // Deterministic debounce: from here the clock only moves when the test advances it. With real
+    // timers a slow run could let the 300 ms debounce fire on a valid intermediate value (e.g.
+    // min=500 before max is typed) and make a request: that was the flake. Values are entered with
+    // fireEvent.change because user-event's async wrapper waits on a real setTimeout, which never
+    // resolves under fully fake timers.
+    vi.useFakeTimers();
+    const setValue = (input: HTMLElement, value: string) =>
+      fireEvent.change(input, { target: { value } });
+    const passDebounce = () =>
+      act(() => {
+        vi.advanceTimersByTime(350);
+      });
+
     const capacityInput = screen.getByLabelText(/Sức chứa tối thiểu/i);
     const minPriceInput = screen.getByPlaceholderText('Từ...');
     const maxPriceInput = screen.getByPlaceholderText('Đến...');
     const callsBeforeInvalidInput = vi.mocked(roomApi.getRooms).mock.calls.length;
 
     // Invalid capacity (non-positive)
-    await user.type(capacityInput, '0');
-    expect(await screen.findByText('Sức chứa phải là số nguyên dương')).toBeInTheDocument();
+    setValue(capacityInput, '0');
+    expect(screen.getByText('Sức chứa phải là số nguyên dương')).toBeInTheDocument();
+    passDebounce();
+    expect(roomApi.getRooms).toHaveBeenCalledTimes(callsBeforeInvalidInput);
 
-    await user.clear(capacityInput);
+    setValue(capacityInput, '');
 
     // Invalid price with >2 decimal places
-    await user.type(minPriceInput, '100.123');
+    setValue(minPriceInput, '100.123');
     expect(
-      await screen.findByText('Giá tối thiểu không hợp lệ (tối đa 2 số thập phân)'),
+      screen.getByText('Giá tối thiểu không hợp lệ (tối đa 2 số thập phân)'),
     ).toBeInTheDocument();
+    passDebounce();
+    expect(roomApi.getRooms).toHaveBeenCalledTimes(callsBeforeInvalidInput);
 
-    await user.clear(minPriceInput);
+    setValue(minPriceInput, '');
 
     // minPrice > maxPrice
-    await user.type(minPriceInput, '500');
-    await user.type(maxPriceInput, '200');
-    expect(
-      await screen.findByText('Giá tối thiểu không được lớn hơn giá tối đa'),
-    ).toBeInTheDocument();
-
-    await user.clear(minPriceInput);
-    await user.clear(maxPriceInput);
-    await user.type(capacityInput, '2147483648');
-    expect(await screen.findByText('Sức chứa vượt quá giới hạn cho phép')).toBeInTheDocument();
-
-    await user.clear(capacityInput);
-    await user.type(minPriceInput, '100000000.00');
-    expect(await screen.findByText('Giá tối thiểu vượt quá giới hạn cho phép')).toBeInTheDocument();
-
-    await act(async () => {
-      await new Promise((resolve) => setTimeout(resolve, 350));
-    });
+    setValue(minPriceInput, '500');
+    setValue(maxPriceInput, '200');
+    expect(screen.getByText('Giá tối thiểu không được lớn hơn giá tối đa')).toBeInTheDocument();
+    passDebounce();
     expect(roomApi.getRooms).toHaveBeenCalledTimes(callsBeforeInvalidInput);
+
+    setValue(minPriceInput, '');
+    setValue(maxPriceInput, '');
+    setValue(capacityInput, '2147483648');
+    expect(screen.getByText('Sức chứa vượt quá giới hạn cho phép')).toBeInTheDocument();
+    passDebounce();
+    expect(roomApi.getRooms).toHaveBeenCalledTimes(callsBeforeInvalidInput);
+
+    setValue(capacityInput, '');
+    setValue(minPriceInput, '100000000.00');
+    expect(screen.getByText('Giá tối thiểu vượt quá giới hạn cho phép')).toBeInTheDocument();
+
+    passDebounce();
+    expect(roomApi.getRooms).toHaveBeenCalledTimes(callsBeforeInvalidInput);
+
+    // Control: the same fake clock does let a valid value through, so the checks above are real.
+    setValue(minPriceInput, '100000');
+    passDebounce();
+    expect(roomApi.getRooms).toHaveBeenCalledTimes(callsBeforeInvalidInput + 1);
+    expect(roomApi.getRooms).toHaveBeenLastCalledWith(
+      expect.objectContaining({ minPrice: '100000', page: 1 }),
+      expect.any(AbortSignal),
+    );
   });
 
   it('waits for debounce before requesting rooms with the committed capacity', async () => {
@@ -276,7 +319,7 @@ describe('Room Discovery - HomePage', () => {
   });
 
   it('toggles amenity checkbox immediately and resets page', async () => {
-    renderComponent('/?page=2');
+    renderComponent('/rooms?page=2');
     await screen.findByText('Focus Room Creative');
 
     const wifiCheckbox = await screen.findByRole('checkbox', { name: /High-Speed Wi-Fi/i });
@@ -298,15 +341,15 @@ describe('Room Discovery - HomePage', () => {
 
   it('restores numeric filters on browser back without writing the newer value back', async () => {
     render(
-      <MemoryRouter initialEntries={['/?capacity=4', '/?capacity=8']} initialIndex={1}>
+      <MemoryRouter initialEntries={['/rooms?capacity=4', '/rooms?capacity=8']} initialIndex={1}>
         <AuthProvider>
           <HistoryControls />
           <Routes>
             <Route
-              path="/"
+              path="/rooms"
               element={
                 <>
-                  <HomePage />
+                  <RoomsPage />
                   <LocationProbe />
                 </>
               }
@@ -338,7 +381,7 @@ describe('Room Discovery - HomePage', () => {
 
   it('normalizes invalid shared-link filters before requesting rooms', async () => {
     renderComponent(
-      '/?page=abc&capacity=2147483648&minPrice=100000000.00&amenityIds=invalid,11111111-1111-4111-8111-111111111111,11111111-1111-4111-8111-111111111111',
+      '/rooms?page=abc&capacity=2147483648&minPrice=100000000.00&amenityIds=invalid,11111111-1111-4111-8111-111111111111,11111111-1111-4111-8111-111111111111',
     );
 
     await screen.findByText('Focus Room Creative');
@@ -356,6 +399,43 @@ describe('Room Discovery - HomePage', () => {
     );
     expect(screen.getByLabelText(/Sức chứa tối thiểu/i)).toHaveValue(null);
     expect(screen.getByPlaceholderText('Từ...')).toHaveValue('');
+  });
+
+  it('summarises active filters; a chip removes one filter and "Xóa bộ lọc" clears all', async () => {
+    renderComponent('/rooms?capacity=4&amenityIds=11111111-1111-4111-8111-111111111111');
+    await screen.findByText('Focus Room Creative');
+
+    const summary = screen.getByRole('group', { name: 'Bộ lọc đang áp dụng' });
+    const user = userEvent.setup();
+
+    expect(
+      await within(summary).findByRole('button', { name: 'Bỏ lọc: High-Speed Wi-Fi' }),
+    ).toBeInTheDocument();
+    await user.click(within(summary).getByRole('button', { name: 'Bỏ lọc: Từ 4 người' }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('location-search')).toHaveTextContent(
+        '?amenityIds=11111111-1111-4111-8111-111111111111',
+      );
+    });
+    expect(screen.getByLabelText(/Sức chứa tối thiểu/i)).toHaveValue(null);
+
+    await user.click(screen.getByRole('button', { name: 'Xóa bộ lọc' }));
+    await waitFor(() => {
+      expect(screen.getByTestId('location-search')).toHaveTextContent(/^$/);
+    });
+    expect(screen.queryByRole('group', { name: 'Bộ lọc đang áp dụng' })).not.toBeInTheDocument();
+  });
+
+  it('passes the current /rooms list URL to the detail page as the back-link target', async () => {
+    renderComponent('/rooms?capacity=4');
+    await screen.findByText('Focus Room Creative');
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('link', { name: 'Xem chi tiết Focus Room Creative' }));
+
+    expect(await screen.findByText('Room Detail Mock')).toBeInTheDocument();
+    expect(screen.getByTestId('detail-from')).toHaveTextContent('/rooms?capacity=4');
   });
 
   it('handles pagination navigation and bounds', async () => {

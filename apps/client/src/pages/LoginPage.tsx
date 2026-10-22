@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { AnimatePresence, m } from 'motion/react';
+import { DURATION, EASE_EDITORIAL } from '@/lib/motion';
 import { useAuth } from '../hooks/useAuth';
 import { authApi } from '../services/auth.api';
 import { ApiErrorResponse } from '../types/auth';
 import { loginSchema } from '../utils/validation';
-import styles from './Auth.module.css';
-import { Boxes, Mail, Lock, Eye, EyeOff, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { LoaderCircle } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Field } from '@/components/common/Field';
+import { Stagger, StaggerItem } from '../components/motion/Stagger';
+import { AuthNotice } from '../components/auth/AuthNotice';
+import { PasswordInput } from '../components/auth/PasswordInput';
 
 export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
@@ -119,121 +127,126 @@ export const LoginPage: React.FC = () => {
   };
 
   return (
-    <main className={`auth-container ${styles.container}`}>
-      <div className={`card auth-card ${styles.card}`}>
-        <div className={`auth-header ${styles.header}`}>
-          <Link to="/" className={`auth-brand ${styles.brand}`} aria-label="Về trang chủ Co-Space">
-            <div className={styles.brandIcon}>
-              <Boxes size={20} strokeWidth={2.2} />
-            </div>
-            <div className={styles.brandText}>
-              <span>Co-Space</span>
-              <span className={styles.brandSub}>Working</span>
-            </div>
-          </Link>
-          <h1 className={`auth-title ${styles.title}`}>Đăng nhập tài khoản</h1>
-          <p className={`auth-subtitle ${styles.subtitle}`}>Nhập thông tin xác thực để truy cập hệ thống</p>
-        </div>
+    <Stagger stagger={0.06} className="grid gap-8">
+      <StaggerItem className="grid gap-3">
+        <p className="eyebrow">Chào mừng trở lại</p>
+        <h1 className="text-h1 font-bold tracking-[-0.035em]">Đăng nhập tài khoản</h1>
+        <p className="text-[0.9375rem] text-muted-foreground">
+          Nhập thông tin xác thực để truy cập hệ thống
+        </p>
+      </StaggerItem>
 
-        {showSessionNotice && (
-          <div className={`alert alert-danger ${styles.alertDanger}`} role="alert">
-            <AlertCircle size={18} className={styles.alertIcon} />
-            <span>Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.</span>
-          </div>
-        )}
+      <StaggerItem>
+        <Card className="gap-5 px-6 py-7 shadow-soft sm:px-8">
+          <AnimatePresence mode="wait">
+            {showSessionNotice && (
+              <m.div
+                key="session-notice"
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: DURATION.base, ease: EASE_EDITORIAL }}
+              >
+                <AuthNotice tone="warning">
+                  Phiên làm việc đã hết hạn. Vui lòng đăng nhập lại để tiếp tục.
+                </AuthNotice>
+              </m.div>
+            )}
 
-        {successNotice && (
-          <div className={`alert alert-success ${styles.alertSuccess}`} role="status">
-            <CheckCircle2 size={18} className={styles.alertIcon} />
-            <span>{successNotice}</span>
-          </div>
-        )}
+            {successNotice && (
+              <m.div
+                key="success-notice"
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: DURATION.base, ease: EASE_EDITORIAL }}
+              >
+                <AuthNotice tone="success">{successNotice}</AuthNotice>
+              </m.div>
+            )}
 
-        {generalError && (
-          <div className={`alert alert-danger ${styles.alertDanger}`} role="alert">
-            <AlertCircle size={18} className={styles.alertIcon} />
-            <span>{generalError}</span>
-          </div>
-        )}
+            {generalError && (
+              <m.div
+                key="general-error"
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                transition={{ duration: DURATION.base, ease: EASE_EDITORIAL }}
+              >
+                <AuthNotice tone="danger">{generalError}</AuthNotice>
+              </m.div>
+            )}
+          </AnimatePresence>
 
-        <form onSubmit={handleSubmit} noValidate className={styles.form}>
-          <div className={`form-group ${styles.field}`}>
-            <label htmlFor="login-email" className={`form-label ${styles.label}`}>
-              Email <span className={styles.requiredStar} aria-hidden="true">*</span>
-            </label>
-            <div className={styles.inputWrapper}>
-              <div className={styles.inputIcon}>
-                <Mail size={16} />
-              </div>
-              <input
-                id="login-email"
+          <form onSubmit={handleSubmit} noValidate className="grid gap-5">
+            <Field
+              id="login-email"
+              label={
+                <>
+                  Email{' '}
+                  <span aria-hidden="true" className="-ml-1 text-muted-foreground">
+                    *
+                  </span>
+                </>
+              }
+              error={fieldErrors.email}
+            >
+              <Input
                 type="email"
-                className={`form-control ${styles.input} ${styles.inputWithIcon} ${fieldErrors.email ? `has-error ${styles.inputError}` : ''}`}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="ten@congty.com"
                 autoComplete="username"
-                aria-describedby={fieldErrors.email ? 'login-email-error' : undefined}
                 disabled={isSubmitting}
                 required
               />
-            </div>
-            {fieldErrors.email && (
-              <div id="login-email-error" className={`field-error ${styles.errorMessage}`} role="alert">
-                {fieldErrors.email}
-              </div>
-            )}
-          </div>
+            </Field>
 
-          <div className={`form-group ${styles.field}`}>
-            <label htmlFor="login-password" className={`form-label ${styles.label}`}>
-              Mật khẩu <span className={styles.requiredStar} aria-hidden="true">*</span>
-            </label>
-            <div className={`password-input-wrapper ${styles.inputWrapper}`}>
-              <div className={styles.inputIcon}>
-                <Lock size={16} />
-              </div>
-              <input
-                id="login-password"
-                type={showPassword ? 'text' : 'password'}
-                className={`form-control ${styles.input} ${styles.inputWithIcon} ${styles.inputWithToggle} ${fieldErrors.password ? `has-error ${styles.inputError}` : ''}`}
+            <Field
+              id="login-password"
+              label={
+                <>
+                  Mật khẩu{' '}
+                  <span aria-hidden="true" className="-ml-1 text-muted-foreground">
+                    *
+                  </span>
+                </>
+              }
+              error={fieldErrors.password}
+            >
+              <PasswordInput
+                visible={showPassword}
+                onToggleVisible={() => setShowPassword((prev) => !prev)}
+                showLabel="Hiện mật khẩu"
+                hideLabel="Ẩn mật khẩu"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Nhập mật khẩu"
                 autoComplete="current-password"
-                aria-describedby={fieldErrors.password ? 'login-password-error' : undefined}
                 disabled={isSubmitting}
                 required
               />
-              <button
-                type="button"
-                className={`toggle-password-btn ${styles.toggleBtn}`}
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Ẩn mật khẩu' : 'Hiện mật khẩu'}
-                disabled={isSubmitting}
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
-            </div>
-            {fieldErrors.password && (
-              <div id="login-password-error" className={`field-error ${styles.errorMessage}`} role="alert">
-                {fieldErrors.password}
-              </div>
-            )}
-          </div>
+            </Field>
 
-          <button type="submit" className={`btn btn-primary btn-block ${styles.submitBtn}`} disabled={isSubmitting}>
-            {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
-          </button>
-        </form>
+            <Button type="submit" size="lg" className="mt-1 w-full" disabled={isSubmitting}>
+              {isSubmitting && <LoaderCircle aria-hidden="true" className="animate-spin" />}
+              {isSubmitting ? 'Đang đăng nhập...' : 'Đăng nhập'}
+            </Button>
+          </form>
+        </Card>
+      </StaggerItem>
 
-        <div className={`auth-footer ${styles.footer}`}>
+      <StaggerItem>
+        <p className="text-center text-sm text-muted-foreground">
           Chưa có tài khoản?{' '}
-          <Link to="/register" className={`auth-link ${styles.footerLink}`}>
+          <Link
+            to="/register"
+            className="font-medium text-foreground underline decoration-input underline-offset-4 transition-colors duration-150 hover:decoration-foreground"
+          >
             Đăng ký ngay
           </Link>
-        </div>
-      </div>
-    </main>
+        </p>
+      </StaggerItem>
+    </Stagger>
   );
 };

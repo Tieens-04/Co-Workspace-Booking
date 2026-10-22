@@ -8,7 +8,7 @@ Hệ thống quản lý và đặt chỗ làm việc (Co-Working Space Booking S
 
 Dự án được tổ chức theo mô hình **Monorepo** với `npm workspaces`:
 
-- **Frontend (`apps/client`)**: React 19, TypeScript, Vite, React Router v7, Zod v4, Axios, Vitest, React Testing Library.
+- **Frontend (`apps/client`)**: React 19, TypeScript, Vite, React Router v7, Zod v4, Axios, Tailwind CSS v4, shadcn/ui (Radix), Sonner, Motion, Vitest, React Testing Library. Ngôn ngữ thiết kế và quy tắc giao diện: [`apps/client/DESIGN.md`](apps/client/DESIGN.md).
 - **Backend (`apps/server`)**: Express.js, TypeScript, áp dụng **Clean Architecture** (Domain - Repository - Service - Controller), Prisma ORM, MySQL 8.
 - **Code Quality**: Prettier & ESLint cấu hình thống nhất toàn monorepo.
 
@@ -99,7 +99,7 @@ npm run build
 
 ## 🌐 Giao Diện & Xác Thực Phía Client (Frontend Auth, Navigation & Session)
 
-Ứng dụng React tại `apps/client` quản lý định tuyến bằng **React Router v7**, xác thực và phân quyền RBAC dựa trên JWT, giao diện thuần CSS với bảng màu xanh/xám nhất quán, và hỗ trợ đa thiết bị cùng các tiêu chuẩn trợ năng (a11y).
+Ứng dụng React tại `apps/client` quản lý định tuyến bằng **React Router v7**, xác thực và phân quyền RBAC dựa trên JWT, giao diện "Editorial Minimalist" (Tailwind CSS v4 + shadcn/ui) có chế độ sáng/tối, và hỗ trợ đa thiết bị cùng các tiêu chuẩn trợ năng (a11y). Token, thành phần và quy tắc thiết kế được mô tả tại [`apps/client/DESIGN.md`](apps/client/DESIGN.md).
 
 ### 1. Bảng Định Tuyến Tuyến Đường (Client Routes & Access Rules)
 
@@ -621,10 +621,10 @@ Biểu mẫu đặt phòng tại `/rooms/:id` được tích hợp thành phần
   - Cho phép người dùng chọn ngày xem lịch thông qua bộ chọn ngày `booking-view-date-input`.
   - Tải và kết xuất 48 khung giờ 30 phút liên tục trong ngày theo múi giờ `Asia/Ho_Chi_Minh`.
 - **Trạng thái & Màu sắc các Slot (AC1)**:
-  - **Trống (`AVAILABLE`)**: Ô màu trắng có viền, có thể tương tác click để chọn khoảng giờ.
-  - **Đã đặt (`BOOKED`)**: Ô màu xám (`slot-booked`), mang nhãn _"Đã đặt"_, áp dụng thuộc tính native `disabled`, không thể click hay chọn bằng bàn phím.
-  - **Đã qua giờ / Dưới lead time 30 phút**: Ô màu xám nhạt (`slot-past`), native `disabled`.
-  - **Đang chọn / Đã chọn**: Ô được highlight màu xanh thương hiệu (`slot-selected`) khi nằm trong khoảng `[startTime, endTime)`.
+  - **Trống (`AVAILABLE`)**: Ô nền thẻ có viền (`data-slot-state="available"`), có thể tương tác click để chọn khoảng giờ.
+  - **Đã đặt (`BOOKED`)**: Ô nền xám có sọc chéo và chữ gạch ngang (`data-slot-state="booked"`), mang nhãn _"Đã đặt"_, áp dụng thuộc tính native `disabled`, không thể click hay chọn bằng bàn phím.
+  - **Đã qua giờ / Dưới lead time 30 phút**: Ô mờ (`data-slot-state="past"`), native `disabled`.
+  - **Đang chọn / Đã chọn**: Ô nền mực đen, chữ sáng (`data-slot-state="selected"`, `aria-pressed="true"`) khi nằm trong khoảng `[startTime, endTime)`.
 - **Quy tắc chọn Khung giờ & Đồng bộ Hai chiều (Two-Way Sync - AC2)**:
   - **Chọn 2 bước**: Click ô đầu tiên để bắt đầu chọn `startTime`, click ô thứ hai để chọn `endTime`.
   - Không cho phép chọn khoảng thời gian đi xuyên qua slot đã đặt (`BOOKED`).
@@ -753,8 +753,8 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
   - Tích hợp điều hướng từ menu Quản trị (`/admin`).
   - Thanh tìm kiếm và bộ lọc nhanh: Ô nhập mã đơn, bộ chọn ngày (Việt Nam UTC+7), dropdown trạng thái, nút Tìm kiếm, Xóa bộ lọc và Làm mới dữ liệu. Đồng bộ trạng thái URL search params.
   - Bảng danh sách trực quan:
-    - Huy hiệu nhận diện loại khách hàng: Tag xanh cho **Khách vãng lai (Guest)** kèm SĐT; Tag xám cho **Tài khoản (User)**.
-    - Trạng thái đơn được đánh màu rõ ràng (`CONFIRMED` xanh lá, `CANCELLED` xám, `COMPLETED` xanh dương).
+    - Huy hiệu nhận diện loại khách hàng: Tag tông slate cho **Khách vãng lai (Guest)** kèm SĐT; Tag trung tính cho **Tài khoản (User)**.
+    - Trạng thái đơn dùng `StatusBadge` theo tông trạng thái của hệ thiết kế (`CONFIRMED` xanh dương, `COMPLETED` xanh lá, `CANCELLED` đỏ, `NO_SHOW` cam đất), luôn kèm nhãn chữ.
     - Phân trang đầy đủ kèm trạng thái trống/rỗng thân thiện.
   - **Form Đặt phòng Khách vãng lai (`AdminGuestBookingForm`)**:
     - Nhập họ tên và số điện thoại khách vãng lai.

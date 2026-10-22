@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { HomePage } from '../pages/HomePage';
+import { RoomsPage } from '../pages/RoomsPage';
+import { PublicLayout } from '../layouts/PublicLayout';
 import { RoomDetailPage } from '../pages/RoomDetailPage';
 import { BookingHistoryPage } from '../pages/BookingHistoryPage';
 import { AdminDashboardPage } from '../pages/AdminDashboardPage';
@@ -64,7 +65,7 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
   });
 
   describe('Empty States', () => {
-    it('HomePage renders friendly empty state with clear filters CTA when 0 rooms found', async () => {
+    it('RoomsPage renders friendly empty state with clear filters CTA when 0 rooms found', async () => {
       vi.mocked(roomApi.getAmenities).mockResolvedValue({
         success: true,
         message: 'OK',
@@ -80,8 +81,8 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
       });
 
       render(
-        <MemoryRouter initialEntries={['/']}>
-          <HomePage />
+        <MemoryRouter initialEntries={['/rooms']}>
+          <RoomsPage />
         </MemoryRouter>,
       );
 
@@ -157,19 +158,19 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
   });
 
   describe('Skeleton Loading & Layout Shift Prevention', () => {
-    it('HomePage renders room-grid skeleton cards during initial fetch without layout collapse', () => {
+    it('RoomsPage renders room-grid skeleton cards during initial fetch without layout collapse', () => {
       vi.mocked(roomApi.getAmenities).mockReturnValue(new Promise(() => {}));
       vi.mocked(roomApi.getRooms).mockReturnValue(new Promise(() => {}));
 
       render(
-        <MemoryRouter initialEntries={['/']}>
-          <HomePage />
+        <MemoryRouter initialEntries={['/rooms']}>
+          <RoomsPage />
         </MemoryRouter>,
       );
 
       const skeletonGrid = screen.getByLabelText('Đang nạp danh sách phòng');
       expect(skeletonGrid).toBeInTheDocument();
-      const skeletons = skeletonGrid.querySelectorAll('.skeleton-card');
+      const skeletons = within(skeletonGrid).getAllByTestId('room-card-skeleton');
       expect(skeletons.length).toBe(6);
     });
 
@@ -221,7 +222,7 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
   });
 
   describe('Friendly Error States & Retry', () => {
-    it('HomePage displays friendly error with retry button on network failure', async () => {
+    it('RoomsPage displays friendly error with retry button on network failure', async () => {
       vi.mocked(roomApi.getAmenities).mockResolvedValue({
         success: true,
         message: 'OK',
@@ -230,8 +231,8 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
       vi.mocked(roomApi.getRooms).mockRejectedValueOnce(new Error('Mất kết nối máy chủ'));
 
       render(
-        <MemoryRouter initialEntries={['/']}>
-          <HomePage />
+        <MemoryRouter initialEntries={['/rooms']}>
+          <RoomsPage />
         </MemoryRouter>,
       );
 
@@ -280,7 +281,7 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
   });
 
   describe('Mobile Responsive Layout & UX (AC: Trang web hiển thị tốt trên màn hình điện thoại)', () => {
-    it('HomePage renders properly in mobile viewport without broken layout elements', async () => {
+    it('RoomsPage renders properly in mobile viewport without broken layout elements', async () => {
       vi.mocked(roomApi.getAmenities).mockResolvedValue({
         success: true,
         message: 'OK',
@@ -301,8 +302,12 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
       window.dispatchEvent(new Event('resize'));
 
       render(
-        <MemoryRouter initialEntries={['/']}>
-          <HomePage />
+        <MemoryRouter initialEntries={['/rooms']}>
+          <Routes>
+            <Route element={<PublicLayout />}>
+              <Route path="/rooms" element={<RoomsPage />} />
+            </Route>
+          </Routes>
         </MemoryRouter>,
       );
 
@@ -310,11 +315,53 @@ describe('UI Polish: Loading, Error, Empty States & Responsive UX (CWB-35)', () 
         expect(screen.getByText('Không tìm thấy phòng phù hợp')).toBeInTheDocument();
       });
 
-      const header = document.querySelector('.app-header');
-      expect(header).toBeInTheDocument();
-      const navActions = document.querySelector('.nav-actions');
-      expect(navActions).toBeInTheDocument();
+      const header = screen.getByRole('banner');
+      expect(
+        within(header).getByRole('navigation', { name: 'Điều hướng chính' }),
+      ).toBeInTheDocument();
+      expect(within(header).getByRole('button', { name: 'Mở menu' })).toBeInTheDocument();
+    });
+
+    it('RoomsPage moves filters from the side rail into a single drawer below the lg breakpoint', async () => {
+      vi.mocked(roomApi.getAmenities).mockResolvedValue({ success: true, message: 'OK', data: [] });
+      vi.mocked(roomApi.getRooms).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: { items: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 0 } },
+      });
+      const originalMatchMedia = window.matchMedia;
+      window.matchMedia = ((query: string) => ({
+        matches: query === '(max-width: 1023px)',
+        media: query,
+        onchange: null,
+        addListener: () => {},
+        removeListener: () => {},
+        addEventListener: () => {},
+        removeEventListener: () => {},
+        dispatchEvent: () => false,
+      })) as typeof window.matchMedia;
+
+      try {
+        render(
+          <MemoryRouter initialEntries={['/rooms']}>
+            <RoomsPage />
+          </MemoryRouter>,
+        );
+
+        await waitFor(() => {
+          expect(screen.getByText('Không tìm thấy phòng phù hợp')).toBeInTheDocument();
+        });
+        expect(
+          screen.queryByRole('complementary', { name: 'Bộ lọc tìm kiếm phòng' }),
+        ).not.toBeInTheDocument();
+        expect(screen.queryByLabelText(/Sức chứa tối thiểu/i)).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: 'Bộ lọc' }));
+        const drawer = await screen.findByRole('dialog', { name: 'Bộ lọc tìm kiếm' });
+        expect(within(drawer).getAllByLabelText(/Sức chứa tối thiểu/i)).toHaveLength(1);
+      } finally {
+        window.matchMedia = originalMatchMedia;
+      }
     });
   });
 });
-

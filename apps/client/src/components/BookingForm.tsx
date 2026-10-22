@@ -16,8 +16,26 @@ import {
   validateBookingSelection,
   checkRangeAvailability,
 } from '../utils/bookingTime';
-import styles from './BookingForm.module.css';
-
+import {
+  ArrowLeft,
+  CalendarClock,
+  Check,
+  CircleAlert,
+  Clock,
+  Info,
+  LoaderCircle,
+  LogIn,
+  RotateCw,
+  ShieldCheck,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Notice } from './booking/Notice';
+import { DetailList, DetailRow } from './booking/DetailList';
+import { SwapValue } from './motion/SwapValue';
 
 export interface BookingFormProps {
   roomId: string;
@@ -66,6 +84,9 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isStaleMaintenance, setIsStaleMaintenance] = useState<boolean>(false);
   const [hasBookingConflict, setHasBookingConflict] = useState<boolean>(false);
+  // Presentation only: the picked slot was taken by someone else after it was shown as free
+  // (preflight refresh or 409 BOOKING_CONFLICT). Cleared as soon as the selection changes.
+  const [slotJustTaken, setSlotJustTaken] = useState<boolean>(false);
   const [currentMs, setCurrentMs] = useState<number>(() => Date.now());
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -148,6 +169,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setReviewedSnapshot(null);
     setIsStaleMaintenance(false);
     setHasBookingConflict(false);
+    setSlotJustTaken(false);
 
     return () => {
       abortControllerRef.current?.abort();
@@ -163,6 +185,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setSelectingStartTime(null);
     setErrors({});
     setHasBookingConflict(false);
+    setSlotJustTaken(false);
   };
 
   // Handle manual start time input change
@@ -171,6 +194,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setStartTime(val);
     setSelectingStartTime(null);
     setHasBookingConflict(false);
+    setSlotJustTaken(false);
     if (errors.startTime) setErrors((prev) => ({ ...prev, startTime: undefined }));
 
     const datePart = val.split('T')[0];
@@ -185,6 +209,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setEndTime(val);
     setSelectingStartTime(null);
     setHasBookingConflict(false);
+    setSlotJustTaken(false);
     if (errors.endTime) setErrors((prev) => ({ ...prev, endTime: undefined }));
   };
 
@@ -196,6 +221,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setEndTime('');
     setErrors({});
     setHasBookingConflict(false);
+    setSlotJustTaken(false);
   }, []);
 
   const handleSelectRange = useCallback((startIso: string, endIso: string) => {
@@ -206,6 +232,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     setEndTime(localEnd);
     setErrors({});
     setHasBookingConflict(false);
+    setSlotJustTaken(false);
   }, []);
 
   // Compute preview for duration and total amount using decimal-safe rounding
@@ -229,19 +256,18 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   // If user is guest (not logged in)
   if (!isAuthenticated) {
     return (
-      <section className="card booking-form-card" data-testid="booking-guest-prompt">
-        <div className="booking-form-header">
-          <h2 className="booking-form-title">Đặt Không Gian Làm Việc</h2>
-        </div>
-        <p>Vui lòng đăng nhập tài khoản khách hàng để đặt phòng này.</p>
-        <Link
-          to="/login"
-          state={{ from: location.pathname }}
-          className="btn btn-primary"
-          data-testid="booking-login-link"
-        >
-          Đăng nhập để đặt phòng
-        </Link>
+      <section className={PANEL_CLASS} data-testid="booking-guest-prompt">
+        <PanelHeader title="Đặt Không Gian Làm Việc" />
+        <p className="text-sm text-muted-foreground">
+          Vui lòng đăng nhập tài khoản khách hàng để đặt phòng này.
+        </p>
+        <Button asChild size="lg" className="w-full">
+          <Link to="/login" state={{ from: location.pathname }} data-testid="booking-login-link">
+            <LogIn aria-hidden="true" />
+            Đăng nhập để đặt phòng
+          </Link>
+        </Button>
+        <BookingRules />
       </section>
     );
   }
@@ -249,14 +275,12 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   // If user has ADMIN role
   if (userRole === 'ADMIN') {
     return (
-      <section className="card booking-form-card" data-testid="booking-admin-notice">
-        <div className="booking-form-header">
-          <h2 className="booking-form-title">Đặt Không Gian Làm Việc</h2>
-        </div>
-        <p className="text-muted">
+      <section className={PANEL_CLASS} data-testid="booking-admin-notice">
+        <PanelHeader title="Đặt Không Gian Làm Việc" />
+        <Notice tone="info" icon={ShieldCheck}>
           Tài khoản Quản trị viên không thể đặt phòng qua biểu mẫu khách hàng. Vui lòng sử dụng tài
           khoản Khách hàng.
-        </p>
+        </Notice>
       </section>
     );
   }
@@ -268,16 +292,12 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     availability.errorCode === 'ROOM_NOT_AVAILABLE'
   ) {
     return (
-      <section className="card booking-form-card" data-testid="booking-maintenance-box">
-        <div className="booking-form-header">
-          <h2 className="booking-form-title">Đặt Không Gian Làm Việc</h2>
-        </div>
-        <div className="booking-maintenance-alert" role="alert">
-          <p style={{ margin: 0 }}>
-            ⚠️ Phòng này đang trong trạng thái <strong>Bảo trì</strong> và hiện không thể tiếp nhận
-            đặt chỗ mới.
-          </p>
-        </div>
+      <section className={PANEL_CLASS} data-testid="booking-maintenance-box">
+        <PanelHeader title="Đặt Không Gian Làm Việc" />
+        <Notice tone="maintenance" role="alert">
+          Phòng này đang trong trạng thái <strong className="font-semibold">Bảo trì</strong> và hiện
+          không thể tiếp nhận đặt chỗ mới.
+        </Notice>
       </section>
     );
   }
@@ -384,6 +404,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
       if (!rangeCheck.isAvailable) {
         setHasBookingConflict(true);
+        setSlotJustTaken(true);
         setErrors({
           general:
             'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
@@ -431,6 +452,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
         showToast(msg, 'error');
       } else if (code === 'BOOKING_CONFLICT') {
         setHasBookingConflict(true);
+        setSlotJustTaken(true);
         const msg =
           message ||
           'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.';
@@ -469,156 +491,158 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     }
   };
 
+  const handleBackToEdit = () => {
+    setPhase('edit');
+    setReviewedSnapshot(null);
+    setErrors({});
+  };
+
   // If in review phase, render review card
   if (phase === 'review') {
     return (
       <section
-        className={`card booking-form-card booking-review-card ${styles.formCard} ${styles.animatedPhase}`}
+        className={PANEL_CLASS}
         data-testid="booking-review-section"
         aria-labelledby="booking-review-heading"
       >
-        <div className={`booking-form-header ${styles.header}`}>
-          <h2 id="booking-review-heading" className={`booking-form-title ${styles.title}`}>
-            Xác Nhận Thông Tin Đặt Phòng
-          </h2>
-          <p className="text-muted" style={{ margin: '0.25rem 0 0 0', fontSize: '0.875rem' }}>
-            Vui lòng kiểm tra lại toàn bộ thông tin trước khi gửi yêu cầu đặt chỗ.
-          </p>
-        </div>
+        <PanelHeader
+          eyebrow="Bước 2 / 2"
+          title="Xác Nhận Thông Tin Đặt Phòng"
+          titleId="booking-review-heading"
+          description="Vui lòng kiểm tra lại toàn bộ thông tin trước khi gửi yêu cầu đặt chỗ."
+        />
 
         {errors.general && (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-testid="booking-general-error"
-            style={{ marginBottom: '1.25rem' }}
-          >
-            {errors.general}
-          </div>
+          <Notice tone="error" role="alert" data-testid="booking-general-error">
+            {slotJustTaken ? (
+              <div className="grid gap-1.5">
+                <p className="font-semibold">Khung giờ vừa có người khác đặt trước</p>
+                <p>{errors.general}</p>
+                <p className="text-[0.8125rem]">
+                  Lịch trống được tải lại để hiển thị khung vừa bị đặt. Ngày xem lịch và ghi chú của
+                  bạn vẫn được giữ — hãy chọn một khung giờ khác.
+                </p>
+                <div className="pt-1">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleBackToEdit}
+                    disabled={isSubmitting}
+                    data-testid="booking-conflict-repick-btn"
+                  >
+                    <CalendarClock aria-hidden="true" />
+                    Chọn khung giờ khác
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <p>{errors.general}</p>
+            )}
+          </Notice>
         )}
 
         {errors.startTime && (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-testid="error-booking-start"
-            style={{ marginBottom: '1.25rem' }}
-          >
+          <Notice tone="error" role="alert" data-testid="error-booking-start">
             {errors.startTime}
-          </div>
+          </Notice>
         )}
 
         {errors.endTime && (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-testid="error-booking-end"
-            style={{ marginBottom: '1.25rem' }}
-          >
+          <Notice tone="error" role="alert" data-testid="error-booking-end">
             {errors.endTime}
-          </div>
+          </Notice>
         )}
 
         {errors.note && (
-          <div
-            className="alert alert-danger"
-            role="alert"
-            data-testid="error-booking-note"
-            style={{ marginBottom: '1.25rem' }}
-          >
+          <Notice tone="error" role="alert" data-testid="error-booking-note">
             {errors.note}
-          </div>
+          </Notice>
         )}
 
-        <div className={`booking-review-details ${styles.reviewReceipt}`}>
-          <div className="booking-review-row">
-            <span className="review-label">Phòng làm việc:</span>
-            <strong className="review-value" data-testid="review-room-name">
+        <DetailList layout="split">
+          <DetailRow label="Phòng làm việc">
+            <strong className="font-semibold" data-testid="review-room-name">
               {roomName}
             </strong>
-          </div>
+          </DetailRow>
 
-          <div className="booking-review-row">
-            <span className="review-label">Thời gian bắt đầu:</span>
-            <span className="review-value" data-testid="review-start-time">
+          <DetailRow label="Thời gian bắt đầu" valueClassName="tabular-nums">
+            <span data-testid="review-start-time">
               {startUtc
                 ? new Date(startUtc).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
                 : ''}
             </span>
-          </div>
+          </DetailRow>
 
-          <div className="booking-review-row">
-            <span className="review-label">Thời gian kết thúc:</span>
-            <span className="review-value" data-testid="review-end-time">
+          <DetailRow label="Thời gian kết thúc" valueClassName="tabular-nums">
+            <span data-testid="review-end-time">
               {endUtc
                 ? new Date(endUtc).toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })
                 : ''}
             </span>
-          </div>
+          </DetailRow>
 
-          <div className="booking-review-row">
-            <span className="review-label">Thời lượng đặt:</span>
-            <span className="review-value" data-testid="review-duration">
-              {(reviewedSnapshot ?? preview)?.durationHours} giờ ({(reviewedSnapshot ?? preview)?.durationMinutes} phút)
+          <DetailRow label="Thời lượng đặt" valueClassName="tabular-nums">
+            <span data-testid="review-duration">
+              {(reviewedSnapshot ?? preview)?.durationHours} giờ (
+              {(reviewedSnapshot ?? preview)?.durationMinutes} phút)
             </span>
-          </div>
+          </DetailRow>
 
-          <div className="booking-review-row">
-            <span className="review-label">Đơn giá:</span>
-            <span className="review-value" data-testid="review-price-per-hour">
-              {formatVnd(pricePerHour)}
+          <DetailRow label="Đơn giá" valueClassName="tabular-nums">
+            <span data-testid="review-price-per-hour">{formatVnd(pricePerHour)}</span>
+          </DetailRow>
+
+          <DetailRow label="Ghi chú" valueClassName="font-normal">
+            <span className="whitespace-pre-line" data-testid="review-note">
+              {note.trim() !== '' ? note.trim() : 'Không có'}
             </span>
-          </div>
+          </DetailRow>
 
-          <div
-            className="booking-review-row total-row"
-            style={{
-              marginTop: '0.5rem',
-              paddingTop: '0.5rem',
-              borderTop: '1px dashed var(--color-border)',
-            }}
+          <DetailRow
+            label={<span className="font-semibold text-foreground">Tổng tiền ước tính</span>}
+            className="py-4"
           >
-            <span className="review-label">Tổng tiền ước tính:</span>
-            <strong className="review-value price-highlight" data-testid="review-estimated-total">
+            <strong
+              className="text-[1.75rem] leading-tight font-bold tracking-[-0.02em] tabular-nums"
+              data-testid="review-estimated-total"
+            >
               {(reviewedSnapshot ?? preview)
                 ? formatCurrency((reviewedSnapshot ?? preview)!.estimatedTotal)
                 : ''}
             </strong>
-          </div>
+          </DetailRow>
+        </DetailList>
 
-          <div className="booking-review-row" style={{ marginTop: '0.5rem' }}>
-            <span className="review-label">Ghi chú:</span>
-            <span className="review-value" data-testid="review-note">
-              {note.trim() !== '' ? note.trim() : 'Không có'}
-            </span>
-          </div>
-        </div>
+        <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+          <Info aria-hidden="true" className="mt-px size-3.5 shrink-0" />
+          Tổng tiền do hệ thống tính lại khi xác nhận.
+        </p>
 
-        <div className={`booking-review-actions ${styles.reviewActions}`}>
-          <button
+        <div className="grid gap-2 @sm:grid-cols-2">
+          <Button
             type="button"
-            className="btn btn-outline"
-            style={{ flex: 1 }}
-            onClick={() => {
-              setPhase('edit');
-              setReviewedSnapshot(null);
-              setErrors({});
-            }}
+            variant="outline"
+            size="lg"
+            onClick={handleBackToEdit}
             disabled={isSubmitting}
             data-testid="booking-back-btn"
           >
-            ← Quay lại chỉnh sửa
-          </button>
-          <button
+            <ArrowLeft aria-hidden="true" />
+            Quay lại chỉnh sửa
+          </Button>
+          <Button
             type="button"
-            className={`btn btn-primary ${styles.submitBtn}`}
-            style={{ flex: 1 }}
+            size="lg"
             onClick={handleFinalSubmit}
             disabled={isSubmitting || hasBookingConflict}
+            aria-busy={isSubmitting || undefined}
             data-testid="booking-confirm-btn"
           >
+            {isSubmitting && <LoaderCircle aria-hidden="true" className="animate-spin" />}
             {isSubmitting ? 'Đang gửi yêu cầu đặt...' : 'Xác nhận đặt phòng'}
-          </button>
+          </Button>
         </div>
       </section>
     );
@@ -630,36 +654,48 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
   return (
     <section
-      className={`card booking-form-card ${styles.formCard} ${styles.animatedPhase}`}
+      className={PANEL_CLASS}
       data-testid="customer-booking-form"
       aria-labelledby="booking-form-heading"
     >
-      <div className={`booking-form-header ${styles.header}`}>
-        <h2 id="booking-form-heading" className={`booking-form-title ${styles.title}`}>
-          Đặt Không Gian Làm Việc
-        </h2>
-      </div>
+      <PanelHeader
+        eyebrow="Bước 1 / 2"
+        title="Đặt Không Gian Làm Việc"
+        titleId="booking-form-heading"
+        aside={
+          <p className="text-right text-sm leading-tight">
+            <span className="block font-bold tabular-nums">{formatVnd(pricePerHour)}</span>
+            <span className="text-xs text-muted-foreground">Đơn giá</span>
+          </p>
+        }
+      />
 
       {errors.general && (
-        <div
-          className="alert alert-danger"
-          role="alert"
-          data-testid="booking-general-error"
-          style={{ marginBottom: '1.25rem' }}
-        >
-          {errors.general}
-        </div>
+        <Notice tone="error" role="alert" data-testid="booking-general-error">
+          <p>{errors.general}</p>
+        </Notice>
+      )}
+
+      {slotJustTaken && !errors.general && (
+        <Notice tone="warning" role="status" data-testid="booking-conflict-hint">
+          <p className="font-semibold">Khung giờ bạn chọn vừa có người khác đặt trước.</p>
+          <p className="mt-0.5">
+            Các ô gạch chéo là khung đã đặt. Ngày và ghi chú của bạn vẫn được giữ — hãy chọn một
+            khung giờ khác.
+          </p>
+        </Notice>
       )}
 
       {/* Date selector for availability grid */}
-      <div className="form-group" style={{ marginBottom: '1rem' }}>
-        <label htmlFor="booking-view-date" className="form-label">
-          Ngày xem lịch <span className="text-muted">(Giờ Việt Nam UTC+7)</span>
-        </label>
-        <input
+      <div className="grid gap-1.5">
+        <Label htmlFor="booking-view-date" className="text-sm font-medium">
+          Ngày xem lịch{' '}
+          <span className="font-normal text-muted-foreground">(Giờ Việt Nam UTC+7)</span>
+        </Label>
+        <Input
           id="booking-view-date"
           type="date"
-          className="form-control"
+          className="tabular-nums"
           value={viewDate}
           onChange={handleViewDateChange}
           disabled={isSubmitting}
@@ -669,19 +705,30 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
       {/* Availability TimeGrid Component */}
       {availability.loading && (
-        <div className="time-grid-loading" aria-live="polite" style={{ padding: '1rem 0' }}>
-          <p className="text-muted" style={{ margin: 0 }}>
+        <div className="grid gap-3" aria-live="polite" data-testid="booking-availability-loading">
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <LoaderCircle aria-hidden="true" className="size-4 animate-spin" />
             Đang tải lịch trống của phòng...
           </p>
+          <div
+            className="grid grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-1.5 rounded-lg border bg-background p-2"
+            aria-hidden="true"
+          >
+            {Array.from({ length: 16 }, (_, i) => (
+              <Skeleton key={i} className="h-9 rounded-md" />
+            ))}
+          </div>
         </div>
       )}
 
       {!availability.loading && availability.error && (
-        <div className="alert alert-danger" role="alert" style={{ marginBottom: '1rem' }}>
-          <p style={{ margin: '0 0 0.5rem 0' }}>{availability.error}</p>
-          <button
+        <Notice tone="error" role="alert">
+          <p>{availability.error}</p>
+          <Button
             type="button"
-            className="btn btn-outline"
+            variant="outline"
+            size="sm"
+            className="mt-2"
             onClick={() => {
               availability
                 .refresh()
@@ -694,9 +741,10 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             }}
             data-testid="booking-retry-availability-btn"
           >
+            <RotateCw aria-hidden="true" />
             Thử lại
-          </button>
-        </div>
+          </Button>
+        </Notice>
       )}
 
       {!availability.loading && !availability.error && (
@@ -711,17 +759,28 @@ export const BookingForm: React.FC<BookingFormProps> = ({
         />
       )}
 
-      <form onSubmit={handleProceedToReview} noValidate aria-busy={isSubmitting}>
-        <div className="admin-form-row">
-          <div className="form-group" style={{ flex: 1 }}>
-            <label htmlFor="booking-start-time" className="form-label">
-              Thời gian bắt đầu <span style={{ color: 'var(--color-error)' }}>*</span>
-            </label>
-            <input
+      <form
+        onSubmit={handleProceedToReview}
+        noValidate
+        aria-busy={isSubmitting}
+        className="grid gap-4"
+      >
+        <div className="flex items-center gap-3" aria-hidden="true">
+          <span className="h-px flex-1 bg-border" />
+          <span className="text-xs text-muted-foreground">hoặc nhập giờ chính xác</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+
+        <div className="grid gap-4 @md:grid-cols-2">
+          <div className="grid min-w-0 content-start gap-1.5">
+            <Label htmlFor="booking-start-time" className="text-sm font-medium">
+              Thời gian bắt đầu <span className="text-destructive">*</span>
+            </Label>
+            <Input
               id="booking-start-time"
               type="datetime-local"
               step={1800}
-              className={`form-control ${errors.startTime ? 'has-error' : ''}`}
+              className="tabular-nums"
               value={startTime}
               onChange={handleStartTimeChange}
               disabled={isSubmitting}
@@ -730,21 +789,21 @@ export const BookingForm: React.FC<BookingFormProps> = ({
               data-testid="booking-start-input"
             />
             {errors.startTime && (
-              <p id="error-booking-start" className="field-error" data-testid="error-booking-start">
+              <FieldError id="error-booking-start" testId="error-booking-start">
                 {errors.startTime}
-              </p>
+              </FieldError>
             )}
           </div>
 
-          <div className="form-group" style={{ flex: 1 }}>
-            <label htmlFor="booking-end-time" className="form-label">
-              Thời gian kết thúc <span style={{ color: 'var(--color-error)' }}>*</span>
-            </label>
-            <input
+          <div className="grid min-w-0 content-start gap-1.5">
+            <Label htmlFor="booking-end-time" className="text-sm font-medium">
+              Thời gian kết thúc <span className="text-destructive">*</span>
+            </Label>
+            <Input
               id="booking-end-time"
               type="datetime-local"
               step={1800}
-              className={`form-control ${errors.endTime ? 'has-error' : ''}`}
+              className="tabular-nums"
               value={endTime}
               onChange={handleEndTimeChange}
               disabled={isSubmitting}
@@ -753,26 +812,23 @@ export const BookingForm: React.FC<BookingFormProps> = ({
               data-testid="booking-end-input"
             />
             {errors.endTime && (
-              <p id="error-booking-end" className="field-error" data-testid="error-booking-end">
+              <FieldError id="error-booking-end" testId="error-booking-end">
                 {errors.endTime}
-              </p>
+              </FieldError>
             )}
           </div>
         </div>
 
-        <div className="form-group">
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <label htmlFor="booking-note" className="form-label" style={{ marginBottom: 0 }}>
+        <div className="grid gap-1.5">
+          <div className="flex items-center justify-between gap-3">
+            <Label htmlFor="booking-note" className="text-sm font-medium">
               Ghi chú đặt phòng
-            </label>
-            <span style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)' }}>
-              {note.length}/500
-            </span>
+            </Label>
+            <span className="text-xs text-muted-foreground tabular-nums">{note.length}/500</span>
           </div>
-          <textarea
+          <Textarea
             id="booking-note"
             rows={2}
-            className={`form-control ${errors.note ? 'has-error' : ''}`}
             placeholder="Yêu cầu thêm về bàn ghế, máy chiếu, chuẩn bị trước..."
             maxLength={500}
             value={note}
@@ -786,48 +842,116 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             data-testid="booking-note-input"
           />
           {errors.note && (
-            <p id="error-booking-note" className="field-error" data-testid="error-booking-note">
+            <FieldError id="error-booking-note" testId="error-booking-note">
               {errors.note}
-            </p>
+            </FieldError>
           )}
         </div>
 
         {/* Display-only price & duration preview */}
-        {preview && (
-          <div
-            className={`booking-price-preview ${styles.pricePreview}`}
-            data-testid="booking-price-preview"
-          >
-            <div className={`booking-price-row ${styles.priceRow}`}>
-              <span>Thời lượng đặt:</span>
-              <strong>{preview.durationHours} giờ</strong>
-            </div>
-            <div className={`booking-price-row ${styles.priceRow}`}>
-              <span>Đơn giá:</span>
+        {preview ? (
+          <DetailList layout="split" data-testid="booking-price-preview">
+            <DetailRow label="Thời lượng đặt" valueClassName="tabular-nums">
+              <strong className="font-semibold">{preview.durationHours} giờ</strong>
+            </DetailRow>
+            <DetailRow label="Đơn giá" valueClassName="tabular-nums">
               <span>{formatVnd(pricePerHour)}</span>
-            </div>
-            <div
-              className={`booking-price-row ${styles.priceRow} ${styles.priceTotalRow}`}
-              style={{ marginTop: '0.5rem' }}
+            </DetailRow>
+            <DetailRow
+              label={<span className="font-semibold text-foreground">Ước tính tổng tiền</span>}
+              className="py-4"
             >
-              <span>Ước tính tổng tiền:</span>
-              <span className={`booking-price-total ${styles.priceTotal}`}>
-                {formatCurrency(preview.estimatedTotal)}
+              <span className="text-[1.75rem] leading-tight font-bold tracking-[-0.02em] tabular-nums">
+                <SwapValue value={preview.estimatedTotal}>
+                  {formatCurrency(preview.estimatedTotal)}
+                </SwapValue>
               </span>
-            </div>
-          </div>
+            </DetailRow>
+          </DetailList>
+        ) : (
+          <p
+            className="rounded-lg border border-dashed border-input px-4 py-3 text-sm text-muted-foreground"
+            data-testid="booking-price-placeholder"
+          >
+            Chọn giờ bắt đầu và kết thúc để xem thời lượng và tổng tiền ước tính.
+          </p>
         )}
 
-        <button
+        <Button
           type="submit"
-          className={`btn btn-primary ${styles.submitBtn}`}
-          style={{ width: '100%', marginTop: '0.5rem' }}
+          size="lg"
+          className="w-full"
           disabled={isSubmitting || hasBookingConflict || Boolean(availability.error)}
           data-testid="booking-submit-btn"
         >
+          {availability.loading && <LoaderCircle aria-hidden="true" className="animate-spin" />}
           {availability.loading ? 'Đang kiểm tra lịch trống...' : 'Tiếp tục xem lại thông tin'}
-        </button>
+        </Button>
       </form>
+
+      <BookingRules />
     </section>
   );
 };
+
+const PANEL_CLASS =
+  '@container grid gap-5 rounded-xl border bg-card p-5 text-card-foreground shadow-soft sm:p-6';
+
+interface PanelHeaderProps {
+  title: string;
+  titleId?: string;
+  eyebrow?: string;
+  description?: string;
+  aside?: React.ReactNode;
+}
+
+const PanelHeader: React.FC<PanelHeaderProps> = ({
+  title,
+  titleId,
+  eyebrow,
+  description,
+  aside,
+}) => (
+  <div className="flex items-start justify-between gap-4 border-b pb-4">
+    <div className="grid min-w-0 gap-1.5">
+      {eyebrow && <p className="eyebrow">{eyebrow}</p>}
+      <h2 id={titleId} className="text-h3 font-bold">
+        {title}
+      </h2>
+      {description && <p className="text-sm text-muted-foreground">{description}</p>}
+    </div>
+    {aside && <div className="shrink-0">{aside}</div>}
+  </div>
+);
+
+const FieldError: React.FC<{ id: string; testId: string; children: React.ReactNode }> = ({
+  id,
+  testId,
+  children,
+}) => (
+  <p
+    id={id}
+    className="flex items-start gap-1.5 text-[0.8125rem] text-destructive"
+    data-testid={testId}
+  >
+    <CircleAlert aria-hidden="true" className="mt-0.5 size-3.5 shrink-0" />
+    <span>{children}</span>
+  </p>
+);
+
+const BOOKING_RULES = [
+  { icon: Clock, text: 'Đặt trước ít nhất 30 phút, 1 đến 8 giờ mỗi lượt' },
+  { icon: Info, text: 'Tự hủy được khi còn ít nhất 1 giờ trước giờ bắt đầu' },
+  { icon: Check, text: 'Tổng tiền do hệ thống tính lại khi xác nhận' },
+];
+
+const BookingRules: React.FC = () => (
+  <ul className="grid gap-1.5 border-t pt-4 text-xs text-muted-foreground">
+    {BOOKING_RULES.map(({ icon: Icon, text }) => (
+      <li key={text} className="flex items-center gap-2">
+        <Icon aria-hidden="true" className="size-3.5 shrink-0" />
+        {text}
+      </li>
+    ))}
+  </ul>
+);

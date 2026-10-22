@@ -90,7 +90,8 @@ describe('BookingDetailPage', () => {
       'href',
       '/rooms/22222222-2222-4222-8222-222222222222',
     );
-    expect(screen.getByTestId('detail-back-home-btn')).toHaveAttribute('href', '/');
+    // "Về danh sách phòng" points at the room explorer, which moved from / to /rooms.
+    expect(screen.getByTestId('detail-back-home-btn')).toHaveAttribute('href', '/rooms');
 
     expect(bookingApi.getBookingById).toHaveBeenCalledWith(validBookingId, expect.any(AbortSignal));
   });
@@ -336,7 +337,7 @@ describe('BookingDetailPage', () => {
 
     expect(await screen.findByTestId('booking-detail-card')).toBeInTheDocument();
     expect(screen.getByTestId('booking-status-badge')).toHaveTextContent('Đã hủy');
-    expect(screen.getByTestId('booking-status-badge')).toHaveClass('badge-cancelled');
+    expect(screen.getByTestId('booking-status-badge')).toHaveAttribute('data-status', 'CANCELLED');
     expect(screen.getByTestId('booking-total-value')).toHaveTextContent('1.234.567,5 đ');
     expect(screen.getByTestId('booking-time-value')).toHaveTextContent(
       /25\/10\/2026.*26\/10\/2026/,
@@ -345,7 +346,9 @@ describe('BookingDetailPage', () => {
 
   describe('Customer Booking Cancellation (CWB-26)', () => {
     it('displays "Hủy đặt phòng" button and cancellation policy info when booking is CONFIRMED (AC1)', async () => {
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
 
       renderComponent();
 
@@ -375,7 +378,9 @@ describe('BookingDetailPage', () => {
     });
 
     it('shows confirmation box when user clicks "Hủy đặt phòng" and allows closing without calling API', async () => {
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
 
       renderComponent();
       const user = userEvent.setup();
@@ -401,7 +406,9 @@ describe('BookingDetailPage', () => {
     });
 
     it('cancels booking successfully, updates badge to "Đã hủy", and displays success banner (AC1)', async () => {
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
 
       const cancelledBooking: BookingResult = {
         ...mockDetailData,
@@ -421,21 +428,29 @@ describe('BookingDetailPage', () => {
       await user.click(screen.getByTestId('cancel-booking-init-btn'));
       await user.click(screen.getByTestId('confirm-cancel-btn'));
 
-      expect(bookingApi.cancelBooking).toHaveBeenCalledWith(validBookingId, expect.any(AbortSignal));
+      expect(bookingApi.cancelBooking).toHaveBeenCalledWith(
+        validBookingId,
+        expect.any(AbortSignal),
+      );
 
       expect(await screen.findByTestId('cancel-success-banner')).toBeInTheDocument();
       expect(screen.getByTestId('cancel-success-banner')).toHaveTextContent(
         'Hủy đặt phòng thành công',
       );
       expect(screen.getByTestId('booking-status-badge')).toHaveTextContent('Đã hủy');
-      expect(screen.getByTestId('booking-status-badge')).toHaveClass('badge-cancelled');
+      expect(screen.getByTestId('booking-status-badge')).toHaveAttribute(
+        'data-status',
+        'CANCELLED',
+      );
 
       // Cancellation section is hidden once status is CANCELLED
       expect(screen.queryByTestId('cancellation-section')).not.toBeInTheDocument();
     });
 
     it('displays error alert when API returns 400 CANCELLATION_POLICY_VIOLATION (AC2)', async () => {
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
 
       const policyError = new AxiosError('Bad Request', '400', undefined, undefined, {
         status: 400,
@@ -467,7 +482,9 @@ describe('BookingDetailPage', () => {
     });
 
     it('displays conflict banner and allows refresh when API returns 409 BOOKING_STATE_CONFLICT', async () => {
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
 
       const conflictError = new AxiosError('Conflict', '409', undefined, undefined, {
         status: 409,
@@ -514,7 +531,9 @@ describe('BookingDetailPage', () => {
     });
 
     it('transitions to not-found state when cancelBooking returns 404 BOOKING_NOT_FOUND', async () => {
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
 
       const notFoundError = new AxiosError('Not Found', '404', undefined, undefined, {
         status: 404,
@@ -541,7 +560,9 @@ describe('BookingDetailPage', () => {
     });
 
     it('does not overwrite state if session switches while cancel request is in-flight', async () => {
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(mockDetailData));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
 
       let resolveCancel: (res: any) => void;
       const cancelPromise = new Promise((resolve) => {
