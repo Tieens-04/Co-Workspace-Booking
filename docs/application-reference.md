@@ -636,6 +636,37 @@ npm run test --workspace=apps/server -- src/__tests__/booking-revenue.test.ts sr
 npm run test:integration --workspace=apps/server -- src/__tests__/revenue-cancellation.integration.test.ts
 ```
 
+#### Tỷ lệ sử dụng phòng theo thời gian (CWB-42)
+
+`GET /api/v1/admin/dashboard/kpi` giữ nguyên response và kỳ ngày/tuần theo Asia/Ho_Chi_Minh.
+`totalRoomMinutes` là tổng thời gian trạng thái `AVAILABLE` của từng phòng giao với kỳ báo cáo,
+không sớm hơn `createdAt`. Giữ cơ sở thời gian toàn ngày 24 giờ của dashboard hiện có;
+đây không phải tỷ lệ trên giờ mở cửa. Phòng mới chỉ đóng góp từ lúc được tạo.
+
+`bookedMinutes` chỉ gồm `CONFIRMED`/`COMPLETED`, lấy phần thời gian booking giao với chính các
+khoảng khả dụng trên. Khoảng bảo trì không đóng góp vào cả tử và mẫu, kể cả còn booking đã được
+ADMIN chấp nhận giữ lại. Booking không bị hủy hay đổi trạng thái do phép tính này.
+Revenue, số lượt booking và status breakdown vẫn tính độc lập theo quy tắc hiện hành.
+
+Các khoảng dùng `[start, end)`: trạng thái mới hiệu lực ngay tại mốc chuyển; phút lẻ được giữ lại
+để không làm tròn từng khoảng gây sai số. `occupancyRate = bookedMinutes / totalRoomMinutes * 100`,
+làm tròn một chữ số thập phân; mẫu bằng 0 trả 0. Không clamp để che lỗi dữ liệu.
+Đọc booking và inventory trong cùng snapshot MySQL Repeatable Read.
+
+Lịch sử `room_status_history` được ghi trong giao dịch tạo phòng/đổi trạng thái, sau khóa dòng phòng.
+Cập nhật cùng trạng thái không thêm sự kiện; hai thay đổi quá sát nhau được xếp cách nhau tối thiểu 1 ms.
+Seed cũng ghi lịch sử. Không sửa trạng thái trực tiếp bằng SQL/script bỏ qua lịch sử.
+
+Backfill dùng trạng thái hiện tại từ ngày tạo phòng, vì lịch sử trước nâng cấp chưa tồn tại.
+Đây là giả định dữ liệu, không phải khôi phục lịch sử chính xác. Nếu có hồ sơ bảo trì bên ngoài,
+cần đối soát và chuẩn bị migration hiệu chỉnh riêng trước khi dựa vào báo cáo cũ.
+Quy trình triển khai xem README, kế hoạch chi tiết xem `docs/plans/cwb-42-dashboard-occupancy.md`.
+
+```bash
+npm run test --workspace=apps/server -- src/__tests__/admin-dashboard.repository.test.ts src/__tests__/admin-dashboard.service.test.ts src/__tests__/admin-dashboard.test.ts src/__tests__/room-repository.test.ts
+npm run test:integration --workspace=apps/server -- src/__tests__/admin-dashboard.integration.test.ts src/__tests__/admin-room.integration.test.ts
+```
+
 #### Kiểm thử Lịch sử, Chi tiết & Hủy đặt phòng (CWB-25, CWB-26)
 
 ```bash

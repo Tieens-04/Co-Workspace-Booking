@@ -26,7 +26,9 @@ export interface DashboardKpiResponseDto {
   todayBookingsCount: number;
   periodBookingsCount: number;
   occupancyRate: number;
+  /** AVAILABLE room-time within the period since creation; fractional minutes are preserved. */
   totalRoomMinutes: number;
+  /** CONFIRMED/COMPLETED minutes intersecting the same AVAILABLE room-time. */
   bookedMinutes: number;
   actualRevenue: string;
   potentialRevenue: string;
