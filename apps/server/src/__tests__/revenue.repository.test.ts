@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { BookingStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { BookingStatus, PaymentStatus, Prisma, RoomStatus } from '@prisma/client';
 import { BookingRepository } from '../repositories/booking.repository.js';
 import { AdminDashboardRepository } from '../repositories/admin-dashboard.repository.js';
 
 const database = vi.hoisted(() => ({
   booking: { findMany: vi.fn(), count: vi.fn() },
-  room: { count: vi.fn() },
+  room: { count: vi.fn(), findMany: vi.fn() },
 }));
-vi.mock('../utils/prisma.util.js', () => ({ default: database }));
+vi.mock('../utils/prisma.util.js', () => ({
+  default: {
+    ...database,
+    $transaction: async (callback: (db: typeof database) => Promise<unknown>) => callback(database),
+  },
+}));
 
 describe('Revenue repositories: cancelled payments', () => {
   beforeEach(() => vi.resetAllMocks());
@@ -32,12 +37,22 @@ describe('Revenue repositories: cancelled payments', () => {
     ].map((record, index) => ({
       ...record,
       id: String(index),
+      roomId: 'room-1',
       startTime: new Date('2030-01-01T01:00:00Z'),
       endTime: new Date('2030-01-01T02:00:00Z'),
     }));
     database.booking.findMany.mockResolvedValue(records);
     database.booking.count.mockResolvedValue(3);
     database.room.count.mockResolvedValue(1);
+    database.room.findMany.mockResolvedValue([
+      {
+        id: 'room-1',
+        createdAt: new Date('2029-01-01T00:00:00Z'),
+        statusHistory: [
+          { status: RoomStatus.AVAILABLE, effectiveAt: new Date('2029-01-01T00:00:00Z') },
+        ],
+      },
+    ]);
     const repository = new BookingRepository();
     vi.spyOn(repository, 'evaluateNoShowBookings').mockResolvedValue(0);
 

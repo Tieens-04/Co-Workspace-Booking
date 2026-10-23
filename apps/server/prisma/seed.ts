@@ -1,4 +1,4 @@
-import { PrismaClient, Role, RoomStatus } from '@prisma/client';
+import { Prisma, PrismaClient, Role, RoomStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
@@ -183,14 +183,36 @@ async function main() {
       where: { name: roomFields.name },
     });
 
-    const room = existingRoom
-      ? await prisma.room.update({
-          where: { id: existingRoom.id },
-          data: roomFields,
-        })
-      : await prisma.room.create({
-          data: roomFields,
+    const room = await prisma.$transaction(async (tx) => {
+      if (!existingRoom) {
+        const createdAt = new Date();
+        return tx.room.create({
+          data: {
+            ...roomFields,
+            createdAt,
+            statusHistory: { create: { status: roomFields.status, effectiveAt: createdAt } },
+          },
         });
+      }
+
+      const [lockedRoom] = await tx.$queryRaw<Array<{ status: RoomStatus }>>(
+        Prisma.sql`SELECT status FROM rooms WHERE id = ${existingRoom.id} FOR UPDATE`,
+      );
+      const capturedNow = new Date();
+      const data: Prisma.RoomUpdateInput = { ...roomFields };
+      if (lockedRoom.status !== roomFields.status) {
+        const latestHistory = await tx.roomStatusHistory.findFirst({
+          where: { roomId: existingRoom.id },
+          orderBy: { effectiveAt: 'desc' },
+          select: { effectiveAt: true },
+        });
+        const effectiveAt = new Date(
+          Math.max(capturedNow.getTime(), (latestHistory?.effectiveAt.getTime() ?? -1) + 1),
+        );
+        data.statusHistory = { create: { status: roomFields.status, effectiveAt } };
+      }
+      return tx.room.update({ where: { id: existingRoom.id }, data });
+    });
 
     // Cập nhật Images
     await prisma.roomImage.deleteMany({ where: { roomId: room.id } });

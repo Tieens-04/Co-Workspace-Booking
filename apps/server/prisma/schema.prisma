@@ -71,8 +71,21 @@ model Room {
   images       RoomImage[]
   amenities    RoomAmenity[]
   bookings     Booking[]
+  statusHistory RoomStatusHistory[]
 
   @@map("rooms")
+}
+
+model RoomStatusHistory {
+  id          String     @id @default(uuid())
+  roomId      String     @map("room_id")
+  status      RoomStatus
+  effectiveAt DateTime   @map("effective_at") @db.DateTime(3)
+
+  room        Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, effectiveAt])
+  @@map("room_status_history")
 }
 
 model Amenity {

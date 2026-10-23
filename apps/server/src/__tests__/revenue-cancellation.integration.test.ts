@@ -37,12 +37,15 @@ describe('Cancellation revenue integration (real MySQL)', () => {
     });
     userId = user.id;
     customerToken = generateToken({ sub: user.id, role: Role.CUSTOMER });
+    const createdAt = new Date();
     const room = await prisma.room.create({
       data: {
         name: prefix,
         capacity: 4,
         pricePerHour: new Prisma.Decimal('100.00'),
         status: RoomStatus.AVAILABLE,
+        createdAt,
+        statusHistory: { create: { status: RoomStatus.AVAILABLE, effectiveAt: createdAt } },
       },
     });
     roomId = room.id;

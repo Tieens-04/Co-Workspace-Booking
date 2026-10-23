@@ -254,6 +254,7 @@ export class RoomRepository implements RoomRepositoryContract {
         }
       }
 
+      const createdAt = new Date();
       const created = await tx.room.create({
         data: {
           name: data.name,
@@ -261,6 +262,10 @@ export class RoomRepository implements RoomRepositoryContract {
           capacity: data.capacity,
           pricePerHour: new Prisma.Decimal(data.pricePerHour),
           status: RoomStatus.AVAILABLE,
+          createdAt,
+          statusHistory: {
+            create: { status: RoomStatus.AVAILABLE, effectiveAt: createdAt },
+          },
           amenities:
             data.amenityIds && data.amenityIds.length > 0
               ? {
@@ -289,13 +294,13 @@ export class RoomRepository implements RoomRepositoryContract {
     return prisma.$transaction(async (tx) => {
       // Lock room row in MySQL with FOR UPDATE to serialize with appendImages and other concurrent room updates
       const lockedRoom = await lockRoomRow(tx, id);
+      const capturedNow = new Date();
 
       // Check transition to MAINTENANCE with future confirmed bookings
       const isTransitionToMaintenance =
         data.status === RoomStatus.MAINTENANCE && lockedRoom.status !== RoomStatus.MAINTENANCE;
 
       if (isTransitionToMaintenance) {
-        const capturedNow = new Date();
         const futureBookings = await tx.booking.findMany({
           where: {
             roomId: id,
@@ -350,6 +355,18 @@ export class RoomRepository implements RoomRepositoryContract {
       }
       if (data.status !== undefined) {
         scalarUpdate.status = data.status;
+        if (data.status !== lockedRoom.status) {
+          const latestHistory = await tx.roomStatusHistory.findFirst({
+            where: { roomId: id },
+            orderBy: { effectiveAt: 'desc' },
+            select: { effectiveAt: true },
+          });
+          // Preserve transition order even when serialized updates share one millisecond.
+          const effectiveAt = new Date(
+            Math.max(capturedNow.getTime(), (latestHistory?.effectiveAt.getTime() ?? -1) + 1),
+          );
+          scalarUpdate.statusHistory = { create: { status: data.status, effectiveAt } };
+        }
       }
 
       if (Object.keys(scalarUpdate).length > 0) {

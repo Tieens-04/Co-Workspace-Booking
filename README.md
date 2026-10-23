@@ -69,6 +69,18 @@ Migration lấy một mốc UTC cố định: booking đã bắt đầu tại m�
 
 Trước nâng cấp, sao lưu database theo quy trình triển khai. Chạy `npm exec --workspace=apps/server -- prisma migrate deploy`, khởi động bản mới, rồi kiểm tra luồng ADMIN check-in và detail/list/KPI. Không hạ backend về bản evaluator cũ trên database đang hoạt động.
 
+## Nâng cấp lịch sử phòng (CWB-42)
+
+Dừng các backend/seed cũ trước khi migration để không bỏ sót lịch sử trạng thái.
+Sao lưu database theo quy trình triển khai, chạy `npm exec --workspace=apps/server -- prisma migrate deploy`
+và `npm run db:generate --workspace=apps/server`, rồi khởi động backend mới. Không chạy bản cũ song song:
+mọi thao tác tạo/đổi trạng thái phòng phải ghi lịch sử cùng giao dịch.
+
+Migration bổ sung `room_status_history` và giả định trạng thái hiện tại của mỗi phòng đã áp dụng từ ngày tạo.
+Những lần bảo trì trước nâng cấp chưa từng được lưu không thể khôi phục tự động; báo cáo cũ có thể thay đổi
+một lần khi áp dụng định nghĩa mới. Từ nâng cấp trở đi, đổi trạng thái phòng không viết lại lịch sử đã ghi.
+Xem [kế hoạch và định nghĩa CWB-42](docs/plans/cwb-42-dashboard-occupancy.md).
+
 ## Cấu trúc và tài liệu
 
 - `apps/client/`: giao diện React, routes, hooks và API client.

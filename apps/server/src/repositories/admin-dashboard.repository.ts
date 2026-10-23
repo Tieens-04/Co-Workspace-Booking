@@ -1,7 +1,8 @@
-import { BookingStatus, RoomStatus } from '@prisma/client';
+import { BookingStatus, Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { summarizeBookingRevenue } from '../utils/booking-revenue.util.js';
 import { bookingRepository } from './booking.repository.js';
+import { calculateDashboardOccupancy } from '../utils/dashboard-occupancy.util.js';
 import {
   getDayBounds,
   generateAvailabilitySlots,
@@ -56,89 +57,99 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
   }): Promise<DashboardKpiRawResult> {
     const { startDate, endDate, todayStart, todayEnd } = bounds;
 
-    // 1. Count rooms
-    const [totalRooms, totalAvailableRooms] = await Promise.all([
-      prisma.room.count(),
-      prisma.room.count({ where: { status: RoomStatus.AVAILABLE } }),
-    ]);
+    // One repeatable-read snapshot keeps bookings and inventory consistent during room updates.
+    return prisma.$transaction(
+      async (tx) => {
+        // 1. Count rooms
+        const [totalRooms, totalAvailableRooms] = await Promise.all([
+          tx.room.count(),
+          tx.room.count({ where: { status: RoomStatus.AVAILABLE } }),
+        ]);
 
-    // 2. Count today bookings
-    const todayBookingsCount = await prisma.booking.count({
-      where: {
-        startTime: {
-          gte: todayStart,
-          lt: todayEnd,
-        },
-      },
-    });
+        // 2. Count today bookings
+        const todayBookingsCount = await tx.booking.count({
+          where: {
+            startTime: {
+              gte: todayStart,
+              lt: todayEnd,
+            },
+          },
+        });
 
-    // 3. Query bookings in period [startDate, endDate)
-    const periodBookings = await prisma.booking.findMany({
-      where: {
-        startTime: {
-          lt: endDate,
-        },
-        endTime: {
-          gt: startDate,
-        },
-      },
-      select: {
-        id: true,
-        status: true,
-        paymentStatus: true,
-        totalAmount: true,
-        startTime: true,
-        endTime: true,
-      },
-    });
+        // 3. Query bookings in period [startDate, endDate)
+        const periodBookings = await tx.booking.findMany({
+          where: {
+            startTime: {
+              lt: endDate,
+            },
+            endTime: {
+              gt: startDate,
+            },
+          },
+          select: {
+            id: true,
+            roomId: true,
+            status: true,
+            paymentStatus: true,
+            totalAmount: true,
+            startTime: true,
+            endTime: true,
+          },
+        });
 
-    const revenue = summarizeBookingRevenue(periodBookings);
+        const revenue = summarizeBookingRevenue(periodBookings);
 
-    const statusBreakdown = {
-      confirmed: 0,
-      completed: 0,
-      cancelled: 0,
-      noShow: 0,
-    };
+        const statusBreakdown = {
+          confirmed: 0,
+          completed: 0,
+          cancelled: 0,
+          noShow: 0,
+        };
 
-    let bookedMinutes = 0;
-
-    for (const b of periodBookings) {
-      // Status breakdown
-      if (b.status === BookingStatus.CONFIRMED) statusBreakdown.confirmed += 1;
-      else if (b.status === BookingStatus.COMPLETED) statusBreakdown.completed += 1;
-      else if (b.status === BookingStatus.CANCELLED) statusBreakdown.cancelled += 1;
-      else if (b.status === BookingStatus.NO_SHOW) statusBreakdown.noShow += 1;
-
-      // Overlap minutes in period: only active confirmed/completed bookings occupy rooms
-      if (b.status === BookingStatus.CONFIRMED || b.status === BookingStatus.COMPLETED) {
-        const overlapStartMs = Math.max(b.startTime.getTime(), startDate.getTime());
-        const overlapEndMs = Math.min(b.endTime.getTime(), endDate.getTime());
-        if (overlapEndMs > overlapStartMs) {
-          bookedMinutes += Math.round((overlapEndMs - overlapStartMs) / (60 * 1000));
+        for (const b of periodBookings) {
+          // Status breakdown
+          if (b.status === BookingStatus.CONFIRMED) statusBreakdown.confirmed += 1;
+          else if (b.status === BookingStatus.COMPLETED) statusBreakdown.completed += 1;
+          else if (b.status === BookingStatus.CANCELLED) statusBreakdown.cancelled += 1;
+          else if (b.status === BookingStatus.NO_SHOW) statusBreakdown.noShow += 1;
         }
-      }
-    }
 
-    const periodDurationMinutes = Math.round(
-      (endDate.getTime() - startDate.getTime()) / (60 * 1000),
+        const rooms = await tx.room.findMany({
+          where: { createdAt: { lt: endDate } },
+          select: {
+            id: true,
+            createdAt: true,
+            statusHistory: {
+              where: { effectiveAt: { lt: endDate } },
+              select: { status: true, effectiveAt: true },
+              orderBy: { effectiveAt: 'asc' },
+            },
+          },
+        });
+        const { bookedMinutes, totalPeriodRoomMinutes } = calculateDashboardOccupancy(
+          rooms,
+          periodBookings,
+          startDate,
+          endDate,
+        );
+
+        return {
+          totalAvailableRooms,
+          totalRooms,
+          todayBookingsCount,
+          periodBookingsCount: periodBookings.length,
+          bookedMinutes,
+          totalPeriodRoomMinutes,
+          actualRevenue: revenue.actualRevenue,
+          potentialRevenue: revenue.potentialRevenue,
+          unpaidRevenue: revenue.unpaidRevenue,
+          statusBreakdown,
+          paidBookingsCount: revenue.paidBookings,
+          unpaidBookingsCount: revenue.unpaidBookings,
+        };
+      },
+      { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead },
     );
-    const totalPeriodRoomMinutes = totalAvailableRooms * periodDurationMinutes;
-
-    return {
-      totalAvailableRooms,
-      totalRooms,
-      todayBookingsCount,
-      periodBookingsCount: periodBookings.length,
-      bookedMinutes,
-      totalPeriodRoomMinutes,
-      actualRevenue: revenue.actualRevenue,
-      potentialRevenue: revenue.potentialRevenue,
-      unpaidRevenue: revenue.unpaidRevenue,
-      statusBreakdown,
-      paidBookingsCount: revenue.paidBookings,
-      unpaidBookingsCount: revenue.unpaidBookings,
-    };
   }
 
   async getScheduleData(dateStr: string): Promise<DashboardScheduleResponseDto> {
