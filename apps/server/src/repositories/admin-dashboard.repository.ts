@@ -1,5 +1,6 @@
-import { Prisma, BookingStatus, PaymentStatus, RoomStatus } from '@prisma/client';
+import { BookingStatus, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
+import { summarizeBookingRevenue } from '../utils/booking-revenue.util.js';
 import { bookingRepository } from './booking.repository.js';
 import {
   getDayBounds,
@@ -91,10 +92,7 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
       },
     });
 
-    let actualRevenueDecimal = new Prisma.Decimal(0);
-    let potentialRevenueDecimal = new Prisma.Decimal(0);
-    let paidBookingsCount = 0;
-    let unpaidBookingsCount = 0;
+    const revenue = summarizeBookingRevenue(periodBookings);
 
     const statusBreakdown = {
       confirmed: 0,
@@ -112,10 +110,6 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
       else if (b.status === BookingStatus.CANCELLED) statusBreakdown.cancelled += 1;
       else if (b.status === BookingStatus.NO_SHOW) statusBreakdown.noShow += 1;
 
-      if (b.status === BookingStatus.CANCELLED) {
-        continue;
-      }
-
       // Overlap minutes in period: only active confirmed/completed bookings occupy rooms
       if (b.status === BookingStatus.CONFIRMED || b.status === BookingStatus.COMPLETED) {
         const overlapStartMs = Math.max(b.startTime.getTime(), startDate.getTime());
@@ -124,20 +118,7 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
           bookedMinutes += Math.round((overlapEndMs - overlapStartMs) / (60 * 1000));
         }
       }
-
-      // Revenue
-      const amount = new Prisma.Decimal(b.totalAmount);
-      potentialRevenueDecimal = potentialRevenueDecimal.add(amount);
-
-      if (b.paymentStatus === PaymentStatus.PAID) {
-        actualRevenueDecimal = actualRevenueDecimal.add(amount);
-        paidBookingsCount += 1;
-      } else {
-        unpaidBookingsCount += 1;
-      }
     }
-
-    const unpaidRevenueDecimal = potentialRevenueDecimal.sub(actualRevenueDecimal);
 
     const periodDurationMinutes = Math.round(
       (endDate.getTime() - startDate.getTime()) / (60 * 1000),
@@ -151,12 +132,12 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
       periodBookingsCount: periodBookings.length,
       bookedMinutes,
       totalPeriodRoomMinutes,
-      actualRevenue: actualRevenueDecimal.toFixed(2),
-      potentialRevenue: potentialRevenueDecimal.toFixed(2),
-      unpaidRevenue: unpaidRevenueDecimal.toFixed(2),
+      actualRevenue: revenue.actualRevenue,
+      potentialRevenue: revenue.potentialRevenue,
+      unpaidRevenue: revenue.unpaidRevenue,
       statusBreakdown,
-      paidBookingsCount,
-      unpaidBookingsCount,
+      paidBookingsCount: revenue.paidBookings,
+      unpaidBookingsCount: revenue.unpaidBookings,
     };
   }
 

@@ -607,6 +607,35 @@ Hệ thống cho phép khách hàng (`CUSTOMER`) chủ động tự hủy đơn 
   - Khóa nút và hiển thị trạng thái đang xử lý (`isCancelling`), cập nhật trực tiếp huy hiệu trạng thái sang _"Đã hủy"_ khi thành công mà không cần tải lại toàn trang.
   - Hiển thị banner thông báo lỗi chính sách (`role="alert"`) hoặc lỗi xung đột trạng thái (kèm nút tải lại dữ liệu).
 
+#### Doanh thu khi hủy booking (CWB-40)
+
+Hủy booking của CUSTOMER hoặc ADMIN không hoàn tiền và giữ nguyên `paymentStatus`,
+`paymentMethod`, `totalAmount`. Hệ thống hiện chưa hỗ trợ ghi nhận hoàn tiền.
+
+Revenue API (`GET /api/v1/admin/revenue`, alias `/admin/bookings/revenue`) và KPI
+(`/admin/dashboard/kpi`) dùng chung quy tắc tính tiền bằng Decimal:
+
+- `actualRevenue`: tổng tiền mọi booking `PAID`, bao gồm `CANCELLED`.
+- `unpaidRevenue`: tổng tiền booking `UNPAID` chưa bị hủy; đơn `CANCELLED + UNPAID` không đóng góp.
+- `potentialRevenue = actualRevenue + unpaidRevenue`.
+- `paidBookings`/`paidBookingsCount` đếm mọi booking PAID; `unpaidBookings`/`unpaidBookingsCount`
+  chỉ đếm UNPAID chưa bị hủy. Số đơn hủy đếm độc lập và có thể đồng thời thuộc nhóm PAID;
+  không cộng các nhóm này để suy ra tổng số booking.
+
+Booking đã hủy không đóng góp thời gian sử dụng phòng dù đã PAID. Ví dụ PAID `100.00`
+sau hủy vẫn đóng góp `100.00` vào actual và potential, `0.00` vào unpaid.
+Booking PAID đã hủy trong lịch sử cũng được tính lại khi đọc báo cáo; không cần migration.
+
+Bộ lọc kỳ giữ nguyên: Revenue API chọn theo ngày bắt đầu booking (và roomId nếu có),
+KPI chọn booking giao với kỳ ngày/tuần. Tổng tiền đầy đủ của booking được chọn được tính;
+không phân bổ tiền theo phần thời gian giao và không chuyển sang báo cáo theo ngày thu tiền.
+Do đó chỉ so sánh tổng hai API khi chúng chọn cùng tập booking.
+
+```bash
+npm run test --workspace=apps/server -- src/__tests__/booking-revenue.test.ts src/__tests__/revenue.repository.test.ts
+npm run test:integration --workspace=apps/server -- src/__tests__/revenue-cancellation.integration.test.ts
+```
+
 #### Kiểm thử Lịch sử, Chi tiết & Hủy đặt phòng (CWB-25, CWB-26)
 
 ```bash
