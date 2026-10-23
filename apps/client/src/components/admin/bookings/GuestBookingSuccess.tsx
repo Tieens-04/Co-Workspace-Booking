@@ -34,6 +34,8 @@ export function GuestBookingSuccess({ booking, onCreateAnother }: GuestBookingSu
             room: booking.room,
             startTime: booking.startTime,
             endTime: booking.endTime,
+            checkedInAt: booking.checkedInAt,
+            attendanceTrackingEnabled: booking.attendanceTrackingEnabled,
             totalAmount: booking.totalAmount,
             note: booking.note,
             status: booking.status,

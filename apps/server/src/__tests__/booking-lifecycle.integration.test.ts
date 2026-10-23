@@ -57,6 +57,8 @@ describe('CWB-38 booking lifecycle (real MySQL)', () => {
         startTime: new Date(endTime.getTime() - 2 * 60 * 60 * 1000),
         endTime,
         totalAmount: new Prisma.Decimal('200.00'),
+        // CWB-38 verifies the legacy manual lifecycle; tracked attendance is covered in CWB-39.
+        attendanceTrackingEnabled: false,
         status,
       },
     });

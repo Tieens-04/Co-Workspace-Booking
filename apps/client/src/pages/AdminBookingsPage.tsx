@@ -138,6 +138,8 @@ export const AdminBookingsPage: React.FC = () => {
   // Success message banner
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
   const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
+  const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
+  const pendingActionRef = useRef(false);
 
   const requestIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -243,6 +245,9 @@ export const AdminBookingsPage: React.FC = () => {
   };
 
   const handleCompleteBooking = async (booking: AdminBookingItem) => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
+    setPendingBookingId(booking.id);
     setActionErrorMessage(null);
     setActionSuccessMessage(null);
     try {
@@ -258,10 +263,16 @@ export const AdminBookingsPage: React.FC = () => {
       setActionErrorMessage(msg);
       showToast(msg, 'error');
       if (err.response?.status === 409) fetchAdminBookings(true);
+    } finally {
+      pendingActionRef.current = false;
+      setPendingBookingId(null);
     }
   };
 
   const handleMarkNoShow = async (booking: AdminBookingItem) => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
+    setPendingBookingId(booking.id);
     setActionErrorMessage(null);
     setActionSuccessMessage(null);
     try {
@@ -277,6 +288,41 @@ export const AdminBookingsPage: React.FC = () => {
       setActionErrorMessage(msg);
       showToast(msg, 'error');
       if (err.response?.status === 409) fetchAdminBookings(true);
+    } finally {
+      pendingActionRef.current = false;
+      setPendingBookingId(null);
+    }
+  };
+
+  const handleCheckIn = async (booking: AdminBookingItem) => {
+    if (pendingActionRef.current) return;
+    pendingActionRef.current = true;
+    setPendingBookingId(booking.id);
+    setActionErrorMessage(null);
+    setActionSuccessMessage(null);
+    try {
+      const res = await adminBookingApi.checkInBooking(booking.id);
+      if (!res.success) {
+        const message = res.message || 'Không thể check-in. Vui lòng thử lại.';
+        setActionErrorMessage(message);
+        showToast(message, 'error');
+        return;
+      }
+      const message = `Đã check-in cho đơn ${booking.bookingCode}`;
+      setBookings(
+        (previous) => previous?.map((item) => (item.id === booking.id ? res.data : item)) ?? null,
+      );
+      setActionSuccessMessage(message);
+      showToast(message, 'success');
+      fetchAdminBookings(true);
+    } catch (err: any) {
+      const message = err.response?.data?.message || 'Không thể check-in. Vui lòng thử lại.';
+      setActionErrorMessage(message);
+      showToast(message, 'error');
+      if (err.response?.status === 409) fetchAdminBookings(true);
+    } finally {
+      pendingActionRef.current = false;
+      setPendingBookingId(null);
     }
   };
 
@@ -536,6 +582,8 @@ export const AdminBookingsPage: React.FC = () => {
               onComplete={handleCompleteBooking}
               onNoShow={handleMarkNoShow}
               onCancel={handleOpenCancelModal}
+              onCheckIn={handleCheckIn}
+              pendingBookingId={pendingBookingId}
             />
 
             {/* Pagination Controls */}

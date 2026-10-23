@@ -654,12 +654,16 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - **Mã đặt phòng**: Tạo mã duy nhất `CS-YYYYMMDD-XXXX` (giờ VN) với cơ chế retry tối đa 5 lần.
     - **Transaction & MySQL Row-Locking**: Sử dụng `prisma.$transaction` và khóa dòng `SELECT ... FOR UPDATE` đồng nhất với luồng khách hàng. Chống hoàn toàn tình trạng double-booking giữa khách vãng lai và khách hàng trực tuyến.
     - **Cách ly dữ liệu khách hàng**: Khách hàng thông thường (`CUSTOMER`) tuyệt đối không thể truy cập, xem hoặc thao tác trên đơn của khách vãng lai qua các API cá nhân.
-- **Hoàn tất / Không đến (CWB-38)**:
+- **Check-in / Hoàn tất / Không đến (CWB-39)**:
+  - `PATCH /api/v1/admin/bookings/:id/check-in` yêu cầu `ADMIN`, UUID hợp lệ và body rỗng `{}` (hoặc không có body). Không nhận timestamp, trạng thái hay thông tin thanh toán từ client.
+  - Chỉ check-in đơn `CONFIRMED` trong khoảng `startTime <= now < endTime`. Server lấy giờ sau khi khóa dòng booking; lưu `checkedInAt` đúng một lần, không đổi `paymentStatus`. Gọi lại đơn đã check-in ở trạng thái `CONFIRMED` hoặc `COMPLETED` trả `200` cùng timestamp; đơn không tồn tại trả `404`, sai thời gian/trạng thái trả `409 BOOKING_STATE_CONFLICT`.
+  - DTO booking admin/customer có `checkedInAt` (ISO UTC hoặc `null`) và `attendanceTrackingEnabled` (boolean). Khách đã check-in vẫn giữ `CONFIRMED` cho đến khi ADMIN hoàn tất.
   - `PATCH /api/v1/admin/bookings/:id/complete` và `PATCH /api/v1/admin/bookings/:id/no-show` yêu cầu vai trò `ADMIN`, chỉ chuyển từ `CONFIRMED` khi `now >= endTime`. Không hỗ trợ trả phòng sớm; thanh toán vẫn là trạng thái riêng.
   - Server đọc `end_time` bằng `SELECT ... FOR UPDATE` trong transaction và lấy thời gian đánh giá sau khi đã lấy khóa. Trước giờ kết thúc trả `409 BOOKING_STATE_CONFLICT`, không đổi trạng thái hay giải phóng phòng.
   - Gọi lại cùng trạng thái đích trả `200` với bản ghi hiện tại. Trạng thái kết thúc khác trả `409 BOOKING_STATE_CONFLICT`; không tìm thấy trả `404 BOOKING_NOT_FOUND`.
   - Tạo booking vẫn khóa phòng, kiểm tra overlap `existing.start < requested.end AND existing.end > requested.start` với `CONFIRMED`; yêu cầu đặt trùng trả `409 BOOKING_CONFLICT`.
-  - **Giới hạn được giữ nguyên:** luồng đọc danh sách admin/lịch sử khách hàng/doanh thu tự chuyển các đơn `CONFIRMED` đã hết giờ thành `NO_SHOW`. Sau khi đã tự chuyển, không thể hoàn tất đơn đó; CWB-38 không thay đổi policy này.
+  - Đơn bật theo dõi check-in phải có `checkedInAt` mới được hoàn tất. Không cho đánh dấu `NO_SHOW` đối với đơn đã check-in. Đơn lịch sử không bật theo dõi vẫn được ADMIN giải quyết thủ công sau `endTime`.
+  - Customer detail/list, admin list, dashboard KPI/lịch và revenue dùng chung lazy evaluator: chỉ tự chuyển `CONFIRMED` có `attendanceTrackingEnabled = true`, `checkedInAt = null`, `endTime <= now` sang `NO_SHOW`, không phụ thuộc `PAID/UNPAID`. Evaluator xử lý theo batch, khóa và kiểm tra lại dòng booking; chạy lặp không đổi lịch sử. Detail chỉ đánh giá booking thuộc người gọi.
 - **Giao diện Quản trị Đặt phòng Phía Client (`/admin/bookings`)**:
   - Tích hợp điều hướng từ menu Quản trị (`/admin`).
   - Thanh tìm kiếm và bộ lọc nhanh: Ô nhập mã đơn, bộ chọn ngày (Việt Nam UTC+7), dropdown trạng thái, nút Tìm kiếm, Xóa bộ lọc và Làm mới dữ liệu. Đồng bộ trạng thái URL search params.
@@ -667,7 +671,7 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - Huy hiệu nhận diện loại khách hàng: Tag tông slate cho **Khách vãng lai (Guest)** kèm SĐT; Tag trung tính cho **Tài khoản (User)**.
     - Trạng thái đơn dùng `StatusBadge` theo tông trạng thái của hệ thiết kế (`CONFIRMED` xanh dương, `COMPLETED` xanh lá, `CANCELLED` đỏ, `NO_SHOW` cam đất), luôn kèm nhãn chữ.
     - Phân trang đầy đủ kèm trạng thái trống/rỗng thân thiện.
-    - Chỉ hiện “Hoàn tất” / “Không đến” cho đơn `CONFIRMED` đã đến `endTime`; cập nhật khi tới mốc kết thúc và khi cửa sổ được focus lại. Đồng hồ client chỉ hỗ trợ hiển thị, server quyết định điều kiện thời gian.
+    - Hiện “Check-in” trong giờ đặt phòng khi chưa ghi nhận khách đến; hiển thị thời gian check-in theo giờ Việt Nam, hoặc “Chưa check-in” / “Chưa có dữ liệu check-in” cho dữ liệu lịch sử. Sau `endTime`, hiện “Hoàn tất” khi đã check-in hoặc thuộc dữ liệu lịch sử; “Không đến” chỉ khi chưa check-in. Cập nhật tại cả `startTime`, `endTime` và khi focus; server quyết định điều kiện thời gian.
     - Lỗi thao tác hiển thị riêng, không thay thế bảng danh sách. Khi complete/no-show trả `409`, giữ bảng trong lúc tải lại dữ liệu và không báo thành công.
   - **Form Đặt phòng Khách vãng lai (`AdminGuestBookingForm`)**:
     - Nhập họ tên và số điện thoại khách vãng lai.
@@ -688,6 +692,10 @@ npm run test:integration --workspace=apps/server -- src/__tests__/admin-booking.
 
 # Lifecycle: endTime ± 1ms, chờ khóa, complete/no-show cạnh tranh với customer/guest create
 npm run test:integration --workspace=apps/server -- src/__tests__/booking-lifecycle.integration.test.ts
+
+# Check-in: PAID/UNPAID, start/end ± 1ms, dữ liệu cũ, idempotency và khóa MySQL
+npm run test --workspace=apps/server -- src/__tests__/booking-check-in.test.ts
+npm run test:integration --workspace=apps/server -- src/__tests__/booking-check-in.integration.test.ts
 
 # Frontend tests (Giao diện bảng admin bookings, form đặt phòng khách vãng lai, route guard)
 npm run test --workspace=apps/client -- src/__tests__/AdminBookingsPage.test.tsx src/__tests__/AdminGuestBookingForm.test.tsx src/__tests__/AdminPage.test.tsx src/__tests__/RouteGuard.test.tsx

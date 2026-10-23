@@ -9,6 +9,7 @@ import {
   AdminCancelBookingParamsInput,
   AdminCancelBookingBodyInput,
   CompleteBookingParamsInput,
+  CheckInBookingParamsInput,
   MarkNoShowParamsInput,
   GetRevenueQueryInput,
 } from '../validators/admin-booking.validator.js';
@@ -53,6 +54,16 @@ export class AdminBookingController {
       const { reason } = req.body as AdminCancelBookingBodyInput;
       const data = await this.service.cancelBooking(id, reason);
       return sendSuccess(res, data, 'Hủy đơn đặt phòng thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  checkInBooking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params as unknown as CheckInBookingParamsInput;
+      const data = await this.service.checkInBooking(id);
+      return sendSuccess(res, data, 'Check-in thành công', 200);
     } catch (err) {
       return next(err);
     }

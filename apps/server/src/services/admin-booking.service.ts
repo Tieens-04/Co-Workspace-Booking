@@ -92,6 +92,10 @@ export class AdminBookingService {
     return booking;
   }
 
+  async checkInBooking(id: string): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.checkInBookingForAdmin(id);
+  }
+
   async completeBooking(id: string): Promise<AdminBookingResponseDto> {
     return this.adminBookingRepo.completeBookingForAdmin(id);
   }

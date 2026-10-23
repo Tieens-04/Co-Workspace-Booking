@@ -15,6 +15,8 @@ export interface BookingResponseDto {
   room: BookingRoomDto;
   startTime: Date;
   endTime: Date;
+  checkedInAt: Date | null;
+  attendanceTrackingEnabled: boolean;
   totalAmount: string;
   note: string | null;
   status: BookingStatus;

@@ -65,6 +65,8 @@ export const bookingReadSelect = {
   },
   startTime: true,
   endTime: true,
+  checkedInAt: true,
+  attendanceTrackingEnabled: true,
   totalAmount: true,
   note: true,
   status: true,
@@ -95,6 +97,8 @@ export function mapBookingRecordToDto(record: BookingReadRecord): BookingRespons
     },
     startTime: record.startTime,
     endTime: record.endTime,
+    checkedInAt: record.checkedInAt,
+    attendanceTrackingEnabled: record.attendanceTrackingEnabled,
     totalAmount,
     note: record.note,
     status: record.status,
@@ -115,6 +119,8 @@ export const adminBookingReadSelect = {
   },
   startTime: true,
   endTime: true,
+  checkedInAt: true,
+  attendanceTrackingEnabled: true,
   totalAmount: true,
   note: true,
   status: true,
@@ -171,6 +177,8 @@ export function mapAdminBookingRecordToDto(
     },
     startTime: record.startTime,
     endTime: record.endTime,
+    checkedInAt: record.checkedInAt,
+    attendanceTrackingEnabled: record.attendanceTrackingEnabled,
     totalAmount,
     note: record.note,
     status: record.status,
@@ -205,9 +213,10 @@ export interface AdminBookingRepositoryContract {
     paymentMethod: PaymentMethod,
   ): Promise<AdminBookingResponseDto>;
   cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto>;
+  checkInBookingForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
   completeBookingForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
   markNoShowForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
-  evaluateNoShowBookings(now?: Date, userId?: string): Promise<number>;
+  evaluateNoShowBookings(now?: Date, userId?: string, id?: string): Promise<number>;
   calculateRevenue(filter: RevenuePeriodFilter, now?: Date): Promise<AdminRevenueResponseDto>;
 }
 
@@ -285,6 +294,8 @@ export class BookingRepository
         },
         startTime: createdBooking.startTime,
         endTime: createdBooking.endTime,
+        checkedInAt: createdBooking.checkedInAt,
+        attendanceTrackingEnabled: createdBooking.attendanceTrackingEnabled,
         totalAmount: createdBooking.totalAmount.toFixed(2),
         note: createdBooking.note,
         status: createdBooking.status,
@@ -335,6 +346,7 @@ export class BookingRepository
   }
 
   async findByIdForUser(userId: string, id: string): Promise<BookingResponseDto | null> {
+    await this.evaluateNoShowBookings(undefined, userId, id);
     const record = await prisma.booking.findFirst({
       where: {
         id,
@@ -568,6 +580,56 @@ export class BookingRepository
     });
   }
 
+  async checkInBookingForAdmin(
+    id: string,
+    clock: () => Date = () => new Date(),
+  ): Promise<AdminBookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: BookingStatus;
+          start_time: Date | string;
+          end_time: Date | string;
+          checked_in_at: Date | string | null;
+        }>
+      >(
+        Prisma.sql`SELECT id, status, start_time, end_time, checked_in_at FROM bookings WHERE id = ${id} FOR UPDATE`,
+      );
+      const booking = rows[0];
+      if (!booking) throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      const now = clock();
+      if (
+        booking.checked_in_at &&
+        (booking.status === BookingStatus.CONFIRMED || booking.status === BookingStatus.COMPLETED)
+      ) {
+        const existing = await tx.booking.findUnique({
+          where: { id },
+          select: adminBookingReadSelect,
+        });
+        if (!existing) throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+        return mapAdminBookingRecordToDto(existing);
+      }
+      if (
+        booking.status !== BookingStatus.CONFIRMED ||
+        now.getTime() < new Date(booking.start_time).getTime() ||
+        now.getTime() >= new Date(booking.end_time).getTime()
+      ) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể check-in đơn đã xác nhận trong thời gian đặt phòng',
+          409,
+        );
+      }
+      const updated = await tx.booking.update({
+        where: { id },
+        data: { checkedInAt: now },
+        select: adminBookingReadSelect,
+      });
+      return mapAdminBookingRecordToDto(updated);
+    });
+  }
+
   async completeBookingForAdmin(
     id: string,
     clock: () => Date = () => new Date(),
@@ -579,8 +641,12 @@ export class BookingRepository
           id: string;
           status: BookingStatus;
           end_time: Date | string;
+          checked_in_at: Date | string | null;
+          attendance_tracking_enabled: boolean;
         }>
-      >(Prisma.sql`SELECT id, status, end_time FROM bookings WHERE id = ${id} FOR UPDATE`);
+      >(
+        Prisma.sql`SELECT id, status, end_time, checked_in_at, attendance_tracking_enabled FROM bookings WHERE id = ${id} FOR UPDATE`,
+      );
 
       if (!rows || rows.length === 0) {
         throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
@@ -627,6 +693,14 @@ export class BookingRepository
         );
       }
 
+      if (lockedBooking.attendance_tracking_enabled && !lockedBooking.checked_in_at) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể hoàn tất đơn đặt phòng đã check-in',
+          409,
+        );
+      }
+
       // 5. Update status to COMPLETED
       const updated = await tx.booking.update({
         where: { id },
@@ -651,14 +725,26 @@ export class BookingRepository
           id: string;
           status: BookingStatus;
           end_time: Date | string;
+          checked_in_at: Date | string | null;
+          attendance_tracking_enabled: boolean;
         }>
-      >(Prisma.sql`SELECT id, status, end_time FROM bookings WHERE id = ${id} FOR UPDATE`);
+      >(
+        Prisma.sql`SELECT id, status, end_time, checked_in_at, attendance_tracking_enabled FROM bookings WHERE id = ${id} FOR UPDATE`,
+      );
 
       if (!rows || rows.length === 0) {
         throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
       }
 
       const lockedBooking = rows[0];
+
+      if (lockedBooking.checked_in_at) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể đánh dấu không đến cho đơn đã check-in',
+          409,
+        );
+      }
 
       // 2. Idempotent check: if already NO_SHOW, return current record without modification
       if (lockedBooking.status === BookingStatus.NO_SHOW) {
@@ -711,21 +797,42 @@ export class BookingRepository
     });
   }
 
-  async evaluateNoShowBookings(now: Date = new Date(), userId?: string): Promise<number> {
+  async evaluateNoShowBookings(now?: Date, userId?: string, id?: string): Promise<number> {
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.CONFIRMED,
-      endTime: { lte: now },
+      checkedInAt: null,
+      attendanceTrackingEnabled: true,
+      endTime: { lte: now ?? new Date() },
+      ...(userId ? { userId } : {}),
+      ...(id ? { id } : {}),
     };
-    if (userId) {
-      where.userId = userId;
+    let count = 0;
+    let cursor: string | undefined;
+    const batchSize = 100;
+    for (;;) {
+      const candidates = await prisma.booking.findMany({
+        where: { ...where, ...(cursor ? { id: { gt: cursor } } : {}) },
+        select: { id: true },
+        orderBy: { id: 'asc' },
+        take: batchSize,
+      });
+      if (candidates.length === 0) break;
+      const ids = candidates.map((booking) => booking.id);
+      count += await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM bookings WHERE id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`,
+        );
+        // Recheck attendance and lifecycle after acquiring all booking locks.
+        const result = await tx.booking.updateMany({
+          where: { ...where, id: { in: ids }, endTime: { lte: now ?? new Date() } },
+          data: { status: BookingStatus.NO_SHOW },
+        });
+        return result.count;
+      });
+      cursor = ids[ids.length - 1];
+      if (id || candidates.length < batchSize) break;
     }
-    const result = await prisma.booking.updateMany({
-      where,
-      data: {
-        status: BookingStatus.NO_SHOW,
-      },
-    });
-    return result.count;
+    return count;
   }
 
   async calculateRevenue(

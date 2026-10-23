@@ -19,6 +19,8 @@ export interface BookingResult {
   startTime: string;
   endTime: string;
   totalAmount: string;
+  checkedInAt: string | null;
+  attendanceTrackingEnabled: boolean;
   note: string | null;
   status: string;
   paymentStatus: string;

@@ -13,6 +13,8 @@ const booking: AdminBookingItem = {
   startTime: '2026-10-19T06:00:00.000Z',
   endTime: '2026-10-19T08:00:00.000Z',
   totalAmount: '360000.00',
+  checkedInAt: null,
+  attendanceTrackingEnabled: false,
   note: null,
   status: 'CONFIRMED',
   paymentStatus: 'UNPAID',

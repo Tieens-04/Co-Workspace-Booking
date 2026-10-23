@@ -45,6 +45,8 @@ const mockAdminBookingFixture = (
     status: BookingStatus.CONFIRMED,
     paymentStatus: PaymentStatus.UNPAID,
     paymentMethod: null,
+    checkedInAt: null,
+    attendanceTrackingEnabled: true,
     customer: {
       kind: 'GUEST',
       name: 'Nguyễn Văn Vãng Lai',
@@ -233,6 +235,8 @@ describe('Admin Booking Management API Unit Tests', () => {
         status: fixture.status,
         paymentStatus: fixture.paymentStatus,
         paymentMethod: fixture.paymentMethod,
+        checkedInAt: fixture.checkedInAt,
+        attendanceTrackingEnabled: fixture.attendanceTrackingEnabled,
       });
 
       const res = await request(app)

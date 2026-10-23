@@ -26,6 +26,8 @@ function toCustomerDto(record: any): BookingResponseDto {
     status: record.status,
     paymentStatus: record.paymentStatus,
     paymentMethod: record.paymentMethod,
+    checkedInAt: record.checkedInAt ?? null,
+    attendanceTrackingEnabled: record.attendanceTrackingEnabled ?? false,
     cancellationReason: record.cancellationReason ?? null,
   };
 }
@@ -43,6 +45,8 @@ function toAdminDto(record: any): AdminBookingResponseDto {
     status: record.status,
     paymentStatus: record.paymentStatus,
     paymentMethod: record.paymentMethod,
+    checkedInAt: record.checkedInAt ?? null,
+    attendanceTrackingEnabled: record.attendanceTrackingEnabled ?? false,
     customer: record.customer,
   };
 }

@@ -170,6 +170,8 @@ interface AdminBookingTableProps {
   onComplete: (booking: AdminBookingItem) => void;
   onNoShow: (booking: AdminBookingItem) => void;
   onCancel: (booking: AdminBookingItem) => void;
+  onCheckIn: (booking: AdminBookingItem) => void;
+  pendingBookingId?: string | null;
 }
 
 /**
@@ -182,6 +184,8 @@ export function AdminBookingTable({
   onComplete,
   onNoShow,
   onCancel,
+  onCheckIn,
+  pendingBookingId,
 }: AdminBookingTableProps) {
   const [now, setNow] = useState(Date.now);
 
@@ -193,16 +197,17 @@ export function AdminBookingTable({
       const currentTime = Date.now();
       setNow(currentTime);
 
-      let nextEndTime = Infinity;
+      let nextBoundary = Infinity;
       for (const booking of bookings) {
-        const endTime = new Date(booking.endTime).getTime();
-        if (booking.status === 'CONFIRMED' && endTime > currentTime) {
-          nextEndTime = Math.min(nextEndTime, endTime);
+        if (booking.status !== 'CONFIRMED') continue;
+        for (const boundary of [booking.startTime, booking.endTime]) {
+          const time = new Date(boundary).getTime();
+          if (time > currentTime) nextBoundary = Math.min(nextBoundary, time);
         }
       }
 
-      if (Number.isFinite(nextEndTime)) {
-        timer = setTimeout(refreshClock, Math.min(nextEndTime - currentTime, MAX_TIMEOUT_MS));
+      if (Number.isFinite(nextBoundary)) {
+        timer = setTimeout(refreshClock, Math.min(nextBoundary - currentTime, MAX_TIMEOUT_MS));
       }
     };
 
@@ -226,6 +231,15 @@ export function AdminBookingTable({
               const canPay = booking.paymentStatus === 'UNPAID' && booking.status !== 'CANCELLED';
               const isConfirmed = booking.status === 'CONFIRMED';
               const canFinalize = isConfirmed && now >= new Date(booking.endTime).getTime();
+              const canComplete =
+                canFinalize && (!!booking.checkedInAt || !booking.attendanceTrackingEnabled);
+              const canNoShow = canFinalize && !booking.checkedInAt;
+              const canCheckIn =
+                isConfirmed &&
+                !booking.checkedInAt &&
+                now >= new Date(booking.startTime).getTime() &&
+                now < new Date(booking.endTime).getTime();
+              const isPending = pendingBookingId === booking.id;
 
               return (
                 <TableRow
@@ -314,6 +328,16 @@ export function AdminBookingTable({
                         )}
                       </div>
                     </div>
+                    <p
+                      className="mt-1.5 text-xs whitespace-normal text-muted-foreground"
+                      data-testid={`attendance-${booking.id}`}
+                    >
+                      {booking.checkedInAt
+                        ? `Đã check-in: ${formatVietnamDateTime(booking.checkedInAt)} (Giờ VN)`
+                        : booking.attendanceTrackingEnabled
+                          ? 'Chưa check-in'
+                          : 'Chưa có dữ liệu check-in'}
+                    </p>
                     {booking.status === 'CANCELLED' && booking.cancellationReason && (
                       <div
                         className="mt-1.5 max-w-[220px] text-xs whitespace-normal text-status-cancelled"
@@ -355,31 +379,46 @@ export function AdminBookingTable({
                             size="sm"
                             data-testid={`confirm-payment-btn-${booking.id}`}
                             onClick={() => onConfirmPayment(booking)}
+                            disabled={isPending}
                           >
                             Thanh toán
                           </Button>
                         )}
-                        {canFinalize && (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              data-testid={`complete-booking-btn-${booking.id}`}
-                              onClick={() => onComplete(booking)}
-                            >
-                              Hoàn tất
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              data-testid={`no-show-booking-btn-${booking.id}`}
-                              onClick={() => onNoShow(booking)}
-                            >
-                              Không đến
-                            </Button>
-                          </>
+                        {canCheckIn && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={isPending}
+                            data-testid={`check-in-booking-btn-${booking.id}`}
+                            onClick={() => onCheckIn(booking)}
+                          >
+                            {isPending ? 'Đang check-in…' : 'Check-in'}
+                          </Button>
+                        )}
+                        {canComplete && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            data-testid={`complete-booking-btn-${booking.id}`}
+                            onClick={() => onComplete(booking)}
+                            disabled={isPending}
+                          >
+                            Hoàn tất
+                          </Button>
+                        )}
+                        {canNoShow && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            data-testid={`no-show-booking-btn-${booking.id}`}
+                            onClick={() => onNoShow(booking)}
+                            disabled={isPending}
+                          >
+                            Không đến
+                          </Button>
                         )}
                         {isConfirmed && (
                           <Button
@@ -389,6 +428,7 @@ export function AdminBookingTable({
                             className="text-destructive hover:bg-status-cancelled-bg hover:text-destructive"
                             data-testid={`cancel-booking-btn-${booking.id}`}
                             onClick={() => onCancel(booking)}
+                            disabled={isPending}
                           >
                             Hủy đơn
                           </Button>

@@ -29,6 +29,8 @@ const mockDetailData: BookingResult = {
   startTime: '2026-10-25T03:00:00.000Z',
   endTime: '2026-10-25T05:00:00.000Z',
   totalAmount: '500000.00',
+  checkedInAt: null,
+  attendanceTrackingEnabled: false,
   note: 'Cần chuẩn bị máy chiếu và bảng trắng',
   status: 'CONFIRMED',
   paymentStatus: 'UNPAID',
@@ -328,6 +330,8 @@ describe('BookingDetailPage', () => {
       paymentStatus: 'UNPAID',
       paymentMethod: null,
       totalAmount: '1234567.50',
+      checkedInAt: null,
+      attendanceTrackingEnabled: false,
       startTime: '2026-10-25T15:00:00.000Z', // 22:00 VN
       endTime: '2026-10-25T19:00:00.000Z', // 02:00 next day VN
     };
