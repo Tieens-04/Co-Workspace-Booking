@@ -1,5 +1,6 @@
 import { BookingStatus, PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
+import { summarizeBookingRevenue } from '../utils/booking-revenue.util.js';
 import { lockRoomRow } from './room.repository.js';
 import {
   BLOCKING_BOOKING_STATUSES,
@@ -866,43 +867,15 @@ export class BookingRepository
       },
     });
 
-    let actualRevenueDecimal = new Prisma.Decimal(0);
-    let potentialRevenueDecimal = new Prisma.Decimal(0);
-    let paidBookings = 0;
-    let unpaidBookings = 0;
-    let cancelledBookings = 0;
-
-    for (const rec of records) {
-      if (rec.status === BookingStatus.CANCELLED) {
-        cancelledBookings += 1;
-        continue;
-      }
-
-      const amount = new Prisma.Decimal(rec.totalAmount);
-      potentialRevenueDecimal = potentialRevenueDecimal.add(amount);
-
-      if (rec.paymentStatus === PaymentStatus.PAID) {
-        actualRevenueDecimal = actualRevenueDecimal.add(amount);
-        paidBookings += 1;
-      } else {
-        unpaidBookings += 1;
-      }
-    }
-
-    const unpaidRevenueDecimal = potentialRevenueDecimal.sub(actualRevenueDecimal);
+    const revenue = summarizeBookingRevenue(records);
 
     return {
       period: {
         startDate: filter.startDate ?? null,
         endDate: filter.endDate ?? null,
       },
-      actualRevenue: actualRevenueDecimal.toFixed(2),
-      potentialRevenue: potentialRevenueDecimal.toFixed(2),
-      unpaidRevenue: unpaidRevenueDecimal.toFixed(2),
+      ...revenue,
       totalBookings: records.length,
-      paidBookings,
-      unpaidBookings,
-      cancelledBookings,
     };
   }
 }
