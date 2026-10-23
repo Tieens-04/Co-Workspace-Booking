@@ -61,6 +61,14 @@ npm run format:check
 
 Test tích hợp MySQL chạy bằng `npm run test:integration --workspace=apps/server`, yêu cầu `TEST_DATABASE_URL` trỏ tới database riêng có tên kết thúc bằng `_test`.
 
+## Nâng cấp check-in (CWB-39)
+
+Dừng tất cả backend cũ trước khi chạy migration và khởi động backend mới; không chạy song song bản cũ vì lazy evaluator cũ có thể ghi `NO_SHOW` sai. Với Docker Compose, dừng service backend trước khi rebuild/khởi động lại.
+
+Migration lấy một mốc UTC cố định: booking đã bắt đầu tại mốc đó giữ dữ liệu lịch sử (`attendanceTrackingEnabled = false`), không tự chuyển `NO_SHOW`; ADMIN giải quyết thủ công sau giờ kết thúc. Booking chưa bắt đầu và booking mới bật theo dõi check-in. Migration không đổi trạng thái, không tạo timestamp check-in và không suy ra khách đã đến từ `PAID`. Các trạng thái lịch sử đã ghi sai trước nâng cấp cần đối soát thủ công, không được tự sửa.
+
+Trước nâng cấp, sao lưu database theo quy trình triển khai. Chạy `npm exec --workspace=apps/server -- prisma migrate deploy`, khởi động bản mới, rồi kiểm tra luồng ADMIN check-in và detail/list/KPI. Không hạ backend về bản evaluator cũ trên database đang hoạt động.
+
 ## Cấu trúc và tài liệu
 
 - `apps/client/`: giao diện React, routes, hooks và API client.

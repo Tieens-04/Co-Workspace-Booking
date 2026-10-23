@@ -14,6 +14,8 @@ import {
   adminCancelBookingParamsSchema,
   adminCancelBookingBodySchema,
   completeBookingParamsSchema,
+  checkInBookingParamsSchema,
+  checkInBookingBodySchema,
   markNoShowParamsSchema,
   getRevenueQuerySchema,
 } from '../validators/admin-booking.validator.js';
@@ -63,6 +65,12 @@ router.patch(
   adminBookingController.cancelBooking,
 );
 router.patch(
+  '/bookings/:id/check-in',
+  validateParams(checkInBookingParamsSchema),
+  validateBody(checkInBookingBodySchema),
+  adminBookingController.checkInBooking,
+);
+router.patch(
   '/bookings/:id/complete',
   validateParams(completeBookingParamsSchema),
   adminBookingController.completeBooking,
@@ -72,11 +80,7 @@ router.patch(
   validateParams(markNoShowParamsSchema),
   adminBookingController.markNoShow,
 );
-router.get(
-  '/revenue',
-  validateQuery(getRevenueQuerySchema),
-  adminBookingController.getRevenue,
-);
+router.get('/revenue', validateQuery(getRevenueQuerySchema), adminBookingController.getRevenue);
 router.get(
   '/bookings/revenue',
   validateQuery(getRevenueQuerySchema),

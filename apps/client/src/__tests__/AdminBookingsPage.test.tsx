@@ -56,6 +56,7 @@ vi.mock('../services/admin-booking.api', () => ({
     confirmPayment: vi.fn(),
     cancelBooking: vi.fn(),
     completeBooking: vi.fn(),
+    checkInBooking: vi.fn(),
     markNoShow: vi.fn(),
     getRevenue: vi.fn(),
   },
@@ -79,6 +80,8 @@ const mockBookingsList: AdminBookingItem[] = [
     startTime: '2026-10-03T02:00:00.000Z',
     endTime: '2026-10-03T04:00:00.000Z',
     totalAmount: '400000.00',
+    checkedInAt: null,
+    attendanceTrackingEnabled: false,
     note: 'Yêu cầu micro không dây',
     status: 'CONFIRMED',
     paymentStatus: 'PAID',
@@ -99,6 +102,8 @@ const mockBookingsList: AdminBookingItem[] = [
     startTime: '2026-10-03T07:00:00.000Z',
     endTime: '2026-10-03T09:00:00.000Z',
     totalAmount: '300000.00',
+    checkedInAt: null,
+    attendanceTrackingEnabled: false,
     note: null,
     status: 'COMPLETED',
     paymentStatus: 'UNPAID',
@@ -448,6 +453,8 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
         startTime: slot.startDate.toISOString(),
         endTime: slot.endDate.toISOString(),
         totalAmount: '400000.00',
+        checkedInAt: null,
+        attendanceTrackingEnabled: false,
         status: 'CONFIRMED',
         paymentStatus: 'UNPAID',
         paymentMethod: null,
@@ -471,6 +478,59 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
     }
   });
 
+  describe('Check-in', () => {
+    const activeBooking = (): AdminBookingItem => ({
+      ...mockBookingsList[0],
+      attendanceTrackingEnabled: true,
+      checkedInAt: null,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+
+    it('prevents repeat requests and refreshes bookings and revenue after success', async () => {
+      const item = activeBooking();
+      let finish!: (value: Awaited<ReturnType<typeof adminBookingApi.checkInBooking>>) => void;
+      vi.mocked(adminBookingApi.checkInBooking).mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finish = resolve;
+          }),
+      );
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValueOnce(mockBookingsResponse([item]));
+      const updated = { ...item, checkedInAt: new Date().toISOString() };
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(mockBookingsResponse([updated]));
+      renderComponent();
+      const button = await screen.findByTestId('check-in-booking-btn-booking-1');
+      fireEvent.click(button);
+      fireEvent.click(button);
+      expect(adminBookingApi.checkInBooking).toHaveBeenCalledExactlyOnceWith('booking-1');
+      expect(button).toBeDisabled();
+      expect(screen.getByTestId('admin-bookings-table')).toBeInTheDocument();
+      finish({ success: true, message: 'OK', data: updated });
+      await waitFor(() => expect(adminBookingApi.getBookings).toHaveBeenCalledTimes(2));
+      expect(adminBookingApi.getRevenue).toHaveBeenCalledTimes(2);
+      expect(screen.getByTestId('admin-action-success-banner')).toHaveTextContent('Đã check-in');
+      expect(screen.queryByTestId('check-in-booking-btn-booking-1')).not.toBeInTheDocument();
+    });
+
+    it.each([409, 500])('retains the table and reports check-in failure (%s)', async (status) => {
+      const item = activeBooking();
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(mockBookingsResponse([item]));
+      vi.mocked(adminBookingApi.checkInBooking).mockRejectedValueOnce({
+        response: { status, data: { message: 'Không thể check-in đơn này' } },
+      });
+      renderComponent();
+      fireEvent.click(await screen.findByTestId('check-in-booking-btn-booking-1'));
+      expect(await screen.findByRole('alert')).toHaveTextContent('Không thể check-in đơn này');
+      expect(screen.getByTestId('admin-bookings-table')).toBeInTheDocument();
+      await waitFor(() =>
+        expect(adminBookingApi.getBookings).toHaveBeenCalledTimes(status === 409 ? 2 : 1),
+      );
+      expect(adminBookingApi.getRevenue).toHaveBeenCalledTimes(status === 409 ? 2 : 1);
+      expect(screen.queryByTestId('admin-action-success-banner')).not.toBeInTheDocument();
+    });
+  });
+
   describe('Payment Confirmation & Admin Cancellation Actions', () => {
     const unconfirmedBooking: AdminBookingItem = {
       id: 'booking-unpaid-confirmed',
@@ -479,6 +539,8 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       startTime: '2026-10-03T10:00:00.000Z',
       endTime: '2026-10-03T12:00:00.000Z',
       totalAmount: '500000.00',
+      checkedInAt: null,
+      attendanceTrackingEnabled: false,
       note: null,
       status: 'CONFIRMED',
       paymentStatus: 'UNPAID',

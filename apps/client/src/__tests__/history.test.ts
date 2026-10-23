@@ -101,6 +101,8 @@ describe('isValidBookingResult', () => {
     startTime: '2026-10-25T03:00:00.000Z',
     endTime: '2026-10-25T05:00:00.000Z',
     totalAmount: '400000.00',
+    checkedInAt: null,
+    attendanceTrackingEnabled: false,
     note: 'Ghi chú',
     status: 'CONFIRMED',
     paymentStatus: 'UNPAID',
@@ -127,7 +129,9 @@ describe('isValidBookingResult', () => {
     expect(isValidBookingResult({ ...validBooking, totalAmount: '-100' })).toBe(false);
     expect(isValidBookingResult({ ...validBooking, totalAmount: '' })).toBe(false);
     expect(isValidBookingResult({ ...validBooking, totalAmount: '   ' })).toBe(false);
-    expect(isValidBookingResult({ ...validBooking, totalAmount: 400000 as unknown as string })).toBe(false);
+    expect(
+      isValidBookingResult({ ...validBooking, totalAmount: 400000 as unknown as string }),
+    ).toBe(false);
     expect(isValidBookingResult({ ...validBooking, totalAmount: '9'.repeat(400) })).toBe(false);
     expect(isValidBookingResult({ ...validBooking, totalAmount: 'Infinity' })).toBe(false);
   });
@@ -164,4 +168,3 @@ describe('isValidBookingResult', () => {
     expect(isValidBookingResult({ ...validBooking, endTime: 'not-a-date' })).toBe(false);
   });
 });
-

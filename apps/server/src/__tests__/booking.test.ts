@@ -45,6 +45,8 @@ const mockBookingFixture = (override?: Partial<BookingResponseDto>): BookingResp
     status: BookingStatus.CONFIRMED,
     paymentStatus: PaymentStatus.UNPAID,
     paymentMethod: null,
+    checkedInAt: null,
+    attendanceTrackingEnabled: true,
     ...override,
   };
 };

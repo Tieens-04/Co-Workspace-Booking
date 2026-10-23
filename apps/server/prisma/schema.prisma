@@ -128,6 +128,8 @@ model Booking {
   status             BookingStatus  @default(CONFIRMED)
   paymentStatus      PaymentStatus  @default(UNPAID) @map("payment_status")
   paymentMethod      PaymentMethod? @map("payment_method")
+  checkedInAt        DateTime?      @map("checked_in_at")
+  attendanceTrackingEnabled Boolean @default(true) @map("attendance_tracking_enabled")
   cancellationReason String?        @map("cancellation_reason") @db.Text
   createdAt          DateTime       @default(now()) @map("created_at")
   updatedAt          DateTime       @updatedAt @map("updated_at")
@@ -142,5 +144,6 @@ model Booking {
   @@index([roomId, startTime, endTime, status])
   @@index([userId])
   @@index([startTime, id])
+  @@index([status, attendanceTrackingEnabled, checkedInAt, endTime], map: "bookings_attendance_no_show_idx")
   @@map("bookings")
 }

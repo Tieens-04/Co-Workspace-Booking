@@ -150,3 +150,7 @@ export const getRevenueQuerySchema = z
   );
 
 export type GetRevenueQueryInput = z.infer<typeof getRevenueQuerySchema>;
+
+export const checkInBookingParamsSchema = completeBookingParamsSchema;
+export type CheckInBookingParamsInput = z.infer<typeof checkInBookingParamsSchema>;
+export const checkInBookingBodySchema = z.object({}).strict().optional();

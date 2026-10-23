@@ -17,6 +17,8 @@ export interface AdminBookingItem {
   };
   startTime: string;
   endTime: string;
+  checkedInAt: string | null;
+  attendanceTrackingEnabled: boolean;
   totalAmount: string;
   note: string | null;
   status: string;

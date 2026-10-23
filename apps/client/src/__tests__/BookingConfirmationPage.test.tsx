@@ -28,6 +28,8 @@ describe('BookingConfirmationPage', () => {
     startTime: '2026-10-25T03:00:00.000Z', // 10:00:00 VN (+07:00)
     endTime: '2026-10-25T05:00:00.000Z', // 12:00:00 VN (+07:00)
     totalAmount: '400000.00',
+    checkedInAt: null,
+    attendanceTrackingEnabled: false,
     note: 'Cần chuẩn bị máy chiếu và bảng trắng',
     status: 'CONFIRMED',
     paymentStatus: 'UNPAID',
@@ -526,6 +528,8 @@ describe('BookingConfirmationPage', () => {
         booking: {
           ...mockBookingResult,
           totalAmount: 'abc',
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
         },
         customerId: 'customer-1',
       });
@@ -539,6 +543,8 @@ describe('BookingConfirmationPage', () => {
         booking: {
           ...mockBookingResult,
           totalAmount: '-50000.00',
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
         },
         customerId: 'customer-1',
       });
@@ -552,6 +558,8 @@ describe('BookingConfirmationPage', () => {
         booking: {
           ...mockBookingResult,
           totalAmount: '9'.repeat(400),
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
         },
         customerId: 'customer-1',
       });

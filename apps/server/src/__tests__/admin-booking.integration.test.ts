@@ -833,6 +833,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
           userId: testUserId,
           startTime: start,
           endTime: end,
+          checkedInAt: start,
           totalAmount: new Prisma.Decimal('400.00'),
           status: BookingStatus.CONFIRMED,
           paymentStatus: PaymentStatus.PAID,

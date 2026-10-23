@@ -163,6 +163,8 @@ describe('AdminGuestBookingForm Component Tests', () => {
       startTime: slot.startDate.toISOString(),
       endTime: slot.endDate.toISOString(),
       totalAmount: '400000.00',
+      checkedInAt: null,
+      attendanceTrackingEnabled: false,
       note: 'Khách vãng lai VIP',
       status: 'CONFIRMED',
       paymentStatus: 'UNPAID',

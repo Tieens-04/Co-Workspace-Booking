@@ -13,6 +13,8 @@ function booking(id: string, endTime: number, status = 'CONFIRMED'): AdminBookin
     startTime: new Date(endTime - 3_600_000).toISOString(),
     endTime: new Date(endTime).toISOString(),
     totalAmount: '100000',
+    checkedInAt: null,
+    attendanceTrackingEnabled: false,
     status,
     paymentStatus: 'UNPAID',
     paymentMethod: null,
@@ -27,6 +29,7 @@ function renderTable(bookings: AdminBookingItem[]) {
     onComplete: vi.fn(),
     onNoShow: vi.fn(),
     onCancel: vi.fn(),
+    onCheckIn: vi.fn(),
   };
   return { ...render(<AdminBookingTable bookings={bookings} {...callbacks} />), ...callbacks };
 }
@@ -121,5 +124,53 @@ describe('AdminBookingTable lifecycle actions', () => {
 
     expect(vi.getTimerCount()).toBe(0);
     expect(removeListener).toHaveBeenCalledWith('focus', expect.any(Function));
+  });
+
+  it('offers check-in only during the booking and updates at both boundaries', () => {
+    const item = { ...booking('tracked', NOW + 3_601_000), attendanceTrackingEnabled: true };
+    const { onCheckIn } = renderTable([item]);
+    expect(screen.queryByTestId('check-in-booking-btn-tracked')).not.toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(1_000));
+    fireEvent.click(screen.getByTestId('check-in-booking-btn-tracked'));
+    expect(onCheckIn).toHaveBeenCalledWith(item);
+    act(() => vi.advanceTimersByTime(3_600_000));
+    expect(screen.queryByTestId('check-in-booking-btn-tracked')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('complete-booking-btn-tracked')).not.toBeInTheDocument();
+    expect(screen.getByTestId('no-show-booking-btn-tracked')).toBeInTheDocument();
+    expect(screen.getByTestId('attendance-tracked')).toHaveTextContent('Chưa check-in');
+  });
+
+  it('shows recorded attendance in Vietnam time and only permits completion for checked-in bookings', () => {
+    renderTable([
+      {
+        ...booking('checked', NOW),
+        attendanceTrackingEnabled: true,
+        checkedInAt: '2026-10-22T02:00:00.000Z',
+      },
+      booking('legacy', NOW),
+    ]);
+    expect(screen.getByTestId('attendance-checked')).toHaveTextContent('09:00');
+    expect(screen.getByTestId('attendance-checked')).toHaveTextContent('22/10/2026');
+    expect(screen.getByTestId('complete-booking-btn-checked')).toBeInTheDocument();
+    expect(screen.queryByTestId('no-show-booking-btn-checked')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('check-in-booking-btn-checked')).not.toBeInTheDocument();
+    expect(screen.getByTestId('attendance-legacy')).toHaveTextContent('Chưa có dữ liệu check-in');
+  });
+
+  it('disables actions while check-in is pending', () => {
+    render(
+      <AdminBookingTable
+        bookings={[booking('pending', NOW + 1_000)]}
+        pendingBookingId="pending"
+        onCheckIn={vi.fn()}
+        onComplete={vi.fn()}
+        onNoShow={vi.fn()}
+        onConfirmPayment={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('check-in-booking-btn-pending')).toBeDisabled();
+    expect(screen.getByTestId('confirm-payment-btn-pending')).toBeDisabled();
+    expect(screen.getByTestId('cancel-booking-btn-pending')).toBeDisabled();
   });
 });

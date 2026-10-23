@@ -28,6 +28,8 @@ describe('Booking Notification Integration', () => {
     status: BookingStatus.CONFIRMED,
     paymentStatus: PaymentStatus.UNPAID,
     paymentMethod: null,
+    checkedInAt: null,
+    attendanceTrackingEnabled: true,
   };
 
   const mockUser = {

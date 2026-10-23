@@ -15,6 +15,17 @@ import {
 } from '../types/admin-booking';
 
 export const adminBookingApi = {
+  checkInBooking: async (
+    bookingId: string,
+    signal?: AbortSignal,
+  ): Promise<AdminCompleteBookingApiResponse> => {
+    const response = await apiClient.patch<AdminCompleteBookingApiResponse>(
+      `/admin/bookings/${bookingId}/check-in`,
+      {},
+      { signal },
+    );
+    return response.data;
+  },
   getBookings: async (
     params?: GetAdminBookingsParams,
     signal?: AbortSignal,
