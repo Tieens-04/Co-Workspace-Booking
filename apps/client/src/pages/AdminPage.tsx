@@ -33,6 +33,17 @@ const initialFormValues: AdminRoomFormValues = {
   status: 'AVAILABLE',
 };
 
+function getImageUploadError(error: { response?: { status?: number; data?: unknown } }): string {
+  const data = error.response?.data;
+  if (data && typeof data === 'object' && 'message' in data) {
+    if (typeof data.message === 'string' && data.message.trim()) return data.message;
+  }
+  if (error.response?.status === 413) {
+    return 'Dung lượng tải lên vượt giới hạn máy chủ. Vui lòng giảm số lượng hoặc dung lượng ảnh rồi thử lại.';
+  }
+  return 'Không thể tải ảnh lên. Vui lòng thử lại.';
+}
+
 export const AdminPage: React.FC = () => {
   // Room list state
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
@@ -564,9 +575,7 @@ export const AdminPage: React.FC = () => {
       }
     } catch (err: any) {
       if (uploadController.signal.aborted || uploadRequestRef.current !== uploadController) return;
-      const serverMessage =
-        err.response?.data?.message || 'Không thể tải ảnh lên. Vui lòng thử lại.';
-      setImageUploadError(serverMessage);
+      setImageUploadError(getImageUploadError(err));
       if (isCreateFlow && targetRoomId) {
         setCreatedRoomIdForRetry(targetRoomId);
       }
@@ -637,9 +646,7 @@ export const AdminPage: React.FC = () => {
       fetchRooms(currentPage);
     } catch (err: any) {
       if (uploadController.signal.aborted || uploadRequestRef.current !== uploadController) return;
-      const serverMessage =
-        err.response?.data?.message || 'Không thể tải ảnh lên. Vui lòng thử lại.';
-      setImageUploadError(serverMessage);
+      setImageUploadError(getImageUploadError(err));
     } finally {
       if (uploadRequestRef.current === uploadController) {
         uploadRequestRef.current = null;

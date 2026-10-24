@@ -280,7 +280,7 @@ describe('Room Image Upload - Service & HTTP API', () => {
     });
 
     it('returns 413 FILE_TOO_LARGE when a file exceeds 5MB', async () => {
-      const bigBuffer = Buffer.alloc(5 * 1024 * 1024 + 1024, 0xff);
+      const bigBuffer = Buffer.alloc(5 * 1024 * 1024 + 1, 0xff);
       const res = await request(app)
         .post(`/api/v1/admin/rooms/${roomId1}/images`)
         .set('Authorization', `Bearer ${adminToken}`)
@@ -288,6 +288,43 @@ describe('Room Image Upload - Service & HTTP API', () => {
 
       expect(res.status).toBe(413);
       expect(res.body.code).toBe('FILE_TOO_LARGE');
+    });
+
+    it.each([1, 3, 5])('accepts a valid %i MiB image', async (size) => {
+      const image = Buffer.alloc(size * 1024 * 1024);
+      validJpegBuffer.copy(image);
+      const res = await request(app)
+        .post(`/api/v1/admin/rooms/${roomId1}/images`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .attach('images', image, 'room.jpg');
+      expect(res.status).toBe(201);
+      expect(cloudinaryMediaService.uploadImage).toHaveBeenCalledTimes(1);
+      expect(roomRepository.appendImages).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects 11 files before uploading or persisting images', async () => {
+      const upload = request(app)
+        .post(`/api/v1/admin/rooms/${roomId1}/images`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      for (let i = 0; i < 11; i++) upload.attach('images', validJpegBuffer, `room-${i}.jpg`);
+      const res = await upload;
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(cloudinaryMediaService.uploadImage).not.toHaveBeenCalled();
+      expect(roomRepository.appendImages).not.toHaveBeenCalled();
+    });
+
+    it('rejects a forged image signature before uploading or persisting images', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/rooms/${roomId1}/images`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .attach('images', Buffer.from('not an image'), {
+          filename: 'fake.jpg',
+          contentType: 'image/jpeg',
+        });
+      expect(res.status).toBe(400);
+      expect(cloudinaryMediaService.uploadImage).not.toHaveBeenCalled();
+      expect(roomRepository.appendImages).not.toHaveBeenCalled();
     });
 
     it('returns 201 and updated RoomDetail without publicId on valid upload', async () => {
