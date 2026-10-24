@@ -12,6 +12,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:smoke:upload": "vitest run --config vitest.upload-smoke.config.ts",
     "typecheck:tests": "tsc --project tsconfig.tests.json",
     "typecheck:prisma": "tsc --project prisma/tsconfig.json",
     "db:generate": "prisma generate",

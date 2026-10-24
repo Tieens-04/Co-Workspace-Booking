@@ -61,6 +61,18 @@ npm run format:check
 
 Test tích hợp MySQL chạy bằng `npm run test:integration --workspace=apps/server`, yêu cầu `TEST_DATABASE_URL` trỏ tới database riêng có tên kết thúc bằng `_test`.
 
+### Kiểm tra upload ảnh qua Nginx (CWB-43)
+
+Ảnh phòng hỗ trợ JPEG, PNG, WebP, tối đa **10 ảnh/lần**, mỗi ảnh tối đa **5 MiB** (5 × 1024 × 1024 byte). Nginx giới hạn toàn request API ở **55 MiB**, đủ cho 50 MiB ảnh cộng phần đóng gói multipart. Backend tiếp tục kiểm tra từng ảnh, số lượng, MIME và chữ ký ảnh; giới hạn proxy không thay thế các kiểm tra này. Khi đổi policy ảnh, cần điều chỉnh giới hạn proxy tương ứng.
+
+```bash
+npm run test:smoke:upload --workspace=apps/server
+```
+
+Yêu cầu Docker CLI, Docker daemon đang chạy và cổng host `5000` đang trống (dừng backend dev trước). Lần đầu Docker cần tải `nginx:1.27-alpine`; cho phép Docker truy cập backend test trên host qua `server:host-gateway`. Smoke test dùng cấu hình Nginx production nguyên bản, cổng proxy tự cấp, Express và JWT thật; repository và Cloudinary được mock nên không cần MySQL, tài khoản Cloudinary hoặc dữ liệu thật. Test tự dọn container/server khi kết thúc và báo thất bại nếu Docker không sẵn sàng; không chạy cùng bộ unit test thông thường.
+
+Smoke test kiểm tra ảnh 1/3/5 MiB, batch 10 × 5 MiB, giới hạn từng file/số lượng/định dạng, quyền truy cập và request trên 55 MiB bị proxy chặn trước Express. Để kiểm chứng test bắt được lỗi cấu hình cũ, đặt biến môi trường `SMOKE_NGINX_CONFIG` thành đường dẫn tuyệt đối tới bản sao `nginx.conf` đã bỏ dòng `client_max_body_size 55m;`, rồi chạy lại cùng lệnh: các upload hợp lệ trên giới hạn mặc định phải thất bại. Bỏ biến này để kiểm tra cấu hình production. Không sửa cấu hình production chỉ để chạy đối chứng.
+
 ## Nâng cấp check-in (CWB-39)
 
 Dừng tất cả backend cũ trước khi chạy migration và khởi động backend mới; không chạy song song bản cũ vì lazy evaluator cũ có thể ghi `NO_SHOW` sai. Với Docker Compose, dừng service backend trước khi rebuild/khởi động lại.

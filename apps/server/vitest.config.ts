@@ -6,7 +6,12 @@ export default defineConfig({
     environment: 'node',
     testTimeout: 10000,
     include: ['src/**/*.test.ts'],
-    exclude: ['dist/**', 'node_modules/**', 'src/**/*.integration.test.ts'],
+    exclude: [
+      'dist/**',
+      'node_modules/**',
+      'src/**/*.integration.test.ts',
+      'src/**/*.upload-smoke.test.ts',
+    ],
     setupFiles: ['src/__tests__/support/setup.ts'],
   },
 });
