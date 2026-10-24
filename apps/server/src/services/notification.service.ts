@@ -1,14 +1,8 @@
 import nodemailer, { Transporter } from 'nodemailer';
 import { ENV } from '../config/env.config.js';
-
-export interface NotificationConfig {
-  smtpHost?: string;
-  smtpPort?: number;
-  smtpSecure?: boolean;
-  smtpUser?: string;
-  smtpPass?: string;
-  smtpFrom?: string;
-}
+import { parseSmtpConfig, type NotificationConfig } from '../config/smtp.config.js';
+import { logEmailFailure } from '../utils/email-log.util.js';
+export type { NotificationConfig } from '../config/smtp.config.js';
 
 export interface BaseBookingEmailPayload {
   recipientEmail: string;
@@ -51,37 +45,31 @@ export class NotificationService {
   private readonly config: NotificationConfig;
 
   constructor(config?: NotificationConfig) {
-    this.config = config ?? {
-      smtpHost: ENV.SMTP_HOST,
-      smtpPort: ENV.SMTP_PORT,
-      smtpSecure: ENV.SMTP_SECURE,
-      smtpUser: ENV.SMTP_USER,
-      smtpPass: ENV.SMTP_PASS,
-      smtpFrom: ENV.SMTP_FROM,
-    };
-
-    if (this.config.smtpUser && this.config.smtpPass) {
-      this.transporter = nodemailer.createTransport({
-        host: this.config.smtpHost || 'smtp.gmail.com',
-        port: this.config.smtpPort || 587,
-        secure: this.config.smtpSecure ?? false,
-        auth: {
-          user: this.config.smtpUser,
-          pass: this.config.smtpPass,
-        },
-        connectionTimeout: 5000,
-        greetingTimeout: 5000,
-        socketTimeout: 10000,
-      });
+    const smtp = config ? parseSmtpConfig(config) : ENV.SMTP;
+    this.config = smtp.config;
+    if (smtp.status !== 'ready') {
+      console.warn(
+        `[NotificationService] SMTP ${smtp.status}; email delivery disabled; fields=${smtp.issues.join(',') || 'SMTP_USER,SMTP_PASS'}`,
+      );
+      return;
     }
+    this.transporter = nodemailer.createTransport({
+      host: this.config.smtpHost,
+      port: this.config.smtpPort,
+      secure: this.config.smtpSecure ?? false,
+      auth: {
+        user: this.config.smtpUser,
+        pass: this.config.smtpPass,
+      },
+      connectionTimeout: 5000,
+      greetingTimeout: 5000,
+      socketTimeout: 10000,
+    });
   }
 
   async sendBookingConfirmation(payload: BookingConfirmationEmailPayload): Promise<boolean> {
     if (!this.transporter) {
-      console.warn(
-        `[NotificationService] SMTP credentials not configured; skipping email delivery for booking ${payload.bookingCode}`,
-      );
-      return true;
+      return false;
     }
 
     try {
@@ -124,20 +112,15 @@ Tổng tiền: ${formattedAmount}
       });
 
       return true;
-    } catch (err: any) {
-      console.error(
-        `[NotificationService] Error sending booking confirmation email for ${payload.bookingCode}: ${err.message || 'Unknown error'}`,
-      );
+    } catch (err: unknown) {
+      logEmailFailure('confirmation', payload.bookingCode, err);
       return false;
     }
   }
 
   async sendBookingCancellation(payload: BookingCancellationEmailPayload): Promise<boolean> {
     if (!this.transporter) {
-      console.warn(
-        `[NotificationService] SMTP credentials not configured; skipping email delivery for cancellation ${payload.bookingCode}`,
-      );
-      return true;
+      return false;
     }
 
     try {
@@ -179,10 +162,8 @@ Lý do hủy: ${reasonDisplay}
       });
 
       return true;
-    } catch (err: any) {
-      console.error(
-        `[NotificationService] Error sending booking cancellation email for ${payload.bookingCode}: ${err.message || 'Unknown error'}`,
-      );
+    } catch (err: unknown) {
+      logEmailFailure('cancellation', payload.bookingCode, err);
       return false;
     }
   }

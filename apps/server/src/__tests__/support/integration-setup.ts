@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import './disable-smtp.js';
 import { randomBytes } from 'node:crypto';
 import { validateTestDatabase } from './test-database.js';
 

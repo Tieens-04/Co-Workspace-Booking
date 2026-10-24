@@ -13,10 +13,12 @@
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
     "test:smoke:upload": "vitest run --config vitest.upload-smoke.config.ts",
+    "test:smoke:email": "vitest run --config vitest.email-smoke.config.ts",
     "typecheck:tests": "tsc --project tsconfig.tests.json",
     "typecheck:prisma": "tsc --project prisma/tsconfig.json",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
   },

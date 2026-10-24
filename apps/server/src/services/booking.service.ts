@@ -14,6 +14,7 @@ import {
 import { validateBookingTime } from '../utils/booking-time.util.js';
 import { generateBookingCode } from '../utils/booking-code.util.js';
 import { AppError } from '../utils/error.util.js';
+import { logEmailFailure } from '../utils/email-log.util.js';
 import { userRepository, UserRepository } from '../repositories/user.repository.js';
 import {
   notificationService as defaultNotificationService,
@@ -99,10 +100,8 @@ export class BookingService {
                   totalAmount: booking.totalAmount,
                 });
               }
-            } catch (notifErr: any) {
-              console.error(
-                `[BookingService] Failed to send booking confirmation email for ${booking.bookingCode}: ${notifErr.message || notifErr}`,
-              );
+            } catch (notifErr: unknown) {
+              logEmailFailure('confirmation', booking.bookingCode, notifErr);
             }
           })().catch(() => {});
         }
@@ -183,10 +182,8 @@ export class BookingService {
               reason: booking.cancellationReason,
             });
           }
-        } catch (notifErr: any) {
-          console.error(
-            `[BookingService] Failed to send booking cancellation email for ${booking.bookingCode}: ${notifErr.message || notifErr}`,
-          );
+        } catch (notifErr: unknown) {
+          logEmailFailure('cancellation', booking.bookingCode, notifErr);
         }
       })().catch(() => {});
     }
