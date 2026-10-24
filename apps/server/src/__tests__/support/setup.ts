@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import './disable-smtp.js';
 
 process.env.NODE_ENV = 'test';
 process.env.TRUST_PROXY = 'false';

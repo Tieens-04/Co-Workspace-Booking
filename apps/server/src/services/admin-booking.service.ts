@@ -1,4 +1,5 @@
 import { PaymentMethod } from '@prisma/client';
+import { logEmailFailure } from '../utils/email-log.util.js';
 import {
   AdminBookingRepositoryContract,
   bookingRepository,
@@ -81,10 +82,8 @@ export class AdminBookingService {
             endTime: booking.endTime,
             reason,
           });
-        } catch (notifErr: any) {
-          console.error(
-            `[AdminBookingService] Failed to send cancellation email for ${booking.bookingCode}: ${notifErr.message || notifErr}`,
-          );
+        } catch (notifErr: unknown) {
+          logEmailFailure('admin cancellation', booking.bookingCode, notifErr);
         }
       })().catch(() => {});
     }

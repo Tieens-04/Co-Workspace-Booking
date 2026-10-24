@@ -92,13 +92,48 @@ describe('Booking Notification Integration', () => {
     };
   });
 
-  describe('BookingService Email Triggers', () => {
-    it('triggers sendBookingConfirmation on successful createBooking', async () => {
-      const service = new BookingService(
-        mockBookingRepo,
-        mockUserRepo,
+  it.each(['create', 'cancel', 'adminCancel'] as const)(
+    'keeps %s successful and redacts unexpected notification errors',
+    async (operation) => {
+      const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const error = Object.assign(new Error('secret-password SMTP response'), {
+        code: 'secret-password',
+      });
+      mockNotificationService.sendBookingConfirmation.mockRejectedValue(error);
+      mockNotificationService.sendBookingCancellation.mockRejectedValue(error);
+      const customer = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
+      const admin = new AdminBookingService(
+        customer,
+        mockAdminBookingRepo,
         mockNotificationService,
       );
+      const result =
+        operation === 'create'
+          ? await customer.createBooking(
+              userId,
+              {
+                roomId: validRoomId,
+                startTime: '2026-10-14T10:00:00.000Z',
+                endTime: '2026-10-14T12:00:00.000Z',
+                note: null,
+              },
+              new Date('2026-10-14T08:00:00Z'),
+            )
+          : operation === 'cancel'
+            ? await customer.cancelBooking(userId, 'booking-1')
+            : await admin.cancelBooking('booking-1', 'Requested');
+      expect(result.status).toBe(
+        operation === 'create' ? BookingStatus.CONFIRMED : BookingStatus.CANCELLED,
+      );
+      await vi.waitFor(() => expect(log).toHaveBeenCalled());
+      expect(JSON.stringify(log.mock.calls)).not.toContain('secret-password');
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('code=UNKNOWN'));
+    },
+  );
+
+  describe('BookingService Email Triggers', () => {
+    it('triggers sendBookingConfirmation on successful createBooking', async () => {
+      const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
 
       const now = new Date('2026-10-14T08:00:00Z');
       const result = await service.createBooking(
@@ -130,11 +165,7 @@ describe('Booking Notification Integration', () => {
         new Error('SMTP Transport Failure'),
       );
 
-      const service = new BookingService(
-        mockBookingRepo,
-        mockUserRepo,
-        mockNotificationService,
-      );
+      const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
 
       const now = new Date('2026-10-14T08:00:00Z');
       const result = await service.createBooking(
@@ -153,11 +184,7 @@ describe('Booking Notification Integration', () => {
     });
 
     it('triggers sendBookingCancellation on customer cancelBooking', async () => {
-      const service = new BookingService(
-        mockBookingRepo,
-        mockUserRepo,
-        mockNotificationService,
-      );
+      const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
 
       const result = await service.cancelBooking(userId, 'booking-1');
 
@@ -179,11 +206,7 @@ describe('Booking Notification Integration', () => {
         new Error('SMTP Network Offline'),
       );
 
-      const service = new BookingService(
-        mockBookingRepo,
-        mockUserRepo,
-        mockNotificationService,
-      );
+      const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
 
       const result = await service.cancelBooking(userId, 'booking-1');
 
@@ -199,11 +222,7 @@ describe('Booking Notification Integration', () => {
         isNewlyCancelled: false,
       });
 
-      const service = new BookingService(
-        mockBookingRepo,
-        mockUserRepo,
-        mockNotificationService,
-      );
+      const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
 
       const result = await service.cancelBooking(userId, 'booking-1');
 

@@ -134,10 +134,64 @@ describe('NotificationService (Unit)', () => {
 
     const result = await service.sendBookingConfirmation(payload);
 
-    expect(result).toBe(true);
+    expect(result).toBe(false);
     expect(mockSendMail).not.toHaveBeenCalled();
     expect(consoleWarnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('SMTP credentials not configured; skipping email delivery'),
+      expect.stringContaining('SMTP unconfigured; email delivery disabled'),
     );
   });
+
+  const payload = {
+    recipientEmail: 'customer@example.com',
+    customerName: 'Customer',
+    bookingCode: 'CS-20261013-ABCD',
+    roomName: 'Room',
+    startTime: '2026-10-14T09:00:00Z',
+    endTime: '2026-10-14T10:00:00Z',
+    totalAmount: '100000',
+  };
+
+  it('disables an invalid injected configuration without creating a transport, warning only once', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const service = new NotificationService({
+      smtpUser: 'secret-user',
+      smtpPass: 'secret-pass',
+      smtpPort: 0,
+    });
+    expect(nodemailer.createTransport).not.toHaveBeenCalled();
+    expect(await service.sendBookingConfirmation(payload)).toBe(false);
+    expect(await service.sendBookingCancellation(payload)).toBe(false);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('SMTP invalid; email delivery disabled; fields=SMTP_PORT'),
+    );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain('secret-');
+  });
+
+  it.each(['confirmation', 'cancellation'] as const)(
+    'redacts %s failures and allowlists error codes',
+    async (operation) => {
+      const errorLog = vi.spyOn(console, 'error').mockImplementation(() => {});
+      const service = new NotificationService({ smtpUser: 'secret-user', smtpPass: 'secret-pass' });
+      const send = () =>
+        operation === 'confirmation'
+          ? service.sendBookingConfirmation(payload)
+          : service.sendBookingCancellation(payload);
+      for (const code of ['EAUTH', 'ETIMEDOUT', 'secret-pass']) {
+        mockSendMail.mockRejectedValue(
+          Object.assign(new Error('secret-user secret-pass SMTP response'), {
+            code,
+            response: 'secret-pass',
+          }),
+        );
+        expect(await send()).toBe(false);
+        expect(errorLog).toHaveBeenLastCalledWith(
+          `[Email] ${operation} delivery failed for ${payload.bookingCode}; code=${code === 'secret-pass' ? 'UNKNOWN' : code}`,
+        );
+      }
+      expect(JSON.stringify(errorLog.mock.calls)).not.toContain('secret-');
+      mockSendMail.mockResolvedValue({ messageId: 'accepted' });
+      expect(await send()).toBe(true);
+    },
+  );
 });

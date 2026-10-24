@@ -13,7 +13,7 @@ RUN npm ci
 
 # Copy Prisma schema and server source
 COPY apps/server/prisma ./apps/server/prisma
-RUN cd apps/server && npx prisma generate
+RUN npm run db:generate --workspace=@cospace/server
 
 COPY apps/server/tsconfig*.json ./apps/server/
 COPY apps/server/src ./apps/server/src
@@ -36,6 +36,8 @@ RUN apk add --no-cache curl
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/server/package*.json ./apps/server/
+# npm keeps the locked Prisma CLI in this workspace rather than hoisting it.
+COPY --from=builder /app/apps/server/node_modules ./apps/server/node_modules
 COPY --from=builder /app/apps/server/prisma ./apps/server/prisma
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 

@@ -11,6 +11,7 @@ export default defineConfig({
       'node_modules/**',
       'src/**/*.integration.test.ts',
       'src/**/*.upload-smoke.test.ts',
+      'src/**/*.email-smoke.test.ts',
     ],
     setupFiles: ['src/__tests__/support/setup.ts'],
   },

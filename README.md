@@ -29,6 +29,33 @@ Frontend: <http://localhost:5173> · Backend: <http://localhost:5000> · Health:
 
 Có thể chạy riêng bằng `npm run dev:client` hoặc `npm run dev:server`.
 
+### Cấu hình email (CWB-44)
+
+Backend đọc sáu biến SMTP sau; biến môi trường của tiến trình ưu tiên hơn giá trị trong dotenv:
+
+| Biến          | Mặc định / ý nghĩa                                                         |
+| ------------- | -------------------------------------------------------------------------- |
+| `SMTP_HOST`   | `smtp.gmail.com` — máy chủ SMTP                                            |
+| `SMTP_PORT`   | `587` — cổng SMTP                                                          |
+| `SMTP_SECURE` | `false` — kết nối ban đầu không dùng TLS trực tiếp, nâng cấp bằng STARTTLS |
+| `SMTP_USER`   | Tài khoản xác thực SMTP                                                    |
+| `SMTP_PASS`   | Mật khẩu SMTP; với Gmail, dùng App Password                                |
+| `SMTP_FROM`   | `"Co-Space Working" <no-reply@co-space.local>` — địa chỉ người gửi         |
+
+`SMTP_*` là cấu hình chính. Các tên cũ `GMAIL_USER`, `GMAIL_APP_PASSWORD`, `EMAIL_FROM` chỉ được dùng làm fallback tương ứng khi không có `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Không có tài khoản/mật khẩu thì email bị tắt. Cấu hình SMTP không hợp lệ cũng tắt email và ghi cảnh báo an toàn; backend vẫn khởi động và xử lý booking/hủy booking. Lỗi gửi email không hoàn tác giao dịch đã lưu. Sửa cấu hình rồi khởi động lại backend để áp dụng.
+
+Với Gmail, bật xác minh hai bước và tạo App Password cho `SMTP_PASS`; không dùng mật khẩu đăng nhập thông thường. Đặt `SMTP_FROM` thành tài khoản Gmail đã xác thực hoặc địa chỉ gửi được tài khoản đó cho phép. Giá trị mặc định `no-reply@co-space.local` chỉ là mẫu cho môi trường local. Dùng cổng `587` với `SMTP_SECURE=false` (STARTTLS), hoặc cổng `465` với `SMTP_SECURE=true` (TLS trực tiếp).
+
+Chạy production trực tiếp bằng Node: sao chép `apps/server/.env.production.example` thành `apps/server/.env`, điền cấu hình, rồi chạy từ thư mục gốc:
+
+```bash
+npm run build --workspace=apps/server
+npm run db:deploy --workspace=apps/server
+npm run start --workspace=apps/server
+```
+
+Backend tự đọc `apps/server/.env`; không tự đọc `.env.production`. Với Docker Compose, dùng file `.env` ở gốc theo hướng dẫn bên dưới; Compose chuyển các biến SMTP vào container. Không đưa thông tin xác thực thật vào Git.
+
 ## Chạy bằng Docker
 
 ```bash
@@ -37,7 +64,7 @@ cp .env.production.example .env
 docker compose up -d --build
 ```
 
-Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). API ở `/api/v1`, healthcheck ở `/health`; backend không công khai cổng `5000`. Migrations được áp dụng tự động khi container backend khởi động.
+Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). API ở `/api/v1`, healthcheck ở `/health`; backend không công khai cổng `5000`. Migrations được áp dụng tự động khi container backend khởi động qua `npm run db:deploy`, dùng Prisma CLI đã khóa trong dependencies của workspace server. Image mang theo cả dependencies ở gốc lẫn workspace; lệnh khởi động không tự tải Prisma phiên bản mới.
 
 **Reverse proxy:** chạy trực tiếp giữ `TRUST_PROXY=false`, kể cả production. Compose đặt `true` để tin đúng một Nginx; Nginx ghi đè header chuyển tiếp bằng IP kết nối. Chỉ bật khi đã chặn truy cập trực tiếp backend; cần đánh giá lại nếu thêm CDN/load balancer.
 
@@ -60,6 +87,14 @@ npm run format:check
 ```
 
 Test tích hợp MySQL chạy bằng `npm run test:integration --workspace=apps/server`, yêu cầu `TEST_DATABASE_URL` trỏ tới database riêng có tên kết thúc bằng `_test`.
+
+### Kiểm tra email qua SMTP local (CWB-44)
+
+```bash
+npm run test:smoke:email --workspace=apps/server
+```
+
+Yêu cầu đã cài dependencies, Docker CLI có Docker Compose và Docker daemon đang chạy; lần đầu cần tải image MySQL/Mailpit. Test dựng MySQL và Mailpit riêng biệt, chỉ dùng tài khoản/dữ liệu giả, gửi tới SMTP local và kiểm tra email booking/hủy booking. Không cần tài khoản Gmail và không gửi email qua SMTP thật. Test tự dọn tài nguyên đã tạo khi kết thúc, báo thất bại nếu Docker/Compose không sẵn sàng và không nằm trong bộ unit test thông thường.
 
 ### Kiểm tra upload ảnh qua Nginx (CWB-43)
 
