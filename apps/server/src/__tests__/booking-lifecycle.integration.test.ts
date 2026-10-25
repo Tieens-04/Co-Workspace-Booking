@@ -72,7 +72,8 @@ describe('CWB-38 booking lifecycle (real MySQL)', () => {
   for (const action of actions) {
     it(`${action.path} rejects a future booking and keeps its slot blocked`, async () => {
       const futureEnd = new Date(Date.now() + 74 * 60 * 60 * 1000);
-      futureEnd.setUTCMinutes(0, 0, 0);
+      // End at 12:00 Vietnam time so both hours stay within operating hours on every runner.
+      futureEnd.setUTCHours(5, 0, 0, 0);
       const booking = await seedBooking(futureEnd);
       const result = await request(app)
         .patch(`/api/v1/admin/bookings/${booking.id}/${action.path}`)
@@ -98,7 +99,7 @@ describe('CWB-38 booking lifecycle (real MySQL)', () => {
     for (const kind of ['customer', 'guest'] as const) {
       it(`${action.path} racing with ${kind} create cannot release a future slot`, async () => {
         const futureEnd = new Date(Date.now() + 74 * 60 * 60 * 1000);
-        futureEnd.setUTCMinutes(0, 0, 0);
+        futureEnd.setUTCHours(5, 0, 0, 0);
         const booking = await seedBooking(futureEnd);
         const [transition, create] = await Promise.all([
           request(app)

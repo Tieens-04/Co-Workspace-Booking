@@ -13,3 +13,7 @@ coverage
 .vscode
 .idea
 *.log
+reports
+playwright-report
+test-results
+test-results-concurrency

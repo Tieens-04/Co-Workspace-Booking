@@ -15,11 +15,18 @@
     "typecheck": "npm run typecheck --workspaces && npm run typecheck:prisma --workspace=apps/server && npm run typecheck:tests --workspace=apps/server",
     "test": "npm run test --workspaces",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\""
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
+    "lint:e2e": "eslint --config e2e/eslint.config.js e2e playwright.config.ts",
+    "typecheck:e2e": "tsc --project e2e/tsconfig.json"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
+    "@prisma/client": "^6.19.3",
     "concurrently": "^9.1.2",
     "globals": "^14.0.0",
-    "prettier": "^3.5.3"
+    "prettier": "^3.5.3",
+    "prisma": "^6.19.3"
   }
 }

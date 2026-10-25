@@ -66,7 +66,7 @@ cp .env.production.example .env
 docker compose up -d --build
 ```
 
-Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). API ở `/api/v1`, healthcheck ở `/health`; backend không công khai cổng `5000`. Migrations được áp dụng tự động khi container backend khởi động qua `npm run db:deploy`, dùng Prisma CLI đã khóa trong dependencies của workspace server. Image mang theo cả dependencies ở gốc lẫn workspace; lệnh khởi động không tự tải Prisma phiên bản mới.
+Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). API ở `/api/v1`, healthcheck ở `/health`; backend không công khai cổng `5000`. Migrations được áp dụng tự động khi container backend khởi động qua `npm run db:deploy`, dùng Prisma CLI đã khóa trong dependencies của workspace server. Prisma CLI và client được npm hoist về dependencies ở gốc và được mang theo trong image; lệnh khởi động không tự tải Prisma phiên bản mới.
 
 **Reverse proxy:** chạy trực tiếp giữ `TRUST_PROXY=false`, kể cả production. Compose đặt `true` để tin đúng một Nginx; Nginx ghi đè header chuyển tiếp bằng IP kết nối. Chỉ bật khi đã chặn truy cập trực tiếp backend; cần đánh giá lại nếu thêm CDN/load balancer.
 
@@ -112,6 +112,51 @@ npm run build
 `db:deploy:test` kiểm tra URL bằng cùng database guard của integration trước khi gọi `prisma migrate deploy`; chỉ tiến trình Prisma con nhận `DATABASE_URL` test. Guard từ chối URL thiếu/sai, database không kết thúc `_test`, hoặc trùng tên database development kể cả khác host/user. Không dùng lệnh `db:deploy` thông thường để chuẩn bị database test. Integration chạy MySQL thật, tuần tự giữa các file, gồm overlap và hai request đặt cùng phòng/giờ. SMTP bị tắt; Cloudinary dùng cấu hình giả, upload phải được mock rõ ràng và xóa ảnh được thay bằng mock không gọi mạng. Smoke test SMTP/Nginx tiếp tục chạy riêng bằng các lệnh đã ghi bên dưới.
 
 CI xuất console và JUnit XML cho từng bộ frontend/backend/integration, lưu artifact **test-results** trong 14 ngày, kể cả khi test thất bại. Mở Actions → lượt chạy → bước đỏ để xem lỗi; tải artifact để xem báo cáo. Nếu lỗi xảy ra trước khi test bắt đầu, báo cáo tương ứng chưa tồn tại. Mọi bước lỗi đều làm job thất bại; sửa nguyên nhân và chạy lại, không bỏ qua check. Có thể đặt **quality** thành required status check trong GitHub branch protection để chặn merge khi thất bại; workflow không tự thay đổi cấu hình bảo vệ nhánh hoặc triển khai ứng dụng.
+
+### Kiểm thử trình duyệt Customer/Admin (CWB-49)
+
+Bộ Playwright chạy React, Express và MySQL 8 thật, gồm 15 kịch bản trên desktop
+1440×900 và mobile giả lập 390×844 (Chromium, múi giờ Việt Nam). Đây không phải
+kiểm thử trên điện thoại vật lý. Bộ test độc lập với Vitest.
+
+Chuẩn bị MySQL riêng với database kết thúc `_test`, khác database development;
+tài khoản test cần quyền migration và CRUD. Đặt `TEST_DATABASE_URL` trong môi
+trường shell hoặc `apps/server/.env`, giữ nguyên `DATABASE_URL` development.
+Không dùng database có dữ liệu thật. Chạy tại thư mục gốc:
+
+```bash
+npm ci
+npm run db:generate --workspace=apps/server
+npx playwright install chromium
+npm run lint:e2e
+npm run typecheck:e2e
+npm run test:e2e
+# Xem trình duyệt trong lúc chạy:
+npm run test:e2e:headed
+# Kiểm tra cạnh tranh nhiều lần:
+npm run test:e2e -- --grep "two customer browsers race" --project=desktop --repeat-each=10
+```
+
+Runner kiểm tra database guard, áp dụng migrations, tự mở backend `127.0.0.1:5001`
+và frontend `127.0.0.1:5174`, chờ health rồi chạy; tự dừng các tiến trình khi kết
+thúc. Hai cổng phải trống; runner từ chối dùng lại server đang chạy. Không chạy
+hai lượt E2E đồng thời trên cùng hai cổng. Nếu Prisma chưa được generate, chạy
+lệnh `db:generate` ở trên; nếu kết nối MySQL lỗi, kiểm tra service và URL test.
+
+Mỗi ca/retry tạo tài khoản, phòng và booking riêng, rồi xóa theo ID của chính ca
+đó; không reset database. Booking check-in và hoàn tất được chuẩn bị ở các thời
+điểm phù hợp, không chờ nhiều giờ hay đổi luật nghiệp vụ. SMTP và cả cấu hình
+fallback bị vô hiệu hóa; không dùng tài khoản email/Cloudinary thật. Các luồng
+chính không giả lập API; chỉ ca lỗi mạng chủ động chặn request để kiểm tra phục hồi.
+
+Xem báo cáo bằng `npx playwright show-report`; JUnit ở `reports/e2e.xml`, screenshot
+và trace lỗi ở `test-results/`. Trace chứa dữ liệu đăng nhập test, chỉ chia sẻ
+trong phạm vi kiểm thử. Git bỏ qua toàn bộ báo cáo và artifact sinh ra.
+
+CI có job **browser-e2e** sau **quality**, MySQL riêng và Chromium; chạy toàn bộ
+kịch bản và lặp ca cạnh tranh 10 lần. Tối đa một retry trong CI, nhưng ca flaky
+vẫn làm job thất bại. Artifact **browser-e2e-results** được giữ 14 ngày cả khi lỗi.
+Job này không triển khai ứng dụng hoặc tự thay đổi branch protection.
 
 ### Kiểm tra email qua SMTP local (CWB-44)
 
