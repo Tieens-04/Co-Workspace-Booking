@@ -24,6 +24,48 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
   let availableRoomId: string;
   let maintenanceRoomId: string;
 
+  const expectedUserCustomer = (phone: string | null = '0901112222') => ({
+    kind: 'USER',
+    name: 'Khách Hàng Thật',
+    phone,
+    email: `${testPrefix}_customer@example.com`,
+    id: testUserId,
+  });
+
+  function expectPublicBooking(booking: Record<string, unknown>) {
+    const allowed = [
+      'id',
+      'bookingCode',
+      'room',
+      'startTime',
+      'endTime',
+      'checkedInAt',
+      'attendanceTrackingEnabled',
+      'totalAmount',
+      'note',
+      'status',
+      'paymentStatus',
+      'paymentMethod',
+      'cancellationReason',
+      'customer',
+      'isNewlyCancelled',
+    ];
+    expect(Object.keys(booking).every((key) => allowed.includes(key))).toBe(true);
+    const room = booking.room as Record<string, unknown>;
+    expect(Object.keys(room).sort()).toEqual(['id', 'name']);
+    const customer = booking.customer as Record<string, unknown>;
+    expect(Object.keys(customer).sort()).toEqual(
+      customer.kind === 'USER'
+        ? ['email', 'id', 'kind', 'name', 'phone']
+        : ['kind', 'name', 'phone'],
+    );
+    const json = JSON.stringify(booking);
+    expect(json).not.toContain('passwordHash');
+    expect(json).not.toContain('$2a$10$abcdefghijklmnopqrstuu');
+    expect(json).not.toContain(adminToken);
+    expect(json).not.toContain(customerToken);
+  }
+
   beforeAll(async () => {
     // Create customer user
     const user = await prisma.user.create({
@@ -120,6 +162,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
         name: uniqueGuestName,
         phone: uniqueGuestPhone,
       });
+      expectPublicBooking(res.body.data);
       // 200.00 * 2 = 400.00
       expect(res.body.data.totalAmount).toBe('400.00');
       expect(res.body.data.status).toBe(BookingStatus.CONFIRMED);
@@ -365,11 +408,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.status).toBe(200);
       expect(res.body.data.items).toHaveLength(1);
       expect(res.body.data.items[0].bookingCode).toBe(userBookingCode);
-      expect(res.body.data.items[0].customer).toMatchObject({
-        kind: 'USER',
-        name: 'Khách Hàng Thật',
-        phone: '0901112222',
-      });
+      expect(res.body.data.items[0].customer).toEqual(expectedUserCustomer());
+      expectPublicBooking(res.body.data.items[0]);
 
       // Partial prefix does NOT match (exact match only)
       const prefixRes = await request(app)
@@ -386,6 +426,37 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
         .set('Authorization', `Bearer ${adminToken}`);
       expect(suffixRes.status).toBe(200);
       expect(suffixRes.body.data.items).toHaveLength(0);
+    });
+
+    it('returns the complete USER contract when the account has no phone', async () => {
+      await prisma.user.update({ where: { id: testUserId }, data: { phoneNumber: null } });
+      try {
+        const res = await request(app)
+          .get(`/api/v1/admin/bookings?bookingCode=${userBookingCode}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(res.status).toBe(200);
+        expect(res.body.data.items).toHaveLength(1);
+        expect(res.body.data.items[0].customer).toEqual(expectedUserCustomer(null));
+        expectPublicBooking(res.body.data.items[0]);
+      } finally {
+        await prisma.user.update({
+          where: { id: testUserId },
+          data: { phoneNumber: '0901112222' },
+        });
+      }
+    });
+
+    it.each([
+      ['missing authentication', false, 401],
+      ['CUSTOMER role', true, 403],
+    ] as const)('denies admin customer data for %s', async (_label, authenticated, status) => {
+      const req = request(app).get(`/api/v1/admin/bookings?bookingCode=${userBookingCode}`);
+      if (authenticated) req.set('Authorization', `Bearer ${customerToken}`);
+      const res = await req;
+      expect(res.status).toBe(status);
+      expect(res.body.success).toBe(false);
+      expect(res.body.data).toBeUndefined();
+      expect(JSON.stringify(res.body)).not.toContain(`${testPrefix}_customer@example.com`);
     });
 
     it('filters bookings by date using Vietnam (+07:00) day boundaries [dayStart, dayEnd)', async () => {
@@ -456,7 +527,12 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(resMatch.status).toBe(200);
       expect(resMatch.body.data.items).toHaveLength(1);
       expect(resMatch.body.data.items[0].bookingCode).toBe(guestBookingCode);
-      expect(resMatch.body.data.items[0].customer.kind).toBe('GUEST');
+      expect(resMatch.body.data.items[0].customer).toEqual({
+        kind: 'GUEST',
+        name: 'Phạm Thị Khách',
+        phone: '0977889900',
+      });
+      expectPublicBooking(resMatch.body.data.items[0]);
 
       // Confirmed status with guest booking code -> 0 results
       const resMismatch = await request(app)
@@ -639,6 +715,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.body.success).toBe(true);
       expect(res.body.data.paymentStatus).toBe('PAID');
       expect(res.body.data.paymentMethod).toBe('CASH');
+      expect(res.body.data.customer).toEqual(expectedUserCustomer());
+      expectPublicBooking(res.body.data);
 
       const persisted = await prisma.booking.findUnique({ where: { id: booking.id } });
       expect(persisted?.paymentStatus).toBe(PaymentStatus.PAID);
@@ -673,6 +751,12 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.body.success).toBe(true);
       expect(res.body.data.paymentStatus).toBe('PAID');
       expect(res.body.data.paymentMethod).toBe('QR');
+      expect(res.body.data.customer).toEqual({
+        kind: 'GUEST',
+        name: 'Guest QR Tester',
+        phone: '0904000001',
+      });
+      expectPublicBooking(res.body.data);
 
       const persisted = await prisma.booking.findUnique({ where: { id: booking.id } });
       expect(persisted?.paymentStatus).toBe(PaymentStatus.PAID);
@@ -760,6 +844,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('CANCELLED');
       expect(res.body.data.cancellationReason).toBe('Sự cố bảo trì đột xuất');
+      expect(res.body.data.customer).toEqual(expectedUserCustomer());
+      expectPublicBooking(res.body.data);
 
       const persisted = await prisma.booking.findUnique({ where: { id: booking.id } });
       expect(persisted?.status).toBe(BookingStatus.CANCELLED);
@@ -848,6 +934,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('COMPLETED');
+      expect(res.body.data.customer).toEqual(expectedUserCustomer());
+      expectPublicBooking(res.body.data);
 
       // Verify persisted state in DB
       const dbBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
@@ -906,6 +994,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('NO_SHOW');
+      expect(res.body.data.customer).toEqual(expectedUserCustomer());
+      expectPublicBooking(res.body.data);
 
       const dbBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
       expect(dbBooking?.status).toBe(BookingStatus.NO_SHOW);

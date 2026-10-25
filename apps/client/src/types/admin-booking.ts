@@ -6,6 +6,8 @@ export interface AdminBookingCustomer {
   kind: AdminCustomerKind;
   name: string;
   phone: string | null;
+  email?: string | null;
+  id?: string | null;
 }
 
 export interface AdminBookingItem {

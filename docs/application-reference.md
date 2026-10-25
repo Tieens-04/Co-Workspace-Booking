@@ -695,7 +695,13 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - `status` (tùy chọn): Enum trạng thái (`CONFIRMED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`).
     - Nghiêm cấm tham số truy vấn ngoài allowlist (`400 VALIDATION_ERROR`).
   - **Dữ liệu trả về (Data Projection)**:
-    - Danh sách `items` kèm đối tượng `customer`: Phân biệt rõ loại khách hàng (`kind: 'USER' | 'GUEST'`), họ tên (`name`) và số điện thoại (`phone`).
+    - Danh sách `items` kèm đối tượng `customer`, dùng chung cho phản hồi các thao tác quản trị booking:
+      - `USER`: đúng các trường `kind`, `name`, `phone`, `email`, `id`; `id` là mã tài khoản khách hàng, không phải mã booking. `phone` có thể là `null`.
+      - `GUEST`: chỉ có `kind`, `name`, `phone`; không có khóa `email` hoặc `id`. Không yêu cầu tài khoản/email và không liên kết User theo số điện thoại trùng nhau.
+      - Kiểu dùng chung ở server/client giữ `email?: string | null`, `id?: string | null` để tương thích; dấu `?` cho phép phản hồi GUEST bỏ hai trường này.
+      - Ví dụ USER: `{"kind":"USER","name":"Nguyễn An","phone":null,"email":"an@example.com","id":"customer-uuid"}`.
+      - Ví dụ GUEST: `{"kind":"GUEST","name":"Trần Bình","phone":"0901234567"}`.
+      - Chỉ ADMIN được nhận projection này. Không trả bản ghi User đầy đủ, `passwordHash`, token hoặc thông tin tài khoản nội bộ; CUSTOMER chỉ được xem/thao tác booking của chính mình qua API cá nhân.
     - Phòng: `room` (`id`, `name`).
     - Thời gian: `startTime`, `endTime`.
     - Tài chính & Trạng thái: `totalAmount`, `status`, `paymentStatus`, `paymentMethod`, `note`.
