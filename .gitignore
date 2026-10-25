@@ -13,6 +13,7 @@ dist/
 build/
 
 # Logs
+/reports/
 logs
 *.log
 npm-debug.log*
