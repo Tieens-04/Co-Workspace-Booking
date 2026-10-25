@@ -149,9 +149,10 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
     });
 
     it('releases the slot in availability so another customer can book the exact same slot', async () => {
-      // Start in 5 hours, 30-min slot aligned
-      const base = new Date(Date.now() + 5 * 60 * 60 * 1000);
-      base.setUTCMinutes(0, 0, 0);
+      // Always 09:00–11:00 Vietnam time on a future day, regardless of the CI clock.
+      const base = new Date(Date.now());
+      base.setUTCDate(base.getUTCDate() + 2);
+      base.setUTCHours(2, 0, 0, 0);
       const start = new Date(base.getTime());
       const end = new Date(base.getTime() + 2 * 60 * 60 * 1000);
 
@@ -171,7 +172,8 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       await request(app)
         .patch(`/api/v1/bookings/${booking.id}/cancel`)
-        .set('Authorization', `Bearer ${customer1Token}`);
+        .set('Authorization', `Bearer ${customer1Token}`)
+        .expect(200);
 
       // Now customer 2 books the exact same slot via create booking endpoint
       const res = await request(app)
@@ -183,7 +185,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
           endTime: end.toISOString(),
         });
 
-      expect(res.status).toBe(201);
+      expect(res.status, JSON.stringify(res.body)).toBe(201);
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('CONFIRMED');
       expect(res.body.data.room.id).toBe(availableRoomId);
@@ -498,7 +500,9 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
         expect(cancelResolved).toBe(true);
         expect(res.status).toBe(400);
         expect(res.body.code).toBe('CANCELLATION_POLICY_VIOLATION');
-        expect(res.body.message).toBe('Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ');
+        expect(res.body.message).toBe(
+          'Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ',
+        );
 
         // Verify in DB that booking remains CONFIRMED
         const dbBooking = await prisma.booking.findUnique({ where: { id: booking.id } });
@@ -528,11 +532,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
         },
       });
 
-      const result = await bookingRepository.cancelBooking(
-        testUser1Id,
-        booking.id,
-        () => fixedNow,
-      );
+      const result = await bookingRepository.cancelBooking(testUser1Id, booking.id, () => fixedNow);
 
       expect(result.status).toBe('CANCELLED');
 

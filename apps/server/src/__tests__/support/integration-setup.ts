@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
-import './disable-smtp.js';
+import './disable-external-services.js';
+import './integration-media.js';
 import { randomBytes } from 'node:crypto';
 import { validateTestDatabase } from './test-database.js';
 
@@ -12,6 +13,3 @@ process.env.NODE_ENV = 'test';
 process.env.JWT_SECRET = randomBytes(32).toString('hex');
 process.env.JWT_EXPIRES_IN = '1h';
 process.env.BCRYPT_SALT_ROUNDS = '10';
-process.env.CLOUDINARY_CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME || 'dummy-cloud-name';
-process.env.CLOUDINARY_API_KEY = process.env.CLOUDINARY_API_KEY || 'dummy-api-key';
-process.env.CLOUDINARY_API_SECRET = process.env.CLOUDINARY_API_SECRET || 'dummy-api-secret';

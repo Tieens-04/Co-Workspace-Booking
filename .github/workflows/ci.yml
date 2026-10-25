@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          # Disposable credentials scoped to this service; no real infrastructure access.
+          MYSQL_ROOT_PASSWORD: ci-disposable-root
+          MYSQL_DATABASE: cospace_ci_test
+          MYSQL_USER: cospace_ci
+          MYSQL_PASSWORD: ci-disposable-password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+    env:
+      TEST_DATABASE_URL: mysql://cospace_ci:ci-disposable-password@127.0.0.1:3306/cospace_ci_test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - name: Generate and validate Prisma
+        env:
+          DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        run: |
+          npm run db:generate --workspace=apps/server
+          npm exec --workspace=apps/server -- prisma validate
+      - name: Validate test database and deploy migrations
+        run: npm run db:deploy:test --workspace=apps/server
+      - run: npm run lint
+      - run: npm run typecheck
+      - name: Frontend unit tests
+        run: npm run test --workspace=apps/client -- --reporter=default --reporter=junit --outputFile=../../reports/client.xml
+      - name: Backend unit tests
+        run: npm run test --workspace=apps/server -- --reporter=default --reporter=junit --outputFile=../../reports/server.xml
+      - name: MySQL integration tests
+        run: npm run test:integration --workspace=apps/server -- --reporter=default --reporter=junit --outputFile=../../reports/integration.xml
+      - name: Production builds
+        run: npm run build
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: reports/*.xml
+          retention-days: 14
+          if-no-files-found: warn

@@ -12,6 +12,7 @@
     "dev:client": "npm run dev --workspace=apps/client",
     "build": "npm run build --workspaces",
     "lint": "npm run lint --workspaces",
+    "typecheck": "npm run typecheck --workspaces && npm run typecheck:prisma --workspace=apps/server && npm run typecheck:tests --workspace=apps/server",
     "test": "npm run test --workspaces",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,css}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,css}\""

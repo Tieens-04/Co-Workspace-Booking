@@ -9,6 +9,7 @@
     "build": "tsc",
     "start": "node dist/server.js",
     "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:integration": "vitest run --config vitest.integration.config.ts",
@@ -19,6 +20,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:deploy": "prisma migrate deploy",
+    "db:deploy:test": "tsx scripts/deploy-test-database.ts",
     "db:seed": "prisma db seed",
     "db:studio": "prisma studio"
   },
