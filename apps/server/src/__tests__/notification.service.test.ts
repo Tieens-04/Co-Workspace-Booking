@@ -151,6 +151,75 @@ describe('NotificationService (Unit)', () => {
     totalAmount: '100000',
   };
 
+  describe.each(['confirmation', 'cancellation'] as const)('%s HTML safety', (operation) => {
+    it.each([
+      ['Tiến & < > " \'', 'Tiến &amp; &lt; &gt; &quot; &#39;'],
+      ['<b>Tiến</b>', '&lt;b&gt;Tiến&lt;/b&gt;'],
+      [
+        '</strong><a href="https://example.com">Click</a>',
+        '&lt;/strong&gt;&lt;a href=&quot;https://example.com&quot;&gt;Click&lt;/a&gt;',
+      ],
+      ['&lt;b&gt;', '&amp;lt;b&amp;gt;'],
+      ['Phòng họp Nguyễn Tiến', 'Phòng họp Nguyễn Tiến'],
+    ])('renders %j as literal text without changing the payload', async (input, escaped) => {
+      const service = new NotificationService({ smtpUser: 'test-user', smtpPass: 'test-pass' });
+      const emailPayload = Object.freeze({
+        ...payload,
+        customerName: input,
+        bookingCode: input,
+        roomName: input,
+        reason: input,
+      });
+      const original = { ...emailPayload };
+
+      const result =
+        operation === 'confirmation'
+          ? await service.sendBookingConfirmation(emailPayload)
+          : await service.sendBookingCancellation(emailPayload);
+
+      expect(result).toBe(true);
+      expect(mockSendMail).toHaveBeenCalledTimes(1);
+      const mail = mockSendMail.mock.calls[0][0];
+      expect(mail.html).toContain(`<strong>${escaped}</strong>`);
+      expect(mail.html).toContain(`<strong>Mã đặt phòng:</strong> ${escaped}</p>`);
+      expect(mail.html).toContain(`<strong>Phòng:</strong> ${escaped}</p>`);
+      expect(mail.text).toContain(`Xin chào ${input},`);
+      expect(mail.text).toContain(`Đơn đặt phòng ${input} tại ${input}`);
+      if (operation === 'cancellation') {
+        expect(mail.html).toContain(`<strong>Lý do hủy:</strong> ${escaped}</p>`);
+        expect(mail.text).toContain(`Lý do hủy: ${input}`);
+      }
+      expect(mail.subject).toBe(
+        operation === 'confirmation'
+          ? `[Co-Space] Xác nhận đặt phòng ${input} - ${input}`
+          : `[Co-Space] Thông báo hủy đặt phòng ${input}`,
+      );
+      expect(mail.to).toBe(payload.recipientEmail);
+      if (input !== escaped) expect(mail.html).not.toContain(input);
+      expect(emailPayload).toEqual(original);
+    });
+  });
+
+  it('escapes the fallback amount only in HTML', async () => {
+    const service = new NotificationService({ smtpUser: 'test-user', smtpPass: 'test-pass' });
+    const totalAmount = '<b>Tiền & "phí"</b>';
+    expect(await service.sendBookingConfirmation({ ...payload, totalAmount })).toBe(true);
+    const mail = mockSendMail.mock.calls[0][0];
+    expect(mail.html).toContain(
+      '<strong>Tổng tiền:</strong> &lt;b&gt;Tiền &amp; &quot;phí&quot;&lt;/b&gt;</p>',
+    );
+    expect(mail.html).not.toContain(totalAmount);
+    expect(mail.text).toContain(`Tổng tiền: ${totalAmount}`);
+  });
+
+  it.each([undefined, null, ''])('keeps the default cancellation reason for %j', async (reason) => {
+    const service = new NotificationService({ smtpUser: 'test-user', smtpPass: 'test-pass' });
+    expect(await service.sendBookingCancellation({ ...payload, reason })).toBe(true);
+    const mail = mockSendMail.mock.calls[0][0];
+    expect(mail.html).toContain('Theo yêu cầu của khách hàng');
+    expect(mail.text).toContain('Lý do hủy: Theo yêu cầu của khách hàng');
+  });
+
   it('disables an invalid injected configuration without creating a transport, warning only once', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const service = new NotificationService({

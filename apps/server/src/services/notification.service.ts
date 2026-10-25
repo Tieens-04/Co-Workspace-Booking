@@ -21,6 +21,22 @@ export interface BookingCancellationEmailPayload extends BaseBookingEmailPayload
   reason?: string | null;
 }
 
+const escapeHtml = (value: string): string =>
+  value.replace(/[&<>"']/g, (character) => {
+    switch (character) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      default:
+        return '&#39;';
+    }
+  });
+
 const formatVND = (amount: string | number): string => {
   const numeric = typeof amount === 'number' ? amount : Number(amount);
   if (Number.isNaN(numeric)) return String(amount);
@@ -80,14 +96,14 @@ export class NotificationService {
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
           <h2 style="color: #2b6cb0;">Xác nhận đặt phòng thành công</h2>
-          <p>Xin chào <strong>${payload.customerName}</strong>,</p>
+          <p>Xin chào <strong>${escapeHtml(payload.customerName)}</strong>,</p>
           <p>Đơn đặt phòng của bạn đã được xác nhận thành công tại <strong>Co-Space Working</strong>.</p>
           <div style="background-color: #f7fafc; padding: 16px; border-radius: 6px; margin: 20px 0;">
-            <p style="margin: 6px 0;"><strong>Mã đặt phòng:</strong> ${payload.bookingCode}</p>
-            <p style="margin: 6px 0;"><strong>Phòng:</strong> ${payload.roomName}</p>
-            <p style="margin: 6px 0;"><strong>Thời gian bắt đầu:</strong> ${startFormatted}</p>
-            <p style="margin: 6px 0;"><strong>Thời gian kết thúc:</strong> ${endFormatted}</p>
-            <p style="margin: 6px 0;"><strong>Tổng tiền:</strong> ${formattedAmount}</p>
+            <p style="margin: 6px 0;"><strong>Mã đặt phòng:</strong> ${escapeHtml(payload.bookingCode)}</p>
+            <p style="margin: 6px 0;"><strong>Phòng:</strong> ${escapeHtml(payload.roomName)}</p>
+            <p style="margin: 6px 0;"><strong>Thời gian bắt đầu:</strong> ${escapeHtml(startFormatted)}</p>
+            <p style="margin: 6px 0;"><strong>Thời gian kết thúc:</strong> ${escapeHtml(endFormatted)}</p>
+            <p style="margin: 6px 0;"><strong>Tổng tiền:</strong> ${escapeHtml(formattedAmount)}</p>
           </div>
           <p>Vui lòng đến đúng giờ để nhận phòng. Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ ban quản lý.</p>
           <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;" />
@@ -131,13 +147,13 @@ Tổng tiền: ${formattedAmount}
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
           <h2 style="color: #c53030;">Thông báo hủy đặt phòng</h2>
-          <p>Xin chào <strong>${payload.customerName}</strong>,</p>
+          <p>Xin chào <strong>${escapeHtml(payload.customerName)}</strong>,</p>
           <p>Đơn đặt phòng của bạn tại <strong>Co-Space Working</strong> đã được hủy.</p>
           <div style="background-color: #fff5f5; padding: 16px; border-radius: 6px; margin: 20px 0; border: 1px solid #fed7d7;">
-            <p style="margin: 6px 0;"><strong>Mã đặt phòng:</strong> ${payload.bookingCode}</p>
-            <p style="margin: 6px 0;"><strong>Phòng:</strong> ${payload.roomName}</p>
-            <p style="margin: 6px 0;"><strong>Thời gian:</strong> ${startFormatted} - ${endFormatted}</p>
-            <p style="margin: 6px 0;"><strong>Lý do hủy:</strong> ${reasonDisplay}</p>
+            <p style="margin: 6px 0;"><strong>Mã đặt phòng:</strong> ${escapeHtml(payload.bookingCode)}</p>
+            <p style="margin: 6px 0;"><strong>Phòng:</strong> ${escapeHtml(payload.roomName)}</p>
+            <p style="margin: 6px 0;"><strong>Thời gian:</strong> ${escapeHtml(startFormatted)} - ${escapeHtml(endFormatted)}</p>
+            <p style="margin: 6px 0;"><strong>Lý do hủy:</strong> ${escapeHtml(reasonDisplay)}</p>
           </div>
           <p>Nếu bạn không thực hiện yêu cầu này, vui lòng liên hệ ngay với ban quản lý Co-Space.</p>
           <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;" />
