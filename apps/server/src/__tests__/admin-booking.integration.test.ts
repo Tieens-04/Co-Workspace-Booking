@@ -134,9 +134,9 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
   describe('AC2: Guest Booking Creation Flow', () => {
     it('creates guest booking without creating a User, persisting userId=null, guestName, guestPhone, and server pricing', async () => {
-      // 2 hours duration, starting 3 days ahead at 09:00 UTC
+      // 2 hours duration, starting 3 days ahead at 09:00 Vietnam
       const start = new Date(Date.now() + 72 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(2, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 120 * 60 * 1000); // 2h
 
       const uniqueGuestPhone = `098${Math.floor(1000000 + Math.random() * 9000000)}`;
@@ -189,7 +189,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     it('allows guest booking using the same phone number as an existing User without linking ownership', async () => {
       // testUserId has phoneNumber '0901112222'
       const start = new Date(Date.now() + 60 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(4, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 60 * 60 * 1000);
 
       const res = await request(app)
@@ -231,7 +231,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
     it('rejects guest booking when room is in MAINTENANCE with 409 ROOM_NOT_AVAILABLE', async () => {
       const start = new Date(Date.now() + 72 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(6, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 60 * 60 * 1000);
 
       const res = await request(app)
@@ -254,7 +254,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     it('ensures customer cannot see, view, or cancel guest bookings', async () => {
       // Create a guest booking
       const start = new Date(Date.now() + 80 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(8, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 60 * 60 * 1000);
 
       const guestRes = await request(app)
@@ -577,7 +577,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
   describe('Concurrency & Double-Booking Prevention (Real MySQL Row Locking)', () => {
     it('prevents double-booking when two guest requests target the same room and slot simultaneously', async () => {
       const start = new Date(Date.now() + 120 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(10, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 60 * 60 * 1000);
 
       // Send concurrent requests
@@ -620,7 +620,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
     it('prevents double-booking when guest and customer requests target the same slot simultaneously', async () => {
       const start = new Date(Date.now() + 130 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(12, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 60 * 60 * 1000);
 
       const [resCustomer, resGuest] = await Promise.all([
@@ -656,7 +656,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
     it('allows boundary touching between guest and customer bookings', async () => {
       const slot1Start = new Date(Date.now() + 140 * 60 * 60 * 1000);
-      slot1Start.setUTCMinutes(0, 0, 0);
+      slot1Start.setUTCHours(2, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const slot1End = new Date(slot1Start.getTime() + 60 * 60 * 1000);
 
       // Slot 2 touches boundary: start = slot1End

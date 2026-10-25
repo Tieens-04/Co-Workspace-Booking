@@ -88,10 +88,33 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
   });
 
   describe('Happy path: create booking & pricing calculation', () => {
+    it.each([
+      ['06:30', '07:30', 0],
+      ['21:30', '22:30', 0],
+      ['23:00', '01:00', 1],
+    ])('does not persist an outside-hours booking %s–%s', async (start, end, nextDay) => {
+      const day = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000);
+      const startDay = day.toISOString().slice(0, 10);
+      day.setUTCDate(day.getUTCDate() + nextDay);
+      const endDay = day.toISOString().slice(0, 10);
+      const beforeCount = await prisma.booking.count({ where: { roomId: availableRoomId } });
+      const res = await request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          roomId: availableRoomId,
+          startTime: new Date(`${startDay}T${start}:00+07:00`).toISOString(),
+          endTime: new Date(`${endDay}T${end}:00+07:00`).toISOString(),
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('OUTSIDE_OPERATING_HOURS');
+      expect(await prisma.booking.count({ where: { roomId: availableRoomId } })).toBe(beforeCount);
+    });
+
     it('creates booking with server price total, confirmed/unpaid defaults, and returns 201', async () => {
-      // 1.5 hours duration (90 mins), starting tomorrow at 09:00 UTC
+      // 1.5 hours duration (90 mins), starting in two days at 09:00 Vietnam
       const start = new Date(Date.now() + 48 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(2, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 90 * 60 * 1000); // 1.5h
 
       const res = await request(app)
@@ -150,7 +173,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
 
       // 1.5 hours duration (90 mins): 100.55 * 1.5 = 150.825 -> 150.83
       const start = new Date(Date.now() + 52 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(4, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 90 * 60 * 1000);
 
       try {
@@ -181,7 +204,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
   describe('AC2: Maintenance Room Blocking', () => {
     it('rejects booking on MAINTENANCE room with 409 ROOM_NOT_AVAILABLE and inserts zero rows', async () => {
       const start = new Date(Date.now() + 72 * 60 * 60 * 1000);
-      start.setUTCMinutes(0, 0, 0);
+      start.setUTCHours(6, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const end = new Date(start.getTime() + 60 * 60 * 1000);
 
       const beforeCount = await prisma.booking.count({
@@ -318,7 +341,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
 
     it('allows booking on a slot where previous booking was CANCELLED', async () => {
       const cancelStart = new Date(Date.now() + 120 * 60 * 60 * 1000);
-      cancelStart.setUTCHours(14, 0, 0, 0);
+      cancelStart.setUTCHours(12, 0, 0, 0); // 19:00 Vietnam
       const cancelEnd = new Date(cancelStart.getTime() + 2 * 60 * 60 * 1000);
 
       // Create a CANCELLED booking
@@ -440,7 +463,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
   describe('Booking Code Uniqueness & Database Collision Retry', () => {
     it('retries when candidate booking code collides with an existing DB record and succeeds with fresh code', async () => {
       const slotStart = new Date(Date.now() + 55 * 60 * 60 * 1000);
-      slotStart.setUTCMinutes(0, 0, 0);
+      slotStart.setUTCHours(8, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
 
       // Pre-existing booking placed strictly after slotEnd with a safe gap (cannot overlap with slotStart..slotEnd)
@@ -533,7 +556,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
 
     it('returns 409 BOOKING_CODE_CONFLICT when all 5 code attempts collide and creates zero new rows', async () => {
       const slotStart = new Date(Date.now() + 58 * 60 * 60 * 1000);
-      slotStart.setUTCMinutes(0, 0, 0);
+      slotStart.setUTCHours(10, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
 
       // Pre-existing booking placed strictly after slotEnd with a safe gap
@@ -601,7 +624,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
 
     it('ensures cleanup is strictly isolated by ID and never deletes unrelated bookings with colliding codes (Finding 1 Regression)', async () => {
       const slotStart = new Date(Date.now() + 62 * 60 * 60 * 1000);
-      slotStart.setUTCMinutes(0, 0, 0);
+      slotStart.setUTCHours(12, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
       const preStart = new Date(slotEnd.getTime() + 60 * 60 * 1000);
       const preEnd = new Date(preStart.getTime() + 60 * 60 * 1000);
@@ -679,7 +702,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       try {
         const timedCustomerToken = generateToken({ sub: testUserId, role: Role.CUSTOMER });
         const slotStart = new Date(Date.now() + 55 * 60 * 60 * 1000);
-        slotStart.setUTCMinutes(0, 0, 0);
+        slotStart.setUTCHours(2, 0, 0, 0); // Within 07:00–22:00 Vietnam
         const slotEnd = new Date(slotStart.getTime() + 60 * 60 * 1000);
         const preStart = new Date(slotEnd.getTime() + 60 * 60 * 1000);
         const preEnd = new Date(preStart.getTime() + 60 * 60 * 1000);

@@ -16,7 +16,8 @@ const adminToken = generateToken({ sub: 'admin-uuid-1', role: Role.ADMIN });
 
 const getFutureSlot = (hoursAhead = 2, durationHours = 2) => {
   const base = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
-  base.setUTCMinutes(0, 0, 0);
+  base.setUTCDate(base.getUTCDate() + 1);
+  base.setUTCHours(2, 0, 0, 0); // 09:00 Vietnam, safely inside opening hours
   const start = new Date(base.getTime());
   const end = new Date(base.getTime() + durationHours * 60 * 60 * 1000);
   return {

@@ -11,7 +11,7 @@ import {
   getVietnamTodayString,
   formatVnDateTimeLocal,
   parseVnDateTimeLocalToUtc,
-  getCoveredVnDates,
+  formatVnDate,
   calculateEstimatedTotal,
   validateBookingSelection,
   checkRangeAvailability,
@@ -103,10 +103,10 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   const startUtc = useMemo(() => parseVnDateTimeLocalToUtc(startTime), [startTime]);
   const endUtc = useMemo(() => parseVnDateTimeLocalToUtc(endTime), [endTime]);
 
-  // Compute covered Vietnam dates for the selection (up to 2 dates if overnight)
+  // Availability is loaded only for the selected Vietnam day.
   const coveredDates = useMemo(() => {
     if (startUtc && endUtc && endUtc > startUtc) {
-      return getCoveredVnDates(startUtc, endUtc);
+      return [formatVnDate(startUtc)];
     }
     return [viewDate];
   }, [startUtc, endUtc, viewDate]);
@@ -803,6 +803,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
               id="booking-end-time"
               type="datetime-local"
               step={1800}
+              min={`${startTime.split('T')[0] || viewDate}T07:00`}
+              max={`${startTime.split('T')[0] || viewDate}T22:00`}
               className="tabular-nums"
               value={endTime}
               onChange={handleEndTimeChange}
@@ -940,6 +942,7 @@ const FieldError: React.FC<{ id: string; testId: string; children: React.ReactNo
 );
 
 const BOOKING_RULES = [
+  { icon: Clock, text: 'Giờ hoạt động: 07:00–22:00, đặt trong cùng ngày (giờ Việt Nam)' },
   { icon: Clock, text: 'Đặt trước ít nhất 30 phút, 1 đến 8 giờ mỗi lượt' },
   { icon: Info, text: 'Tự hủy được khi còn ít nhất 1 giờ trước giờ bắt đầu' },
   { icon: Check, text: 'Tổng tiền do hệ thống tính lại khi xác nhận' },

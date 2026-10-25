@@ -771,61 +771,23 @@ describe('BookingForm', () => {
       ).toBeInTheDocument();
     });
 
-    it('supports overnight booking across midnight and loads both dates', async () => {
-      vi.mocked(bookingApi.createBooking).mockResolvedValueOnce({
-        success: true,
-        message: 'Đặt phòng thành công',
-        data: {
-          id: 'booking-overnight',
-          bookingCode: 'CS-20261025-OVER',
-          room: { id: 'room-uuid-1', name: 'Phòng Hội Thảo Alpha' },
-          startTime: '2026-10-25T16:00:00.000Z', // 23:00 VN
-          endTime: '2026-10-25T18:00:00.000Z', // 01:00 VN next day
-          totalAmount: '400000.00',
-          checkedInAt: null,
-          attendanceTrackingEnabled: false,
-          status: 'CONFIRMED',
-          paymentStatus: 'UNPAID',
-          paymentMethod: null,
-          note: null,
-        },
-      });
-
+    it('rejects overnight booking without preview, review, or creation', async () => {
       renderComponent();
-
-      const startInput = screen.getByLabelText(/Thời gian bắt đầu/i);
-      const endInput = screen.getByLabelText(/Thời gian kết thúc/i);
-
-      // 23:00 to 01:00 next day (2 hours)
-      fireEvent.change(startInput, { target: { value: '2026-10-25T23:00' } });
-      fireEvent.change(endInput, { target: { value: '2026-10-26T01:00' } });
-
-      expect(await screen.findByTestId('booking-price-preview')).toBeInTheDocument();
-      expect(screen.getByText('2 giờ')).toBeInTheDocument();
-
-      fireEvent.click(screen.getByTestId('booking-submit-btn'));
-
-      await act(async () => {
-        fireEvent.click(screen.getByTestId('booking-confirm-btn'));
+      fireEvent.change(screen.getByLabelText(/Thời gian bắt đầu/i), {
+        target: { value: '2026-10-25T23:00' },
       });
-
-      // Both dates should be requested
-      expect(roomApi.getAvailability).toHaveBeenCalledWith(
-        'room-uuid-1',
-        '2026-10-25',
-        expect.any(AbortSignal),
-      );
-      expect(roomApi.getAvailability).toHaveBeenCalledWith(
+      fireEvent.change(screen.getByLabelText(/Thời gian kết thúc/i), {
+        target: { value: '2026-10-26T01:00' },
+      });
+      await act(async () => {});
+      expect(screen.queryByTestId('booking-price-preview')).not.toBeInTheDocument();
+      fireEvent.click(screen.getByTestId('booking-submit-btn'));
+      expect(await screen.findByText(/Chỉ được đặt phòng từ 07:00 đến 22:00/)).toBeInTheDocument();
+      expect(screen.queryByTestId('booking-confirm-btn')).not.toBeInTheDocument();
+      expect(bookingApi.createBooking).not.toHaveBeenCalled();
+      expect(roomApi.getAvailability).not.toHaveBeenCalledWith(
         'room-uuid-1',
         '2026-10-26',
-        expect.any(AbortSignal),
-      );
-
-      expect(bookingApi.createBooking).toHaveBeenCalledWith(
-        expect.objectContaining({
-          startTime: parseVnDateTimeLocalToUtc('2026-10-25T23:00')!.toISOString(),
-          endTime: parseVnDateTimeLocalToUtc('2026-10-26T01:00')!.toISOString(),
-        }),
         expect.any(AbortSignal),
       );
     });
@@ -928,7 +890,7 @@ describe('BookingForm', () => {
       expect(screen.queryByTestId('booking-price-preview')).not.toBeInTheDocument();
     });
 
-    it('F2: suppresses preview when overnight range has BOOKED slot on second date', async () => {
+    it('suppresses preview for overnight ranges regardless of availability', async () => {
       vi.mocked(roomApi.getAvailability).mockImplementation(async (_id, date) => {
         const res = mockAvailabilityResponse(date);
         if (date === '2026-10-26') {
@@ -949,7 +911,7 @@ describe('BookingForm', () => {
 
       await act(async () => {});
 
-      // Preview must NOT be rendered because 00:30 on 26th is BOOKED
+      // Overnight ranges are invalid even when the API supplies availability.
       expect(screen.queryByTestId('booking-price-preview')).not.toBeInTheDocument();
     });
 

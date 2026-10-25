@@ -5,6 +5,9 @@ export const MIN_DURATION_MINUTES = 60;
 export const MAX_DURATION_MINUTES = 480;
 export const ADVANCE_NOTICE_MINUTES = 30;
 export const CANCELLATION_MIN_LEAD_MINUTES = 60;
+export const OPENING_HOUR = 7;
+export const CLOSING_HOUR = 22;
+const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
 
 export function isSlotAligned(date: Date): boolean {
   if (Number.isNaN(date.getTime())) {
@@ -59,6 +62,23 @@ export function validateBookingTime(startDate: Date, endDate: Date, now = new Da
     throw new AppError(
       'ADVANCE_NOTICE',
       `Phải đặt phòng trước thời gian bắt đầu ít nhất ${ADVANCE_NOTICE_MINUTES} phút`,
+      400,
+    );
+  }
+
+  // Shift to Vietnam wall time and read UTC fields so the host timezone cannot change the rule.
+  const localStart = new Date(startDate.getTime() + VIETNAM_OFFSET_MS);
+  const localEnd = new Date(endDate.getTime() + VIETNAM_OFFSET_MS);
+  const startMinutes = localStart.getUTCHours() * 60 + localStart.getUTCMinutes();
+  const endMinutes = localEnd.getUTCHours() * 60 + localEnd.getUTCMinutes();
+  if (
+    localStart.toISOString().slice(0, 10) !== localEnd.toISOString().slice(0, 10) ||
+    startMinutes < OPENING_HOUR * 60 ||
+    endMinutes > CLOSING_HOUR * 60
+  ) {
+    throw new AppError(
+      'OUTSIDE_OPERATING_HOURS',
+      'Chỉ được đặt phòng từ 07:00 đến 22:00 trong cùng ngày (giờ Việt Nam)',
       400,
     );
   }

@@ -18,7 +18,8 @@ const adminToken = generateToken({ sub: 'admin-uuid-1', role: Role.ADMIN });
 
 const getFutureSlot = (hoursAhead = 2, durationHours = 2) => {
   const base = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
-  base.setUTCMinutes(0, 0, 0);
+  base.setUTCDate(base.getUTCDate() + 1);
+  base.setUTCHours(2, 0, 0, 0); // 09:00 Vietnam, safely inside opening hours
   const start = new Date(base.getTime());
   const end = new Date(base.getTime() + durationHours * 60 * 60 * 1000);
   return {
@@ -271,6 +272,31 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
   });
 
   describe('Service Business Time Rules & Identity Enforcement', () => {
+    it.each([
+      ['06:30', '07:30', 0],
+      ['21:30', '22:30', 0],
+      ['23:00', '01:00', 1],
+    ])('rejects %s–%s for both customer and admin guest APIs', async (start, end, nextDay) => {
+      const day = new Date(Date.now() + 48 * 60 * 60 * 1000);
+      const startDay = day.toISOString().slice(0, 10);
+      day.setUTCDate(day.getUTCDate() + nextDay);
+      const endDay = day.toISOString().slice(0, 10);
+      for (const [path, token, identity] of [
+        ['/api/v1/bookings', customerToken, {}],
+        ['/api/v1/admin/bookings/guest', adminToken, { guestName: 'Khách A', guestPhone: '0912345678' }],
+      ] as const) {
+        const res = await request(app).post(path).set('Authorization', `Bearer ${token}`).send({
+          roomId: validRoomId,
+          startTime: new Date(`${startDay}T${start}:00+07:00`).toISOString(),
+          endTime: new Date(`${endDay}T${end}:00+07:00`).toISOString(),
+          ...identity,
+        });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('OUTSIDE_OPERATING_HOURS');
+      }
+      expect(bookingRepository.createBooking).not.toHaveBeenCalled();
+    });
+
     it('always passes verified JWT sub as userId to repository, never client input', async () => {
       const slot = getFutureSlot();
       await request(app)

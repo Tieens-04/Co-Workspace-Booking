@@ -11,6 +11,7 @@ import {
   formatVnDateTimeLocal,
   getCoveredVnDates,
   getVietnamTodayString,
+  isWithinOperatingHours,
 } from '../utils/bookingTime';
 
 vi.mock('../services/room.api', () => ({
@@ -65,8 +66,13 @@ const create48Slots = (dateStr: string): RoomAvailabilitySlot[] => {
 const getFutureSlot = (hoursAhead = 3, durationHours = 2) => {
   const base = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
   base.setUTCMinutes(0, 0, 0);
-  const start = new Date(base.getTime());
-  const end = new Date(base.getTime() + durationHours * 60 * 60 * 1000);
+  let start = new Date(base.getTime());
+  let end = new Date(base.getTime() + durationHours * 60 * 60 * 1000);
+  if (!isWithinOperatingHours(start, end)) {
+    const nextDay = formatVnDate(new Date(base.getTime() + 24 * 60 * 60 * 1000));
+    start = new Date(`${nextDay}T09:00:00+07:00`);
+    end = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
+  }
   return {
     startTime: formatVnDateTimeLocal(start),
     endTime: formatVnDateTimeLocal(end),
@@ -303,71 +309,26 @@ describe('AdminGuestBookingForm Component Tests', () => {
     });
   });
 
-  it('handles 409 BOOKING_CONFLICT for overnight booking spanning across midnight (N1 Regression)', async () => {
-    // Explicit overnight slot spanning across midnight: 23:00 to 01:00 next day
-    const baseDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
-    const tomorrowStr = formatVnDate(baseDate);
-    const dayAfterStr = formatVnDate(new Date(baseDate.getTime() + 24 * 60 * 60 * 1000));
-    const startIsoLocal = `${tomorrowStr}T23:00`;
-    const endIsoLocal = `${dayAfterStr}T01:00`;
-
-    vi.mocked(adminBookingApi.createGuestBooking).mockRejectedValueOnce({
-      response: {
-        status: 409,
-        data: {
-          code: 'BOOKING_CONFLICT',
-          message: 'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác.',
-        },
-      },
-    });
-
+  it('rejects overnight guest booking before calling the API', async () => {
     const user = userEvent.setup();
     renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('guest-room-select')).toBeInTheDocument();
-    });
-
     await user.type(screen.getByTestId('guest-name-input'), 'Khách Đêm');
     await user.type(screen.getByTestId('guest-phone-input'), '0988776655');
-    await user.selectOptions(screen.getByTestId('guest-room-select'), 'room-uuid-1');
-
-    await waitFor(() => {
-      expect(screen.getByTestId('guest-start-time-input')).toBeInTheDocument();
-    });
-
+    await user.selectOptions(await screen.findByTestId('guest-room-select'), 'room-uuid-1');
+    const baseDate = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const tomorrow = formatVnDate(baseDate);
+    const dayAfter = formatVnDate(new Date(baseDate.getTime() + 24 * 60 * 60 * 1000));
     fireEvent.change(screen.getByTestId('guest-start-time-input'), {
-      target: { value: startIsoLocal },
+      target: { value: `${tomorrow}T23:00` },
     });
     fireEvent.change(screen.getByTestId('guest-end-time-input'), {
-      target: { value: endIsoLocal },
+      target: { value: `${dayAfter}T01:00` },
     });
-
-    // Wait for availability of both covered dates to finish loading
-    await waitFor(() => {
-      expect(screen.getByTestId('guest-submit-btn')).not.toBeDisabled();
-    });
-
-    const callsBeforeSubmit = vi.mocked(roomApi.getAvailability).mock.calls.length;
-
+    await waitFor(() => expect(screen.getByTestId('guest-submit-btn')).toBeEnabled());
     await user.click(screen.getByTestId('guest-submit-btn'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('guest-booking-error-general')).toBeInTheDocument();
-    });
-
-    expect(screen.getByText(/Khung giờ này đã có người đặt/i)).toBeInTheDocument();
-
-    // Verify availability was refreshed after conflict for BOTH tomorrow and dayAfter dates
-    await waitFor(() => {
-      const callsAfterSubmit = vi
-        .mocked(roomApi.getAvailability)
-        .mock.calls.slice(callsBeforeSubmit);
-      expect(callsAfterSubmit.length).toBeGreaterThanOrEqual(2);
-      const refreshedDates = callsAfterSubmit.map((c) => c[1]);
-      expect(refreshedDates).toContain(tomorrowStr);
-      expect(refreshedDates).toContain(dayAfterStr);
-    });
+    expect(await screen.findByText(/Chỉ được đặt phòng từ 07:00 đến 22:00/)).toBeInTheDocument();
+    expect(screen.queryByTestId('guest-booking-price-preview')).not.toBeInTheDocument();
+    expect(adminBookingApi.createGuestBooking).not.toHaveBeenCalled();
   });
 
   it('resets form and clears previous session state when principalId changes (F2 Regression)', async () => {

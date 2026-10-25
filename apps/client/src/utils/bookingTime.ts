@@ -22,6 +22,21 @@ export interface BookingValidationResult {
   durationMinutes?: number;
 }
 
+export const OPENING_TIME = '07:00';
+export const CLOSING_TIME = '22:00';
+
+/** Includes opening and closing boundaries on one Vietnam calendar day. */
+export function isWithinOperatingHours(startUtc: Date, endUtc: Date): boolean {
+  return (
+    Number.isFinite(startUtc.getTime()) &&
+    Number.isFinite(endUtc.getTime()) &&
+    endUtc > startUtc &&
+    formatVnDate(startUtc) === formatVnDate(endUtc) &&
+    formatVnTime(startUtc) >= OPENING_TIME &&
+    formatVnTime(endUtc) <= CLOSING_TIME
+  );
+}
+
 /**
  * Returns a string YYYY-MM-DD for the current date in Vietnam (+07:00).
  */
@@ -181,10 +196,18 @@ export function validateBookingSelection(
   }
 
   if (startUtc && endUtc) {
-    if (startUtc.getUTCMinutes() % 30 !== 0 || startUtc.getUTCSeconds() !== 0 || startUtc.getUTCMilliseconds() !== 0) {
+    if (
+      startUtc.getUTCMinutes() % 30 !== 0 ||
+      startUtc.getUTCSeconds() !== 0 ||
+      startUtc.getUTCMilliseconds() !== 0
+    ) {
       errors.startTime = 'Thời gian bắt đầu phải theo mốc 30 phút (ví dụ: 09:00, 09:30)';
     }
-    if (endUtc.getUTCMinutes() % 30 !== 0 || endUtc.getUTCSeconds() !== 0 || endUtc.getUTCMilliseconds() !== 0) {
+    if (
+      endUtc.getUTCMinutes() % 30 !== 0 ||
+      endUtc.getUTCSeconds() !== 0 ||
+      endUtc.getUTCMilliseconds() !== 0
+    ) {
       errors.endTime = 'Thời gian kết thúc phải theo mốc 30 phút (ví dụ: 10:00, 10:30)';
     }
 
@@ -198,6 +221,10 @@ export function validateBookingSelection(
         } else if (durationMins > MAX_DURATION_MINUTES) {
           errors.endTime = 'Thời lượng đặt phòng tối đa là 8 giờ';
         }
+      }
+
+      if (!errors.endTime && !isWithinOperatingHours(startUtc, endUtc)) {
+        errors.endTime = 'Chỉ được đặt phòng từ 07:00 đến 22:00 trong cùng ngày (giờ Việt Nam)';
       }
 
       if (startUtc <= now) {
