@@ -3,6 +3,7 @@ import { BookingRoomDto } from './booking.type.js';
 
 export type AdminCustomerKind = 'USER' | 'GUEST';
 
+// Public admin projection: USER includes account email/id; GUEST omits both.
 export interface AdminBookingCustomerDto {
   kind: AdminCustomerKind;
   name: string;
