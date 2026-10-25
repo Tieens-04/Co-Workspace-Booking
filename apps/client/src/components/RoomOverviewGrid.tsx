@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { LayoutGrid, MoveHorizontal, Wrench } from 'lucide-react';
 import { DashboardRoomSchedule } from '../types/admin-dashboard';
 import { formatCurrency } from '../utils/format';
 import { EmptyState } from '@/components/common/EmptyState';
 import { StatusBadge } from '@/components/common/StatusBadge';
-import { Button } from '@/components/ui/button';
+import { isWithinOperatingHours } from '../utils/bookingTime';
 import { cn } from '@/lib/utils';
 
 export interface RoomOverviewGridProps {
@@ -29,21 +29,14 @@ const formatSlotTime = (isoString: string): string => {
 const LEGEND_SWATCH = 'inline-block h-3.5 w-5 shrink-0 rounded-sm border';
 
 export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date }) => {
-  const [showFullDay, setShowFullDay] = useState(false);
-
   if (rooms.length === 0) {
     return <EmptyState icon={LayoutGrid} title="Chưa có phòng làm việc nào trong hệ thống." />;
   }
 
-  // Filter slots to operating hours 07:00 - 22:00 by default for readability, with full 24h toggle
   const sampleSlots = rooms.find((r) => r.slots.length > 0)?.slots || [];
-  const displaySlots = showFullDay
-    ? sampleSlots
-    : sampleSlots.filter((slot) => {
-        const timeStr = formatSlotTime(slot.startTime);
-        const hour = parseInt(timeStr.split(':')[0], 10);
-        return hour >= 7 && hour < 22;
-      });
+  const displaySlots = sampleSlots.filter((slot) =>
+    isWithinOperatingHours(new Date(slot.startTime), new Date(slot.endTime)),
+  );
 
   return (
     <section aria-labelledby="room-overview-title" className="grid gap-4">
@@ -74,15 +67,7 @@ export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date 
             </li>
           </ul>
 
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setShowFullDay(!showFullDay)}
-            data-testid="toggle-full-day-btn"
-          >
-            {showFullDay ? 'Thu gọn (07:00 - 22:00)' : 'Xem toàn bộ 24h'}
-          </Button>
+          <span>Giờ hoạt động: 07:00–22:00 (giờ Việt Nam)</span>
         </div>
       </div>
 

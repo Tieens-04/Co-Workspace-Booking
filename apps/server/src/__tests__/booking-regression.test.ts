@@ -36,7 +36,8 @@ const customer2Token = generateToken({ sub: 'customer-uuid-2', role: Role.CUSTOM
 
 const createFixtureSlot = (hoursAhead: number, durationHours: number) => {
   const base = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
-  base.setUTCMinutes(0, 0, 0);
+  base.setUTCDate(base.getUTCDate() + 1);
+  base.setUTCHours(2, 0, 0, 0); // 09:00 Vietnam
   const start = new Date(base.getTime());
   const end = new Date(base.getTime() + durationHours * 60 * 60 * 1000);
   return {

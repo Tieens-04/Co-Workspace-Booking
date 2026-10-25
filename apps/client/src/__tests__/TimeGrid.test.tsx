@@ -31,7 +31,7 @@ describe('TimeGrid component', () => {
     now: fixedNow,
   };
 
-  it('renders 48 slots and legend with appropriate labels', () => {
+  it('renders only the 30 operating-hour slots from the 48-slot API response and legend with appropriate labels', () => {
     render(<TimeGrid {...defaultProps} />);
 
     expect(screen.getAllByText('Trống')[0]).toBeInTheDocument();
@@ -40,7 +40,11 @@ describe('TimeGrid component', () => {
     expect(screen.getAllByText('Đã qua giờ')[0]).toBeInTheDocument();
 
     const buttons = screen.getAllByRole('button');
-    expect(buttons).toHaveLength(48);
+    expect(buttons).toHaveLength(30);
+    expect(screen.getByTestId('time-slot-07:00')).toBeEnabled();
+    expect(screen.getByTestId('time-slot-21:30')).toBeEnabled();
+    expect(screen.queryByTestId('time-slot-06:30')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('time-slot-22:00')).not.toBeInTheDocument();
   });
 
   it('scrolls the slot list (not the page) to the first bookable slot for the day', () => {
@@ -67,7 +71,7 @@ describe('TimeGrid component', () => {
 
     render(<TimeGrid {...defaultProps} now={now} />);
 
-    const grid = screen.getByRole('group', { name: 'Danh sách 48 khung giờ trong ngày' });
+    const grid = screen.getByRole('group', { name: 'Danh sách khung giờ 07:00 - 22:00' });
     // First slot not in the past is 10:00 (index 20) → 20 * 40 = 800px down, minus 8px breathing room.
     expect(grid.scrollTop).toBe(792);
     expect(window.scrollTo).not.toHaveBeenCalledWith(expect.anything(), 792);

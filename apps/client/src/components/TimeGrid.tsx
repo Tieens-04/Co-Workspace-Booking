@@ -2,7 +2,13 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RoomAvailabilitySlot } from '../types/room';
-import { formatVnTime, MIN_LEAD_TIME_MS, checkRangeAvailability } from '../utils/bookingTime';
+import {
+  formatVnTime,
+  MIN_LEAD_TIME_MS,
+  checkRangeAvailability,
+  isWithinOperatingHours,
+  validateBookingSelection,
+} from '../utils/bookingTime';
 import { Notice } from './booking/Notice';
 
 export interface TimeGridProps {
@@ -41,7 +47,7 @@ const LEGEND_ITEMS: { state: SlotState; label: string }[] = [
 ];
 
 export const TimeGrid: React.FC<TimeGridProps> = ({
-  slots,
+  slots: allSlots,
   selectedStartTime,
   selectedEndTime,
   selectingStartTime,
@@ -50,6 +56,13 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
   disabled = false,
   now,
 }) => {
+  const slots = useMemo(
+    () =>
+      allSlots.filter((slot) =>
+        isWithinOperatingHours(new Date(slot.startTime), new Date(slot.endTime)),
+      ),
+    [allSlots],
+  );
   const [gridError, setGridError] = useState<string | null>(null);
   const [clockNow, setClockNow] = useState<Date>(() => now || new Date());
   const gridRef = useRef<HTMLDivElement>(null);
@@ -199,6 +212,16 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
       return;
     }
 
+    const validation = validateBookingSelection(
+      new Date(selectingStartMs),
+      new Date(slotEndMs),
+      clickNow,
+    );
+    if (!validation.isValid) {
+      setGridError(validation.errors.startTime || validation.errors.endTime || null);
+      return;
+    }
+
     // Check if range goes through any BOOKED slots
     const rangeCheck = checkRangeAvailability(
       new Date(selectingStartMs),
@@ -219,6 +242,9 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
 
   return (
     <section className="grid gap-3" aria-label="Lịch trống theo khung giờ">
+      <p className="text-xs text-muted-foreground">
+        Giờ hoạt động: 07:00–22:00 (giờ Việt Nam), đặt trong cùng ngày.
+      </p>
       {slots.length > 0 && (
         <p className="text-sm text-muted-foreground" data-testid="time-grid-summary">
           <strong className="font-semibold text-foreground tabular-nums">{slotCounts.open}</strong>{' '}
@@ -283,7 +309,7 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
         ref={gridRef}
         className="grid max-h-[22rem] grid-cols-[repeat(auto-fill,minmax(4.25rem,1fr))] gap-1.5 overflow-y-auto rounded-lg border bg-background p-2 [scrollbar-width:thin]"
         role="group"
-        aria-label="Danh sách 48 khung giờ trong ngày"
+        aria-label="Danh sách khung giờ 07:00 - 22:00"
       >
         {slots.map((slot) => {
           const slotStartMs = new Date(slot.startTime).getTime();

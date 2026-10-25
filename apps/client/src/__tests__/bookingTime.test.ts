@@ -101,6 +101,24 @@ describe('bookingTime utility', () => {
   describe('Validation of Booking Selection', () => {
     const fixedNow = new Date('2026-10-25T00:00:00.000Z');
 
+    it.each([
+      ['2026-10-26T07:00', '2026-10-26T08:00', true],
+      ['2026-10-26T21:00', '2026-10-26T22:00', true],
+      ['2026-10-26T06:30', '2026-10-26T07:30', false],
+      ['2026-10-26T21:30', '2026-10-26T22:30', false],
+      ['2026-10-26T22:00', '2026-10-26T23:00', false],
+      ['2026-10-26T23:00', '2026-10-27T01:00', false],
+      ['2026-10-26T23:00', '2026-10-27T00:00', false],
+    ])('enforces Vietnam operating hours for %s to %s', (start, end, valid) => {
+      const result = validateBookingSelection(
+        parseVnDateTimeLocalToUtc(start),
+        parseVnDateTimeLocalToUtc(end),
+        fixedNow,
+      );
+      expect(result.isValid).toBe(valid);
+      if (!valid) expect(result.errors.endTime).toContain('07:00 đến 22:00 trong cùng ngày');
+    });
+
     it('validates required start and end times', () => {
       const res = validateBookingSelection(null, null, fixedNow);
       expect(res.isValid).toBe(false);

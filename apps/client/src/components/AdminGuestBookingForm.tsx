@@ -23,7 +23,7 @@ import {
   getVietnamTodayString,
   formatVnDateTimeLocal,
   parseVnDateTimeLocalToUtc,
-  getCoveredVnDates,
+  formatVnDate,
   calculateEstimatedTotal,
   validateBookingSelection,
   checkRangeAvailability,
@@ -179,7 +179,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   // Compute covered dates
   const coveredDates = useMemo(() => {
     if (startUtc && endUtc && endUtc > startUtc) {
-      return getCoveredVnDates(startUtc, endUtc);
+      return [formatVnDate(startUtc)];
     }
     return [viewDate];
   }, [startUtc, endUtc, viewDate]);
@@ -665,6 +665,9 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
               {selectedRoomId && selectedRoom?.status === 'AVAILABLE' && (
                 <fieldset className={FIELDSET_CLASS}>
                   <legend className={LEGEND_CLASS}>Thời gian sử dụng (Giờ Việt Nam)</legend>
+                  <p className="text-sm text-muted-foreground">
+                    Chỉ đặt trong cùng ngày, từ 07:00 đến 22:00.
+                  </p>
 
                   <div className="grid gap-4 sm:grid-cols-3">
                     <Field id="viewDate" label="Xem lịch ngày">
@@ -715,6 +718,8 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                       <Input
                         type="datetime-local"
                         step={1800}
+                        min={`${startTime.split('T')[0] || viewDate}T07:00`}
+                        max={`${startTime.split('T')[0] || viewDate}T22:00`}
                         className="tabular-nums"
                         value={endTime}
                         onChange={(e) => {

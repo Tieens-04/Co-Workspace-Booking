@@ -54,7 +54,7 @@ function toAdminDto(record: any): AdminBookingResponseDto {
 // Generate future aligned time slot dynamically
 function getFutureSlotIso(daysInAdvance = 7, durationHours = 2) {
   const start = new Date(Date.now() + daysInAdvance * 24 * 60 * 60 * 1000);
-  start.setMinutes(0, 0, 0); // 30-min alignment
+  start.setUTCHours(2, 0, 0, 0); // 09:00 Vietnam, inside opening hours
   const end = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
   return {
     startTime: start.toISOString(),

@@ -460,6 +460,7 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - **Giới hạn thời lượng**: Thời lượng đặt tối thiểu là 1 giờ (60 phút) và tối đa là 8 giờ (480 phút).
   - **Thời gian bắt đầu hợp lệ**: `startTime` không được ở trong quá khứ và phải cách thời điểm hiện tại của máy chủ tối thiểu 30 phút (`startTime >= now + 30m`).
   - **Thứ tự thời gian**: Bắt buộc `endTime > startTime`.
+  - **Giờ hoạt động**: Chỉ được thuê trong khoảng **07:00–22:00 cùng ngày**, theo múi giờ `Asia/Ho_Chi_Minh` (UTC+7). Áp dụng chung cho khách hàng và admin đặt hộ khách vãng lai; server trả `400 OUTSIDE_OPERATING_HOURS` nếu ngoài giờ hoặc qua đêm. Giữ nguyên dữ liệu đặt phòng lịch sử.
 - **Trạng thái Phòng & Chống Trùng Lịch (Availability, Overlap & Concurrency)**:
   - **Chặn phòng Bảo trì (AC2)**: Thực hiện khóa hàng MySQL `SELECT id, name, status, price_per_hour FROM rooms WHERE id = ? FOR UPDATE` trong transaction. Nếu trạng thái phòng là `MAINTENANCE`, request bị từ chối ngay lập tức với mã `409 ROOM_NOT_AVAILABLE`.
   - **Quy tắc Overlap chuẩn**: Slot yêu cầu bị coi là trùng lịch nếu tồn tại booking có trạng thái thuộc danh sách chặn (`CONFIRMED`) thỏa mãn điều kiện:
@@ -476,6 +477,7 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - `400 MIN_DURATION`: Thời lượng đặt phòng nhỏ hơn 1 giờ (60 phút).
   - `400 MAX_DURATION`: Thời lượng đặt phòng vượt quá 8 giờ (480 phút).
   - `400 PAST_TIME`: Thời gian bắt đầu ở trong quá khứ (`startTime <= now`).
+  - `400 OUTSIDE_OPERATING_HOURS`: Khoảng thuê ngoài 07:00–22:00 hoặc không nằm trong cùng ngày theo giờ Việt Nam.
   - `400 ADVANCE_NOTICE`: Thời gian đặt trước không đủ 30 phút (`startTime - now < 30m`).
   - `401 UNAUTHORIZED`: Thiếu hoặc sai token JWT.
   - `403 FORBIDDEN`: Đăng nhập với vai trò không phải `CUSTOMER` (ví dụ `ADMIN`).
@@ -522,9 +524,9 @@ npm run test:integration --workspace=apps/server -- src/__tests__/booking.integr
 
 Biểu mẫu đặt phòng tại `/rooms/:id` được tích hợp thành phần **Time-Grid** tương tác trực quan dành cho người dùng có vai trò `CUSTOMER` đã đăng nhập:
 
-- **Hiển thị 48 Slot trong ngày (Giờ Việt Nam UTC+7)**:
+- **Hiển thị Slot trong giờ hoạt động (Giờ Việt Nam UTC+7)**:
   - Cho phép người dùng chọn ngày xem lịch thông qua bộ chọn ngày `booking-view-date-input`.
-  - Tải và kết xuất 48 khung giờ 30 phút liên tục trong ngày theo múi giờ `Asia/Ho_Chi_Minh`.
+  - API vẫn trả 48 slot để giữ hợp đồng hiện tại; giao diện chỉ cho chọn 30 khung giờ 30 phút từ 07:00 đến 22:00 theo múi giờ `Asia/Ho_Chi_Minh`.
 - **Trạng thái & Màu sắc các Slot (AC1)**:
   - **Trống (`AVAILABLE`)**: Ô nền thẻ có viền (`data-slot-state="available"`), có thể tương tác click để chọn khoảng giờ.
   - **Đã đặt (`BOOKED`)**: Ô nền xám có sọc chéo và chữ gạch ngang (`data-slot-state="booked"`), mang nhãn _"Đã đặt"_, áp dụng thuộc tính native `disabled`, không thể click hay chọn bằng bàn phím.
@@ -535,7 +537,7 @@ Biểu mẫu đặt phòng tại `/rooms/:id` được tích hợp thành phần
   - Không cho phép chọn khoảng thời gian đi xuyên qua slot đã đặt (`BOOKED`).
   - Ràng buộc thời lượng: Tối thiểu 1 giờ (60 phút) và tối đa 8 giờ (480 phút). Click lại chính ô bắt đầu sẽ hiển thị thông báo hướng dẫn thời lượng tối thiểu 1 giờ.
   - Đồng bộ hai chiều: Thao tác click trên grid tự động cập nhật hai ô nhập `datetime-local`; ngược lại, việc nhập tay vào các ô thời gian cũng cập nhật highlight trên grid và tự động chuyển ngày xem lịch.
-  - **Hỗ trợ đặt phòng qua nửa đêm (Overnight Booking)**: Khách hàng có thể nhập khoảng giờ xuyên đêm (ví dụ `23:00` đến `01:00` ngày hôm sau). Hệ thống tự động tải và xác thực lịch trống cho cả hai ngày.
+  - **Giới hạn giờ thuê**: Không cho đặt qua đêm. Nhập tay cũng phải nằm trong 07:00–22:00 cùng ngày; biểu mẫu khách hàng và admin đều kiểm tra quy tắc này trước khi gửi.
 - **Tự tính Tiền Tạm tính (AC3)**:
   - Giao diện tự động tính thời lượng đặt và tổng tiền ước tính (`preview`) dựa trên `pricePerHour` của phòng và số lượng slot 30 phút.
   - Áp dụng làm tròn `ROUND_HALF_UP` trên tổng tiền (sử dụng đơn vị integer cents) đảm bảo tính toán đồng nhất với thuật toán Decimal của backend.

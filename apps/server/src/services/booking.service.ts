@@ -66,7 +66,7 @@ export class BookingService {
     const startDate = new Date(input.startTime);
     const endDate = new Date(input.endTime);
 
-    // Validate 30-min alignment, duration (1h - 8h), end > start, not past, advance notice >= 30m
+    // Shared customer/guest rules include 07:00–22:00 on the same Vietnam day.
     validateBookingTime(startDate, endDate, now);
 
     const durationMinutes = (endDate.getTime() - startDate.getTime()) / (60 * 1000);

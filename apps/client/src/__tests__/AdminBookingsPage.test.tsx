@@ -7,7 +7,7 @@ import { adminBookingApi } from '../services/admin-booking.api';
 import { roomApi } from '../services/room.api';
 import { AdminBookingItem } from '../types/admin-booking';
 import { RoomAvailabilitySlot } from '../types/room';
-import { formatVnDateTimeLocal } from '../utils/bookingTime';
+import { formatVnDateTimeLocal, formatVnDate, isWithinOperatingHours } from '../utils/bookingTime';
 
 const create48Slots = (dateStr: string): RoomAvailabilitySlot[] => {
   const slots: RoomAvailabilitySlot[] = [];
@@ -27,8 +27,13 @@ const create48Slots = (dateStr: string): RoomAvailabilitySlot[] => {
 const getFutureSlot = (hoursAhead = 3, durationHours = 2) => {
   const base = new Date(Date.now() + hoursAhead * 60 * 60 * 1000);
   base.setUTCMinutes(0, 0, 0);
-  const start = new Date(base.getTime());
-  const end = new Date(base.getTime() + durationHours * 60 * 60 * 1000);
+  let start = new Date(base.getTime());
+  let end = new Date(base.getTime() + durationHours * 60 * 60 * 1000);
+  if (!isWithinOperatingHours(start, end)) {
+    const nextDay = formatVnDate(new Date(base.getTime() + 24 * 60 * 60 * 1000));
+    start = new Date(`${nextDay}T09:00:00+07:00`);
+    end = new Date(start.getTime() + durationHours * 60 * 60 * 1000);
+  }
   return {
     startTime: formatVnDateTimeLocal(start),
     endTime: formatVnDateTimeLocal(end),
