@@ -60,6 +60,50 @@ function CancelHarness({ isSubmitting, onClose }: { isSubmitting: boolean; onClo
   );
 }
 
+function KeyboardHarness({ kind }: { kind: 'payment' | 'cancel' }) {
+  const [target, setTarget] = useState<AdminBookingItem | null>(null);
+  return (
+    <>
+      <button onClick={() => setTarget(booking)}>Mở thao tác</button>
+      {kind === 'payment' ? (
+        <ConfirmPaymentDialog
+          booking={target}
+          paymentMethod="CASH"
+          onPaymentMethodChange={() => {}}
+          isSubmitting={false}
+          error={null}
+          onSubmit={(event) => event.preventDefault()}
+          onClose={() => setTarget(null)}
+        />
+      ) : (
+        <CancelBookingDialog
+          booking={target}
+          reason=""
+          onReasonChange={() => {}}
+          validationError={null}
+          isSubmitting={false}
+          error={null}
+          onSubmit={(event) => event.preventDefault()}
+          onClose={() => setTarget(null)}
+        />
+      )}
+    </>
+  );
+}
+
+it.each(['payment', 'cancel'] as const)(
+  '%s returns keyboard focus to its opener on Escape',
+  async (kind) => {
+    const user = userEvent.setup();
+    render(<KeyboardHarness kind={kind} />);
+    const opener = screen.getByRole('button', { name: 'Mở thao tác' });
+    await user.click(opener);
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    await user.keyboard('{Escape}');
+    expect(opener).toHaveFocus();
+  },
+);
+
 describe('ConfirmPaymentDialog', () => {
   it('is an accessible dialog labelled by its title and description', () => {
     render(<PaymentHarness isSubmitting={false} onClose={vi.fn()} />);

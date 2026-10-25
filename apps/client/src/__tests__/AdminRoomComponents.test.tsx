@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { RoomTable } from '../components/admin/rooms/RoomTable';
 import { MaintenanceWarning } from '../components/admin/rooms/MaintenanceWarning';
 import type { RoomListItem } from '../types/room';
@@ -96,6 +97,24 @@ describe('RoomTable', () => {
 });
 
 describe('MaintenanceWarning', () => {
+  it('focuses the safe action and dismisses with Escape without confirming maintenance', async () => {
+    const user = userEvent.setup();
+    const onDismiss = vi.fn();
+    const onConfirm = vi.fn();
+    render(
+      <MaintenanceWarning
+        warning={warning}
+        isConfirming={false}
+        onDismiss={onDismiss}
+        onConfirm={onConfirm}
+      />,
+    );
+    expect(screen.getByRole('button', { name: 'Quay lại' })).toHaveFocus();
+    await user.keyboard('{Escape}');
+    expect(onDismiss).toHaveBeenCalledOnce();
+    expect(onConfirm).not.toHaveBeenCalled();
+  });
+
   it('renders an accessible alertdialog listing every future booking', () => {
     render(
       <MaintenanceWarning

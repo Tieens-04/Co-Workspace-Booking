@@ -1,4 +1,5 @@
 import type * as React from 'react';
+import { useRef } from 'react';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -83,6 +84,7 @@ export function RoomForm({
   onDismissWarning,
   onConfirmMaintenance,
 }: RoomFormProps) {
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
   const isBusy = isSubmitting || isUploadingImages;
 
   return (
@@ -146,6 +148,7 @@ export function RoomForm({
 
       {futureBookingWarning && (
         <MaintenanceWarning
+          returnFocusRef={submitButtonRef}
           warning={futureBookingWarning}
           isConfirming={isConfirmingMaintenance}
           onDismiss={onDismissWarning}
@@ -294,6 +297,7 @@ export function RoomForm({
               isBusy || isConfirmingMaintenance || isLoadingAmenities || Boolean(amenitiesError)
             }
             data-testid="admin-submit-room-btn"
+            ref={submitButtonRef}
           >
             {isUploadingImages
               ? 'Đang tải ảnh...'

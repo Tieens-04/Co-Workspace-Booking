@@ -36,8 +36,7 @@ RUN apk add --no-cache curl
 COPY --from=builder /app/package*.json ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/server/package*.json ./apps/server/
-# npm keeps the locked Prisma CLI in this workspace rather than hoisting it.
-COPY --from=builder /app/apps/server/node_modules ./apps/server/node_modules
+# The locked Prisma CLI and client are hoisted into /app/node_modules above.
 COPY --from=builder /app/apps/server/prisma ./apps/server/prisma
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 
