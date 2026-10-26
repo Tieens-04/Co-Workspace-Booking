@@ -1,15 +1,19 @@
 # Multi-stage Dockerfile for Co-Space Client
-FROM node:20-alpine AS builder
+FROM node:24.22.1-alpine AS builder
 
 WORKDIR /app
 
 # Copy root workspace and package manifests
 COPY package*.json ./
+COPY .npmrc ./
 COPY apps/server/package*.json ./apps/server/
 COPY apps/client/package*.json ./apps/client/
 
 # Install dependencies
-RUN npm ci
+RUN npm install --global npm@11.11.0 \
+  && test "$(node --version)" = "v24.22.1" \
+  && test "$(npm --version)" = "11.11.0" \
+  && npm ci
 
 # Copy client source
 COPY apps/client ./apps/client

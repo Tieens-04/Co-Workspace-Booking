@@ -10,6 +10,8 @@ export default defineConfig({
     },
   },
   test: {
+    // Bound concurrent jsdom environments so UI interactions stay responsive on busy hosts.
+    maxWorkers: 2,
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],

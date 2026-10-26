@@ -38,10 +38,21 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Install pinned npm and verify toolchain
+        run: |
+          npm install --global npm@11.11.0
+          node --version
+          npm --version
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          test "npm@$(npm --version)" = "$(node -p 'require("./package.json").packageManager')"
       - run: npm ci
+      - name: Audit all dependencies
+        run: npm audit
+      - name: Tooling security regressions
+        run: npm run test:tooling
       - name: Generate and validate Prisma
         env:
           DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
@@ -94,9 +105,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
           cache: npm
           cache-dependency-path: package-lock.json
+      - name: Install pinned npm and verify toolchain
+        run: |
+          npm install --global npm@11.11.0
+          node --version
+          npm --version
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          test "npm@$(npm --version)" = "$(node -p 'require("./package.json").packageManager')"
       - run: npm ci
       - name: Generate browser fixture Prisma client
         env:
@@ -125,3 +143,22 @@ jobs:
             test-results-concurrency/
           retention-days: 14
           if-no-files-found: warn
+
+  docker-build:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production images without cache
+        run: |
+          docker build --pull --no-cache -f apps/server/Dockerfile -t cospace-server:cwb-50 .
+          docker build --pull --no-cache -f apps/client/Dockerfile -t cospace-client:cwb-50 .
+      - name: Verify server runtime toolchain
+        run: |
+          docker run --rm --entrypoint node cospace-server:cwb-50 --version
+          docker run --rm --entrypoint npm cospace-server:cwb-50 --version
+          test "$(docker run --rm --entrypoint node cospace-server:cwb-50 --version)" = "v$(cat .nvmrc)"
+          test "$(docker run --rm --entrypoint npm cospace-server:cwb-50 --version)" = "11.11.0"
+      - name: Verify frontend build artifact
+        run: docker run --rm --entrypoint sh cospace-client:cwb-50 -c 'test -s /usr/share/nginx/html/index.html'

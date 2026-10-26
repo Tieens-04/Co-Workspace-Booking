@@ -8,12 +8,42 @@
 
 ## Chạy tại máy
 
-Yêu cầu Node.js 24, npm đi kèm và MySQL 8. CI dùng cùng phiên bản Node để chạy bộ công cụ kiểm tra hiện tại. Chạy các lệnh tại thư mục gốc:
+Yêu cầu Node.js **24.22.1**, npm **11.11.0** và MySQL 8. `.nvmrc` là phiên bản Node chuẩn cho local và CI. Root package khai báo engines Node `>=24.22.1 <25` và npm `11.11.0`; `.npmrc` bật `engine-strict` để từ chối toolchain không tương thích. Chạy các lệnh tại thư mục gốc.
+
+Với nvm trên macOS/Linux:
 
 ```bash
-npm install
+nvm install
+nvm use
+npm install --global npm@11.11.0
+```
+
+Với nvm-windows (chỉ định phiên bản vì không tự đọc `.nvmrc`):
+
+```powershell
+nvm install 24.22.1
+nvm use 24.22.1
+npm install --global npm@11.11.0
+```
+
+Cài dependencies theo lockfile đã commit và tạo cấu hình backend:
+
+```bash
+npm ci
 cp apps/server/.env.example apps/server/.env
 ```
+
+Root `package-lock.json` là lockfile chuẩn duy nhất cho toàn bộ npm workspaces. `pnpm-lock.yaml` và lockfile riêng `apps/client/package-lock.json` đã được loại bỏ; không tạo lại hoặc dùng package manager khác. Cài mới/CI dùng `npm ci` từ gốc. Khi chủ động đổi dependency, chạy `npm install <package>` tại gốc hoặc `npm install <package> --workspace=apps/client` (tương tự `apps/server`), commit manifest và root lockfile cùng nhau, rồi chạy lint, typecheck, test và build bên dưới.
+
+Khi nâng toolchain, cập nhật đồng bộ `.nvmrc`, `engines` và `packageManager` trong root package, metadata root `package-lock.json`, Node base image/npm trong Dockerfiles, phiên bản npm và kiểm tra runtime trong CI, cùng hướng dẫn này. Dùng phiên bản mới để cập nhật lockfile và chạy lại `npm ci`, các kiểm tra và Docker build trước khi merge.
+
+### Bản vá dependency và kiểm thử tooling
+
+Các dependency trực tiếp khai báo minimum version đã vá; root lockfile khóa cả dependency gián tiếp. Chạy `npm audit` để kiểm tra toàn bộ cây dependency, kể cả công cụ development. CI chạy audit và `npm run test:tooling` sau `npm ci`; không bỏ qua advisory hoặc dùng `npm audit fix --force` để nâng major tự động.
+
+Prisma 6.19.3 dùng `deepmerge-ts` 7 bị [stack exhaustion với cấu trúc đệ quy (GHSA-ggr8-5vv4-36mx)](https://github.com/advisories/GHSA-ggr8-5vv4-36mx). Root `overrides` chỉ thay dependency này trong `@prisma/config` bằng bản vá 8.0.0, giữ nguyên Prisma 6 và hợp đồng database. `test:tooling` kiểm tra đầu vào đệ quy và việc Prisma thực sự nạp cấu hình với merger đã vá. Chỉ bỏ override sau khi Prisma đã tự phụ thuộc bản an toàn và các kiểm tra này vẫn pass.
+
+Vitest frontend giới hạn hai worker để giảm tranh chấp tài nguyên giữa các môi trường jsdom trên máy bận. `npm test` chạy regression tooling trước các workspace tests; không cần đặt biến môi trường riêng và không tăng timeout hay bỏ assertion.
 
 Trong `apps/server/.env`, cấu hình `DATABASE_URL`, `JWT_SECRET` (ít nhất 32 ký tự), `CLOUDINARY_*` và `CLIENT_URL` (mặc định `http://localhost:5173`). Cấu hình `SMTP_*` nếu cần gửi email; xem các biến và chú thích trong [file mẫu](apps/server/.env.example).
 
@@ -92,7 +122,7 @@ Test tích hợp MySQL chạy bằng `npm run test:integration --workspace=apps/
 
 ### Kiểm tra tự động trên GitHub (CWB-48)
 
-Workflow **CI**, job **quality**, chạy trên mọi push, pull request và khi chọn Run workflow trong GitHub Actions. Ubuntu 24.04/Node 24 cài dependencies bằng `npm ci` theo root `package-lock.json`; MySQL 8 được tạo mới cho mỗi job với database `cospace_ci_test`. Thông tin đăng nhập trong workflow chỉ dành cho service tạm, không truy cập hạ tầng thật. Không cần secrets SMTP/Cloudinary hay database production. Không truyền thông tin xác thực thật vào workflow này; các workflow khác nếu cần secrets phải lấy từ GitHub Actions secrets.
+Workflow **CI**, job **quality**, chạy trên mọi push, pull request và khi chọn Run workflow trong GitHub Actions. Ubuntu 24.04 đọc Node 24.22.1 từ `.nvmrc`, cài npm 11.11.0, in và kiểm tra phiên bản Node/npm trước `npm ci` theo root `package-lock.json`; **browser-e2e** dùng cùng quy trình. MySQL 8 được tạo mới cho mỗi job với database `cospace_ci_test`. Thông tin đăng nhập trong workflow chỉ dành cho service tạm, không truy cập hạ tầng thật. Không cần secrets SMTP/Cloudinary hay database production. Không truyền thông tin xác thực thật vào workflow này; các workflow khác nếu cần secrets phải lấy từ GitHub Actions secrets.
 
 Để chạy quy trình tương đương tại máy, tạo database MySQL 8 riêng kết thúc bằng `_test`, cấp quyền migration/CRUD và tạo bảng tạm cho tài khoản test. Đặt `TEST_DATABASE_URL` trong môi trường shell hoặc `apps/server/.env`; giữ `DATABASE_URL` development riêng, không đặt nó bằng URL test. Chạy tại thư mục gốc:
 
@@ -112,6 +142,22 @@ npm run build
 `db:deploy:test` kiểm tra URL bằng cùng database guard của integration trước khi gọi `prisma migrate deploy`; chỉ tiến trình Prisma con nhận `DATABASE_URL` test. Guard từ chối URL thiếu/sai, database không kết thúc `_test`, hoặc trùng tên database development kể cả khác host/user. Không dùng lệnh `db:deploy` thông thường để chuẩn bị database test. Integration chạy MySQL thật, tuần tự giữa các file, gồm overlap và hai request đặt cùng phòng/giờ. SMTP bị tắt; Cloudinary dùng cấu hình giả, upload phải được mock rõ ràng và xóa ảnh được thay bằng mock không gọi mạng. Smoke test SMTP/Nginx tiếp tục chạy riêng bằng các lệnh đã ghi bên dưới.
 
 CI xuất console và JUnit XML cho từng bộ frontend/backend/integration, lưu artifact **test-results** trong 14 ngày, kể cả khi test thất bại. Mở Actions → lượt chạy → bước đỏ để xem lỗi; tải artifact để xem báo cáo. Nếu lỗi xảy ra trước khi test bắt đầu, báo cáo tương ứng chưa tồn tại. Mọi bước lỗi đều làm job thất bại; sửa nguyên nhân và chạy lại, không bỏ qua check. Có thể đặt **quality** thành required status check trong GitHub branch protection để chặn merge khi thất bại; workflow không tự thay đổi cấu hình bảo vệ nhánh hoặc triển khai ứng dụng.
+
+### Kiểm tra Docker và toolchain (CWB-50)
+
+Job **docker-build** chạy sau **quality** trên Ubuntu 24.04, timeout 30 phút. Job build cả hai production images bằng `--pull --no-cache`, kiểm tra Node 24.22.1/npm 11.11.0 trong server runner và `index.html` trong client runner. Các lệnh override entrypoint nên không khởi động ứng dụng, chạy migrations hoặc cần database/secrets. Job chỉ build và kiểm tra, không push image hay triển khai.
+
+Sau khi chuẩn bị toolchain ở trên, có thể chạy tương đương tại gốc với Docker daemon đang hoạt động:
+
+```bash
+docker build --pull --no-cache -f apps/server/Dockerfile -t cospace-server:cwb-50 .
+docker build --pull --no-cache -f apps/client/Dockerfile -t cospace-client:cwb-50 .
+docker run --rm --entrypoint node cospace-server:cwb-50 --version
+docker run --rm --entrypoint npm cospace-server:cwb-50 --version
+docker run --rm --entrypoint sh cospace-client:cwb-50 -c 'test -s /usr/share/nginx/html/index.html'
+```
+
+Hai lệnh phiên bản phải in lần lượt `v24.22.1` và `11.11.0`; lệnh cuối phải thoát thành công. CI tự so sánh các phiên bản và thất bại nếu không khớp.
 
 ### Kiểm thử trình duyệt Customer/Admin (CWB-49)
 
