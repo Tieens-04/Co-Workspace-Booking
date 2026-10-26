@@ -467,6 +467,7 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
     $$\text{existing.startTime} < \text{requested.endTime} \quad\land\quad \text{existing.endTime} > \text{requested.startTime}$$
     Cho phép chạm mốc biên (boundary touching): một booking kết thúc lúc `10:00` và booking tiếp theo bắt đầu lúc `10:00` không bị coi là trùng lặp.
   - **Bảo vệ Concurrency / Double-booking**: Toàn bộ thao tác kiểm tra phòng, kiểm tra overlap và chèn dữ liệu được thực thi trong một `prisma.$transaction` kết hợp khóa hàng MySQL `FOR UPDATE`. Hai request đồng thời cho cùng một phòng/khung giờ sẽ được serialize; request thứ hai sẽ phát hiện overlap và trả về `409 BOOKING_CONFLICT`.
+  - **Kiểm tra lại lead time sau khóa (CWB-51)**: CUSTOMER và GUEST đều gọi lại shared time validator bằng giờ server mới ngay trước insert, sau khi lấy khóa phòng và kiểm tra overlap. Mỗi lần retry mã booking cũng thực hiện kiểm tra này. Nếu thời gian chờ làm khoảng cách đến giờ bắt đầu còn dưới 30 phút, API trả `400 ADVANCE_NOTICE`, rollback và không gửi email xác nhận; đúng 30 phút vẫn hợp lệ. Nếu giờ bắt đầu đã đến hoặc qua, validator trả `400 PAST_TIME` theo quy tắc hiện có.
 - **Định Giá & Tạo Mã Đặt Chỗ Phía Server**:
   - **Tính tổng tiền Authoritative**: Server tính toán tổng tiền dựa trên giá trị `price_per_hour` đọc từ database tại thời điểm giao dịch và thời lượng thực tế (`pricePerHour * durationMinutes / 60`). Sử dụng `Prisma.Decimal` với chế độ làm tròn `ROUND_HALF_UP` 2 chữ số thập phân (làm tròn một lần duy nhất trên tổng số tiền, không làm tròn theo từng slot 30 phút nhằm tránh sai lệch tích lũy; ví dụ: `100.55 * 1.5h = 150.825 -> 150.83`, `100.01 * 1.5h = 150.015 -> 150.02`), tuyệt đối không dùng số thực dấu phẩy động (floating-point) của JavaScript để bảo đảm tính chính xác tiền tệ.
   - **Định dạng mã đặt phòng**: Tạo mã duy nhất theo định dạng `CS-YYYYMMDD-XXXX` (trong đó phần ngày `YYYYMMDD` được xác định theo thời gian bắt đầu `startTime` quy đổi về múi giờ `Asia/Ho_Chi_Minh`, không phụ thuộc vào thời điểm gửi request; hậu tố gồm 4 ký tự ngẫu nhiên `[0-9A-Z]` sinh bằng `crypto.randomInt`). Khi phát hiện xung đột unique constraint trên `bookingCode` (`P2002`), hệ thống thực hiện cơ chế thử lại tối đa 5 lần tổng cộng (`MAX_CODE_RETRIES = 5`). Nếu sau 5 lần vẫn xung đột, hệ thống rollback an toàn và trả về `409 BOOKING_CODE_CONFLICT`.
@@ -516,6 +517,10 @@ npm run test --workspace=apps/server -- src/__tests__/booking-time.test.ts src/_
 
 # Integration tests (MySQL thật, transaction row lock, overlap, collision retry, làm tròn giá lẻ)
 npm run test:integration --workspace=apps/server -- src/__tests__/booking.integration.test.ts
+
+# CWB-51: clock kiểm soát, biên 30 phút, lock wait thật và retry CUSTOMER/GUEST
+npm run test --workspace=apps/server -- src/__tests__/booking-lead-time.test.ts
+npm run test:integration --workspace=apps/server -- src/__tests__/booking-lead-time.integration.test.ts
 ```
 
 ---
