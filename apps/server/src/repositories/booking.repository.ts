@@ -16,6 +16,7 @@ import {
 } from '../types/admin-booking.type.js';
 import {
   calculateBookingTotal,
+  validateBookingTime,
   validateCustomerCancellationTime,
 } from '../utils/booking-time.util.js';
 import { getDayBounds } from '../utils/room-availability.util.js';
@@ -262,6 +263,9 @@ export class BookingRepository
 
       // 4. Calculate totalAmount deterministically from persisted room price
       const totalAmount = calculateBookingTotal(lockedRoom.pricePerHour, data.durationMinutes);
+
+      // Lock waits, overlap queries, and code-collision retries can exhaust the lead time.
+      validateBookingTime(data.startDate, data.endDate, new Date());
 
       // 5. Insert booking with initial CONFIRMED and UNPAID status
       const createdBooking = await tx.booking.create({
