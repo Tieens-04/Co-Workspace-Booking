@@ -1,15 +1,19 @@
 # Multi-stage Dockerfile for Co-Space Server
-FROM node:20-alpine AS builder
+FROM node:24.22.1-alpine AS builder
 
 WORKDIR /app
 
 # Copy root workspace and server manifests
 COPY package*.json ./
+COPY .npmrc ./
 COPY apps/server/package*.json ./apps/server/
 COPY apps/client/package*.json ./apps/client/
 
 # Install dependencies
-RUN npm ci
+RUN npm install --global npm@11.11.0 \
+  && test "$(node --version)" = "v24.22.1" \
+  && test "$(npm --version)" = "11.11.0" \
+  && npm ci
 
 # Copy Prisma schema and server source
 COPY apps/server/prisma ./apps/server/prisma
@@ -22,7 +26,7 @@ COPY apps/server/src ./apps/server/src
 RUN npm run build --workspace=@cospace/server
 
 # Runner stage
-FROM node:20-alpine AS runner
+FROM node:24.22.1-alpine AS runner
 
 WORKDIR /app
 
@@ -31,9 +35,13 @@ ENV PORT=5000
 
 # Install curl for healthcheck
 RUN apk add --no-cache curl
+RUN npm install --global npm@11.11.0 \
+  && test "$(node --version)" = "v24.22.1" \
+  && test "$(npm --version)" = "11.11.0"
 
 # Copy installed production dependencies and built assets
 COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/.npmrc ./
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/apps/server/package*.json ./apps/server/
 # The locked Prisma CLI and client are hoisted into /app/node_modules above.
