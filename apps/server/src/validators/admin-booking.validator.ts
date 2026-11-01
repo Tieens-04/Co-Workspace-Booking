@@ -113,6 +113,9 @@ export const completeBookingParamsSchema = z
 
 export type CompleteBookingParamsInput = z.infer<typeof completeBookingParamsSchema>;
 
+export const completeBookingBodySchema = z.object({}).strict();
+export type CompleteBookingBodyInput = z.infer<typeof completeBookingBodySchema>;
+
 export const markNoShowParamsSchema = z
   .object({
     id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
@@ -120,6 +123,13 @@ export const markNoShowParamsSchema = z
   .strict();
 
 export type MarkNoShowParamsInput = z.infer<typeof markNoShowParamsSchema>;
+
+export const markNoShowBodySchema = z.object({}).strict();
+export type MarkNoShowBodyInput = z.infer<typeof markNoShowBodySchema>;
+
+// Booking mutation endpoints accept no query parameters.
+export const adminBookingMutationQuerySchema = z.object({}).strict();
+export type AdminBookingMutationQueryInput = z.infer<typeof adminBookingMutationQuerySchema>;
 
 export const getRevenueQuerySchema = z
   .object({

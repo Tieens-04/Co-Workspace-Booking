@@ -46,6 +46,11 @@ export const errorHandler = (err: Error, _req: Request, res: Response, _next: Ne
     return sendError(res, 'VALIDATION_ERROR', 'Dữ liệu JSON không hợp lệ', 400);
   }
 
+  // Body parser rejected a request body above the configured size limit
+  if ('type' in err && err.type === 'entity.too.large') {
+    return sendError(res, 'PAYLOAD_TOO_LARGE', 'Dữ liệu gửi lên vượt quá giới hạn cho phép', 413);
+  }
+
   // Unexpected errors
   console.error('Unhandled Error:', err);
   return sendError(res, 'INTERNAL_SERVER_ERROR', 'Đã có lỗi xảy ra trên hệ thống', 500);

@@ -14,9 +14,12 @@ import {
   adminCancelBookingParamsSchema,
   adminCancelBookingBodySchema,
   completeBookingParamsSchema,
+  completeBookingBodySchema,
   checkInBookingParamsSchema,
   checkInBookingBodySchema,
   markNoShowParamsSchema,
+  markNoShowBodySchema,
+  adminBookingMutationQuerySchema,
   getRevenueQuerySchema,
 } from '../validators/admin-booking.validator.js';
 import {
@@ -55,29 +58,36 @@ router.post(
 router.patch(
   '/bookings/:id/payment',
   validateParams(confirmPaymentParamsSchema),
+  validateQuery(adminBookingMutationQuerySchema),
   validateBody(confirmPaymentBodySchema),
   adminBookingController.confirmPayment,
 );
 router.patch(
   '/bookings/:id/cancel',
   validateParams(adminCancelBookingParamsSchema),
+  validateQuery(adminBookingMutationQuerySchema),
   validateBody(adminCancelBookingBodySchema),
   adminBookingController.cancelBooking,
 );
 router.patch(
   '/bookings/:id/check-in',
   validateParams(checkInBookingParamsSchema),
+  validateQuery(adminBookingMutationQuerySchema),
   validateBody(checkInBookingBodySchema),
   adminBookingController.checkInBooking,
 );
 router.patch(
   '/bookings/:id/complete',
   validateParams(completeBookingParamsSchema),
+  validateQuery(adminBookingMutationQuerySchema),
+  validateBody(completeBookingBodySchema),
   adminBookingController.completeBooking,
 );
 router.patch(
   '/bookings/:id/no-show',
   validateParams(markNoShowParamsSchema),
+  validateQuery(adminBookingMutationQuerySchema),
+  validateBody(markNoShowBodySchema),
   adminBookingController.markNoShow,
 );
 router.get('/revenue', validateQuery(getRevenueQuerySchema), adminBookingController.getRevenue);
