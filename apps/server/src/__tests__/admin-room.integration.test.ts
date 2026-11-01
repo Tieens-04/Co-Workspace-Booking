@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/client';
@@ -234,6 +234,125 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       expect(after!.images.map((item) => item.imageUrl).sort()).toEqual(
         before!.images.map((item) => item.imageUrl).sort(),
       );
+    });
+  });
+
+  describe('Maintenance warning time boundaries (CWB-52)', () => {
+    const now = new Date('2026-12-01T03:00:00.000Z');
+    const hour = 60 * 60 * 1000;
+    let roomId: string;
+    let timedAdminToken: string;
+
+    beforeEach(async () => {
+      const room = await prisma.room.create({
+        data: {
+          name: `${testPrefix}_Boundary_${randomUUID()}`,
+          capacity: 4,
+          pricePerHour: new Prisma.Decimal('100.00'),
+          status: RoomStatus.AVAILABLE,
+        },
+      });
+      roomId = room.id;
+      vi.useFakeTimers({ toFake: ['Date'], now });
+      timedAdminToken = generateToken({ sub: `admin_${randomUUID()}`, role: Role.ADMIN });
+    });
+
+    afterEach(async () => {
+      vi.useRealTimers();
+      if (roomId) {
+        await prisma.booking.deleteMany({ where: { roomId } });
+        await prisma.room.deleteMany({ where: { id: roomId } });
+      }
+    });
+
+    const createBooking = (status: BookingStatus, startOffset: number, endOffset: number) =>
+      prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261201-${randomUUID()}`,
+          roomId,
+          userId: testUserId,
+          startTime: new Date(now.getTime() + startOffset * hour),
+          endTime: new Date(now.getTime() + endOffset * hour),
+          totalAmount: new Prisma.Decimal('100.00'),
+          status,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+    it('lists ongoing, starting-now, and future bookings and preserves them after acknowledgement', async () => {
+      const affected = await Promise.all([
+        createBooking(BookingStatus.CONFIRMED, -1, 1),
+        createBooking(BookingStatus.CONFIRMED, 0, 2),
+        createBooking(BookingStatus.CONFIRMED, 3, 4),
+      ]);
+      const excluded = await Promise.all([
+        createBooking(BookingStatus.CONFIRMED, -1, 0),
+        createBooking(BookingStatus.CANCELLED, 1, 2),
+        createBooking(BookingStatus.COMPLETED, 1, 2),
+        createBooking(BookingStatus.NO_SHOW, 1, 2),
+      ]);
+      const beforeBookings = await prisma.booking.findMany({
+        where: { roomId },
+        orderBy: { id: 'asc' },
+      });
+
+      const warning = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId}`)
+        .set('Authorization', `Bearer ${timedAdminToken}`)
+        .send({ status: RoomStatus.MAINTENANCE });
+
+      expect(warning.status).toBe(409);
+      expect(warning.body.code).toBe('ROOM_HAS_FUTURE_BOOKINGS');
+      expect(warning.body.details).toEqual({
+        futureBookingCount: affected.length,
+        bookings: affected.map((booking) => ({
+          bookingCode: booking.bookingCode,
+          startTime: booking.startTime.toISOString(),
+          endTime: booking.endTime.toISOString(),
+        })),
+      });
+      expect(await prisma.room.findUnique({ where: { id: roomId } })).toMatchObject({
+        status: RoomStatus.AVAILABLE,
+      });
+      expect(await prisma.booking.count({ where: { roomId } })).toBe(
+        affected.length + excluded.length,
+      );
+
+      const acknowledged = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId}`)
+        .set('Authorization', `Bearer ${timedAdminToken}`)
+        .send({ status: RoomStatus.MAINTENANCE, acknowledgeFutureBookings: true });
+
+      expect(acknowledged.status).toBe(200);
+      expect(await prisma.room.findUnique({ where: { id: roomId } })).toMatchObject({
+        status: RoomStatus.MAINTENANCE,
+      });
+      expect(await prisma.booking.findMany({ where: { roomId }, orderBy: { id: 'asc' } })).toEqual(
+        beforeBookings,
+      );
+    });
+
+    it.each([
+      [BookingStatus.CONFIRMED, -1, 0],
+      [BookingStatus.CANCELLED, -1, 1],
+      [BookingStatus.COMPLETED, -1, 1],
+      [BookingStatus.NO_SHOW, -1, 1],
+      [BookingStatus.CANCELLED, 1, 2],
+      [BookingStatus.COMPLETED, 1, 2],
+      [BookingStatus.NO_SHOW, 1, 2],
+    ])('allows maintenance for %s booking from now%sh to now%sh', async (status, start, end) => {
+      const booking = await createBooking(status, start, end);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId}`)
+        .set('Authorization', `Bearer ${timedAdminToken}`)
+        .send({ status: RoomStatus.MAINTENANCE });
+
+      expect(res.status).toBe(200);
+      expect(await prisma.room.findUnique({ where: { id: roomId } })).toMatchObject({
+        status: RoomStatus.MAINTENANCE,
+      });
+      expect(await prisma.booking.findUnique({ where: { id: booking.id } })).toEqual(booking);
     });
   });
 

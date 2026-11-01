@@ -296,16 +296,16 @@ export class RoomRepository implements RoomRepositoryContract {
       const lockedRoom = await lockRoomRow(tx, id);
       const capturedNow = new Date();
 
-      // Check transition to MAINTENANCE with future confirmed bookings
+      // Include ongoing and upcoming blocking bookings when switching to maintenance.
       const isTransitionToMaintenance =
         data.status === RoomStatus.MAINTENANCE && lockedRoom.status !== RoomStatus.MAINTENANCE;
 
       if (isTransitionToMaintenance) {
-        const futureBookings = await tx.booking.findMany({
+        const affectedBookings = await tx.booking.findMany({
           where: {
             roomId: id,
             status: { in: [...BLOCKING_BOOKING_STATUSES] },
-            startTime: { gt: capturedNow },
+            endTime: { gt: capturedNow },
           },
           orderBy: { startTime: 'asc' },
           select: {
@@ -315,14 +315,15 @@ export class RoomRepository implements RoomRepositoryContract {
           },
         });
 
-        if (futureBookings.length > 0 && !data.acknowledgeFutureBookings) {
+        if (affectedBookings.length > 0 && !data.acknowledgeFutureBookings) {
           throw new AppError(
             'ROOM_HAS_FUTURE_BOOKINGS',
-            'Phòng có booking sắp tới; các booking phải được xử lý thủ công',
+            'Phòng có booking đang diễn ra hoặc sắp tới; các booking phải được xử lý thủ công',
             409,
             {
-              futureBookingCount: futureBookings.length,
-              bookings: futureBookings.map((b) => ({
+              // Preserve the existing API field name for compatibility.
+              futureBookingCount: affectedBookings.length,
+              bookings: affectedBookings.map((b) => ({
                 bookingCode: b.bookingCode,
                 startTime: b.startTime.toISOString(),
                 endTime: b.endTime.toISOString(),

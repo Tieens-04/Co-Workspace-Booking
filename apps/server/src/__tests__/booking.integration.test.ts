@@ -150,9 +150,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       expect(dbBooking!.userId).toBe(testUserId);
       expect(dbBooking!.roomId).toBe(availableRoomId);
       expect(dbBooking!.bookingCode).toBe(res.body.data.bookingCode);
-      expect(dbBooking!.bookingCode).toMatch(
-        new RegExp(`^CS-${expectedDateSegment}-[A-Z0-9]{4}$`),
-      );
+      expect(dbBooking!.bookingCode).toMatch(new RegExp(`^CS-${expectedDateSegment}-[A-Z0-9]{4}$`));
       expect(dbBooking!.totalAmount.toFixed(2)).toBe('225.00');
       expect(dbBooking!.status).toBe(BookingStatus.CONFIRMED);
       expect(dbBooking!.paymentStatus).toBe(PaymentStatus.UNPAID);
@@ -430,33 +428,50 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
         },
       });
 
-      // Run unacknowledged maintenance transition and create booking simultaneously
-      const [patchRes, postRes] = await Promise.all([
-        request(app)
-          .patch(`/api/v1/admin/rooms/${isolatedRoom.id}`)
-          .set('Authorization', `Bearer ${adminToken}`)
-          .send({ status: RoomStatus.MAINTENANCE }),
-        request(app).post('/api/v1/bookings').set('Authorization', `Bearer ${customerToken}`).send({
-          roomId: isolatedRoom.id,
-          startTime: slotStart.toISOString(),
-          endTime: slotEnd.toISOString(),
-        }),
-      ]);
+      try {
+        // Run unacknowledged maintenance transition and create booking simultaneously
+        const [patchRes, postRes] = await Promise.all([
+          request(app)
+            .patch(`/api/v1/admin/rooms/${isolatedRoom.id}`)
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({ status: RoomStatus.MAINTENANCE }),
+          request(app)
+            .post('/api/v1/bookings')
+            .set('Authorization', `Bearer ${customerToken}`)
+            .send({
+              roomId: isolatedRoom.id,
+              startTime: slotStart.toISOString(),
+              endTime: slotEnd.toISOString(),
+            }),
+        ]);
+        const room = await prisma.room.findUnique({ where: { id: isolatedRoom.id } });
+        const bookings = await prisma.booking.findMany({ where: { roomId: isolatedRoom.id } });
 
-      // If PATCH won: patch = 200, post = 409 (ROOM_NOT_AVAILABLE)
-      // If POST won: post = 201, patch = 409 (ROOM_HAS_FUTURE_BOOKINGS)
-      if (patchRes.status === 200) {
-        expect(postRes.status).toBe(409);
-        expect(postRes.body.code).toBe('ROOM_NOT_AVAILABLE');
-      } else {
-        expect(postRes.status).toBe(201);
-        expect(patchRes.status).toBe(409);
-        expect(patchRes.body.code).toBe('ROOM_HAS_FUTURE_BOOKINGS');
+        // Either serialized winner is valid, but both operations must never succeed.
+        if (patchRes.status === 200) {
+          expect(postRes.status).toBe(409);
+          expect(postRes.body.code).toBe('ROOM_NOT_AVAILABLE');
+          expect(room!.status).toBe(RoomStatus.MAINTENANCE);
+          expect(bookings).toHaveLength(0);
+        } else {
+          expect(postRes.status).toBe(201);
+          expect(patchRes.status).toBe(409);
+          expect(patchRes.body.code).toBe('ROOM_HAS_FUTURE_BOOKINGS');
+          expect(room!.status).toBe(RoomStatus.AVAILABLE);
+          expect(bookings).toHaveLength(1);
+          expect(bookings[0]).toMatchObject({
+            id: postRes.body.data.id,
+            status: BookingStatus.CONFIRMED,
+            startTime: slotStart,
+            endTime: slotEnd,
+          });
+          expect(patchRes.body.details.futureBookingCount).toBe(1);
+          expect(patchRes.body.details.bookings[0].bookingCode).toBe(bookings[0].bookingCode);
+        }
+      } finally {
+        await prisma.booking.deleteMany({ where: { roomId: isolatedRoom.id } });
+        await prisma.room.deleteMany({ where: { id: isolatedRoom.id } });
       }
-
-      // Cleanup isolated room
-      await prisma.booking.deleteMany({ where: { roomId: isolatedRoom.id } });
-      await prisma.room.deleteMany({ where: { id: isolatedRoom.id } });
     });
   });
 
@@ -692,7 +707,9 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       } finally {
         codeSpy.mockRestore();
         await prisma.booking.deleteMany({
-          where: { id: { in: [unrelatedBooking.id, createdBookingId].filter(Boolean) as string[] } },
+          where: {
+            id: { in: [unrelatedBooking.id, createdBookingId].filter(Boolean) as string[] },
+          },
         });
       }
     });

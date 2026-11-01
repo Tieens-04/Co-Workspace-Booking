@@ -342,19 +342,20 @@ Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh s�
   - Chấp nhận các trường tùy chọn: `name`, `description`, `capacity`, `pricePerHour`, `amenityIds`, `images`, `status`, `acknowledgeFutureBookings`.
   - Từ chối body rỗng (`{}`) với `400 VALIDATION_ERROR`.
   - `status` (tùy chọn): Trạng thái phòng (`AVAILABLE` hoặc `MAINTENANCE`).
-  - `acknowledgeFutureBookings` (tùy chọn, boolean, mặc định `false`): Cờ xác nhận của Admin cho phép chuyển sang `MAINTENANCE` khi phòng có lịch đặt trước trong tương lai.
+  - `acknowledgeFutureBookings` (tùy chọn, boolean, mặc định `false`): Cờ xác nhận rõ ràng của Admin cho phép chuyển sang `MAINTENANCE` khi phòng có booking đang diễn ra hoặc sắp tới. Tên trường được giữ để tương thích API.
   - Quy tắc Partial Update & Quan hệ:
     - Các trường scalar hoặc relation bị bỏ qua (omitted) thì giữ nguyên dữ liệu hiện tại.
     - Nếu gửi `amenityIds` hoặc `images`, mảng mới sẽ **thay thế toàn bộ** tập hợp hiện tại của phòng. Gửi mảng rỗng `[]` sẽ xóa toàn bộ liên kết tiện ích hoặc ảnh tương ứng. Nếu cập nhật danh sách ảnh loại bỏ ảnh Cloudinary cũ, hệ thống tự động xóa tài nguyên tương ứng trên Cloudinary sau khi commit transaction thành công.
-  - **Quy tắc chuyển trạng thái Bảo trì & Cảnh báo lịch tương lai (AC1)**:
+  - **Quy tắc chuyển trạng thái Bảo trì & Cảnh báo booking chưa kết thúc (CWB-52)**:
     - Khóa hàng MySQL `SELECT id, name, status, price_per_hour FROM rooms WHERE id = ? FOR UPDATE` trong transaction để đảm bảo tính tuần tự.
-    - Khi chuyển từ `AVAILABLE` sang `MAINTENANCE`: Kiểm tra các booking ở trạng thái `CONFIRMED` có `startTime > now`.
-    - Nếu tồn tại booking tương lai và request **không có** `acknowledgeFutureBookings: true`, transaction hủy ngay lập tức trước khi ghi dữ liệu và trả về `409 ROOM_HAS_FUTURE_BOOKINGS` kèm cấu trúc `details` chứa danh sách mã đặt chỗ và thời gian tương ứng.
+    - Khi chuyển từ `AVAILABLE` sang `MAINTENANCE`: Kiểm tra booking theo `BLOCKING_BOOKING_STATUSES` (hiện tại là `CONFIRMED`) có `endTime > now`, với `now` được chụp sau khi lấy khóa phòng. Bao gồm booking đang diễn ra và sắp tới; `startTime == now` vẫn được tính, `endTime == now` không còn được tính. Booking `CANCELLED`, `COMPLETED`, `NO_SHOW` không tham gia cảnh báo.
+    - Nếu tồn tại booking bị ảnh hưởng và request **không có** `acknowledgeFutureBookings: true`, transaction hủy ngay lập tức trước khi ghi dữ liệu và trả về `409 ROOM_HAS_FUTURE_BOOKINGS`. `details.futureBookingCount` là tổng số booking chưa kết thúc bị ảnh hưởng; `details.bookings` chứa `bookingCode`, `startTime`, `endTime`, sắp xếp theo thời gian bắt đầu. Mã lỗi và tên trường giữ nguyên để tương thích API.
     - Khi gửi lại với `acknowledgeFutureBookings: true`: Cập nhật trạng thái phòng sang `MAINTENANCE` thành công. **Bảo toàn bất biến nghiệp vụ**: Mọi lịch đặt phòng hiện có **giữ nguyên trạng thái và KHÔNG tự động bị hủy**.
+    - Giao diện hiển thị warning do server trả về, yêu cầu Admin xác nhận hoặc quay lại để xử lý thủ công. Tạo booking và chuyển bảo trì cùng dùng khóa hàng phòng: nếu bảo trì thành công trước, booking mới bị từ chối; nếu booking được tạo trước, chuyển bảo trì chưa xác nhận phải trả về xung đột.
 - **Xử lý lỗi**:
   - `404 ROOM_NOT_FOUND`: Nếu phòng với `id` cung cấp không tồn tại.
   - `400 INVALID_AMENITY_IDS`: Nếu có bất kỳ amenity ID nào không tồn tại trong cơ sở dữ liệu.
-  - `409 ROOM_HAS_FUTURE_BOOKINGS`: Khi chuyển sang bảo trì có lịch đặt chỗ tương lai mà chưa xác nhận.
+  - `409 ROOM_HAS_FUTURE_BOOKINGS`: Khi chuyển sang bảo trì có booking đang diễn ra hoặc sắp tới mà chưa xác nhận.
   - Giao dịch thực thi nguyên tử (atomic transaction): nếu xảy ra bất kỳ lỗi nào, toàn bộ thay đổi scalar và relations đều bị rollback.
 - **Phản hồi `200 OK`**: Trả về `RoomDetail` sau cập nhật.
 
