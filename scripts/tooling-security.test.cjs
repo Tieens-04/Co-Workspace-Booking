@@ -41,3 +41,20 @@ module.exports = defineConfig({ schema: './schema.prisma', migrations: { path: '
   assert.equal(loaded.config.migrations.path, path.join(directory, 'migrations'));
   assert.equal(loaded.config.migrations.seed, 'node seed.cjs');
 });
+
+test('ESLint config matching uses the patched glob matcher', async () => {
+  // Resolve through ESLint itself so the overridden transitive copy is exercised.
+  const eslintRequire = createRequire(require.resolve('eslint/package.json'));
+  const configArrayRequire = createRequire(eslintRequire.resolve('@eslint/config-array'));
+  const { version } = configArrayRequire('minimatch/package.json');
+  const [major, minor, patch] = version.split('.').map(Number);
+  assert.ok(major > 11 || (major === 11 && (minor > 0 || patch >= 1)), `minimatch ${version}`);
+
+  const { ConfigArray } = configArrayRequire('@eslint/config-array');
+  const configs = new ConfigArray([{ files: ['src/**/*.ts'] }], {
+    basePath: path.resolve('/project'),
+  });
+  await configs.normalize();
+  assert.equal(configs.getConfigStatus(path.resolve('/project/src/a/b.ts')), 'matched');
+  assert.equal(configs.getConfigStatus(path.resolve('/project/test/b.ts')), 'unconfigured');
+});

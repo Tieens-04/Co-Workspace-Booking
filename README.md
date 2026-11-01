@@ -43,6 +43,8 @@ Các dependency trực tiếp khai báo minimum version đã vá; root lockfile 
 
 Prisma 6.19.3 dùng `deepmerge-ts` 7 bị [stack exhaustion với cấu trúc đệ quy (GHSA-ggr8-5vv4-36mx)](https://github.com/advisories/GHSA-ggr8-5vv4-36mx). Root `overrides` chỉ thay dependency này trong `@prisma/config` bằng bản vá 8.0.0, giữ nguyên Prisma 6 và hợp đồng database. `test:tooling` kiểm tra đầu vào đệ quy và việc Prisma thực sự nạp cấu hình với merger đã vá. Chỉ bỏ override sau khi Prisma đã tự phụ thuộc bản an toàn và các kiểm tra này vẫn pass.
 
+ESLint 9 và `typescript-eslint` phụ thuộc `minimatch` 3.x/10.x bị [DoS do khuếch đại globparts (GHSA-g3hv-75wg-m249)](https://github.com/advisories/GHSA-g3hv-75wg-m249). Root `overrides` ép `minimatch` lên bản vá 11.0.3 (chỉ là devDependency, không vào runtime). `test:tooling` kiểm tra ESLint nạp đúng bản đã vá và vẫn khớp glob cấu hình. Chỉ bỏ override khi ESLint tự phụ thuộc bản an toàn.
+
 Vitest frontend giới hạn hai worker để giảm tranh chấp tài nguyên giữa các môi trường jsdom trên máy bận. `npm test` chạy regression tooling trước các workspace tests; không cần đặt biến môi trường riêng và không tăng timeout hay bỏ assertion.
 
 Trong `apps/server/.env`, cấu hình `DATABASE_URL`, `JWT_SECRET` (ít nhất 32 ký tự), `CLOUDINARY_*` và `CLIENT_URL` (mặc định `http://localhost:5173`). Cấu hình `SMTP_*` nếu cần gửi email; xem các biến và chú thích trong [file mẫu](apps/server/.env.example).
