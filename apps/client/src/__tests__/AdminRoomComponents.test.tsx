@@ -115,7 +115,7 @@ describe('MaintenanceWarning', () => {
     expect(onConfirm).not.toHaveBeenCalled();
   });
 
-  it('renders an accessible alertdialog listing every future booking', () => {
+  it('renders an accessible alertdialog warning about ongoing and upcoming bookings', () => {
     render(
       <MaintenanceWarning
         warning={warning}
@@ -126,7 +126,7 @@ describe('MaintenanceWarning', () => {
     );
 
     const dialog = screen.getByRole('alertdialog', {
-      name: 'Cảnh báo: Phòng có 2 booking sắp tới',
+      name: 'Cảnh báo: Phòng có 2 booking đang diễn ra hoặc sắp tới',
     });
     expect(dialog).toHaveAttribute('data-testid', 'admin-future-booking-warning');
     expect(dialog).toHaveAccessibleDescription(/không tự động hủy/i);

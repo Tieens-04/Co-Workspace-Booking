@@ -32,6 +32,7 @@ export interface FutureBookingWarningItem {
 }
 
 export interface FutureBookingWarningDetails {
+  /** Includes ongoing and upcoming blocking bookings; legacy API name retained. */
   futureBookingCount: number;
   bookings: FutureBookingWarningItem[];
 }

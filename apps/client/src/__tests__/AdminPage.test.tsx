@@ -597,7 +597,9 @@ describe('AdminPage - Room Management & Form', () => {
         expect(screen.getByTestId('admin-future-booking-warning')).toBeInTheDocument();
       });
 
-      expect(screen.getByText(/Cảnh báo: Phòng có 2 booking sắp tới/i)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Cảnh báo: Phòng có 2 booking đang diễn ra hoặc sắp tới/i),
+      ).toBeInTheDocument();
       expect(screen.getByText(/không tự động hủy/i)).toBeInTheDocument();
       expect(screen.getByText(/CS-20261001-ABCD/)).toBeInTheDocument();
       expect(screen.getByText(/CS-20261002-EFGH/)).toBeInTheDocument();

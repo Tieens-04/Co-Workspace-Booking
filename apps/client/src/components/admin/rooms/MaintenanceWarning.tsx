@@ -19,7 +19,7 @@ interface MaintenanceWarningProps {
 }
 
 /**
- * Protected confirmation when switching a room with upcoming bookings to maintenance.
+ * Protected confirmation when switching a room with ongoing or upcoming bookings to maintenance.
  * Bookings are never cancelled automatically; the admin must confirm explicitly.
  */
 export function MaintenanceWarning({
@@ -56,7 +56,7 @@ export function MaintenanceWarning({
         <div className="flex items-start gap-3 text-status-noshow">
           <TriangleAlert aria-hidden="true" className="mt-1 size-5 shrink-0" />
           <AlertDialogTitle className="text-lg leading-snug font-semibold">
-            Cảnh báo: Phòng có {warning.futureBookingCount} booking sắp tới
+            Cảnh báo: Phòng có {warning.futureBookingCount} booking đang diễn ra hoặc sắp tới
           </AlertDialogTitle>
         </div>
         <AlertDialogDescription className="text-sm text-foreground">
