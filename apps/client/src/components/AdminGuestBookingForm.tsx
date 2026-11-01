@@ -95,6 +95,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   const [currentMs, setCurrentMs] = useState<number>(() => Date.now());
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const roomsRequestRef = useRef<AbortController | null>(null);
 
   // Periodic clock update
   useEffect(() => {
@@ -105,6 +106,16 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   }, []);
 
   // Session change & unmount effect: reset form state and abort pending requests
+  // Drop the room list of a previous session during render so only page 1 is refetched.
+  const [roomsSessionId, setRoomsSessionId] = useState<string | undefined>(effectivePrincipalId);
+  if (roomsSessionId !== effectivePrincipalId) {
+    setRoomsSessionId(effectivePrincipalId);
+    setRooms([]);
+    setRoomPage(1);
+    setRoomTotalPages(1);
+    setRoomsError(null);
+  }
+
   useEffect(() => {
     abortControllerRef.current?.abort();
 
@@ -124,28 +135,46 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
 
     return () => {
       abortControllerRef.current?.abort();
+      roomsRequestRef.current?.abort();
     };
   }, [effectivePrincipalId]);
 
-  // Fetch rooms for selector
+  // Fetch rooms for selector; only the latest request for the current session may apply.
   const fetchRoomsForSelector = useCallback(async (page: number) => {
+    roomsRequestRef.current?.abort();
+    const controller = new AbortController();
+    roomsRequestRef.current = controller;
+    const requestingPrincipal = activePrincipalRef.current;
+    const isStale = () =>
+      controller.signal.aborted ||
+      roomsRequestRef.current !== controller ||
+      activePrincipalRef.current !== requestingPrincipal;
+
     setIsLoadingRooms(true);
     setRoomsError(null);
     try {
-      const res = await roomApi.getRooms({ page, limit: 10 });
+      const res = await roomApi.getRooms({ page, limit: 10 }, controller.signal);
+      if (isStale()) return;
       if (res.success) {
-        setRooms(res.data.items);
+        const items = res.data.items;
+        setRooms(items);
         setRoomPage(res.data.pagination.page);
         setRoomTotalPages(res.data.pagination.totalPages);
+        // Keep the selection across pages, refreshing it when this page has newer data.
+        setSelectedRoom((prev) => (prev ? (items.find((r) => r.id === prev.id) ?? prev) : prev));
       } else {
         setRoomsError(res.message || 'Không thể tải danh sách phòng.');
       }
     } catch (err: any) {
+      if (isStale()) return;
       setRoomsError(
         err.response?.data?.message || 'Không thể tải danh sách phòng. Vui lòng thử lại.',
       );
     } finally {
-      setIsLoadingRooms(false);
+      if (roomsRequestRef.current === controller) {
+        roomsRequestRef.current = null;
+        setIsLoadingRooms(false);
+      }
     }
   }, []);
 
@@ -153,7 +182,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     if (isOpen) {
       fetchRoomsForSelector(roomPage);
     }
-  }, [isOpen, roomPage, fetchRoomsForSelector]);
+  }, [isOpen, roomPage, fetchRoomsForSelector, roomsSessionId]);
 
   // Handle room selection
   const handleRoomChange = (e: React.ChangeEvent<HTMLSelectElement>) => {

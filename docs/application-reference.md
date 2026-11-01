@@ -316,6 +316,7 @@ Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh s�
 - **Quyền truy cập**: Bắt buộc đăng nhập với vai trò `ADMIN`. Không có token trả về `401 UNAUTHORIZED`; vai trò `CUSTOMER` trả về `403 FORBIDDEN`.
 - **Query Parameters**: Tái sử dụng query schema của danh sách công khai (`page`, `limit`, `capacity`, `minPrice`, `maxPrice`, `amenityIds`).
 - **Phản hồi**: `200 OK` kèm danh sách phòng, phân trang và thông tin trạng thái đầy đủ.
+- **Phía client (CWB-54)**: Trang quản trị phòng hủy request cũ bằng `AbortController` khi đổi trang, đổi phiên đăng nhập hoặc rời trang. Chỉ response mới nhất của phiên hiện tại được cập nhật danh sách, phân trang, loading và lỗi. Đổi tài khoản sẽ xóa danh sách cũ và tải lại từ trang 1.
 
 ### 2. Tạo phòng mới: `POST /api/v1/admin/rooms`
 
@@ -752,6 +753,7 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
   - **Form Đặt phòng Khách vãng lai (`AdminGuestBookingForm`)**:
     - Nhập họ tên và số điện thoại khách vãng lai.
     - Danh sách chọn phòng làm việc kèm trạng thái và giá. Chặn chọn phòng đang bảo trì (`MAINTENANCE`).
+    - Danh sách phòng phân trang chỉ nhận response mới nhất của phiên hiện tại (`AbortController` + kiểm tra phiên). Phòng đã chọn được giữ khi chuyển sang trang không chứa nó và được cập nhật khi trang mới có dữ liệu mới hơn. Đổi tài khoản sẽ xóa danh sách và tải lại từ trang 1 (CWB-54).
     - Lưới TimeGrid 48 slot trực quan (giờ Việt Nam) hiển thị chính xác slot trống/bận.
     - Tự động hiển thị thời lượng và tổng tiền tạm tính.
     - Preflight availability refresh chống TOCTOU và xung đột đặt phòng đồng thời.

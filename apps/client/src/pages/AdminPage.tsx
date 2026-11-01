@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useContext } from 'react';
+import { AuthContext } from '../context/auth-context-base';
 import { roomApi } from '../services/room.api';
 import { adminRoomApi } from '../services/admin-room.api';
 import { RoomListItem, Amenity, RoomStatus } from '../types/room';
@@ -45,6 +46,10 @@ function getImageUploadError(error: { response?: { status?: number; data?: unkno
 }
 
 export const AdminPage: React.FC = () => {
+  const principalId = useContext(AuthContext)?.principal?.id;
+  const activePrincipalRef = useRef<string | undefined>(principalId);
+  activePrincipalRef.current = principalId;
+
   // Room list state
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [availableAmenities, setAvailableAmenities] = useState<Amenity[]>([]);
@@ -81,6 +86,7 @@ export const AdminPage: React.FC = () => {
   const [isConfirmingMaintenance, setIsConfirmingMaintenance] = useState<boolean>(false);
 
   const amenitiesRequestRef = useRef<AbortController | null>(null);
+  const roomsRequestRef = useRef<AbortController | null>(null);
   const detailRequestRef = useRef<AbortController | null>(null);
   const uploadRequestRef = useRef<AbortController | null>(null);
   const formHeadingRef = useRef<HTMLHeadingElement | null>(null);
@@ -121,6 +127,7 @@ export const AdminPage: React.FC = () => {
 
     return () => {
       amenitiesRequestRef.current?.abort();
+      roomsRequestRef.current?.abort();
       detailRequestRef.current?.abort();
       uploadRequestRef.current?.abort();
     };
@@ -142,12 +149,25 @@ export const AdminPage: React.FC = () => {
     return () => window.cancelAnimationFrame(frameId);
   }, [isFormOpen]);
 
-  // Fetch rooms
+  // Fetch rooms; only the latest request for the current session may update the list.
   const fetchRooms = useCallback(async (pageToLoad: number) => {
+    roomsRequestRef.current?.abort();
+    const controller = new AbortController();
+    roomsRequestRef.current = controller;
+    const requestingPrincipal = activePrincipalRef.current;
+    const isStale = () =>
+      controller.signal.aborted ||
+      roomsRequestRef.current !== controller ||
+      activePrincipalRef.current !== requestingPrincipal;
+
     setIsLoadingRooms(true);
     setLoadError(null);
     try {
-      const res = await adminRoomApi.getAdminRooms({ page: pageToLoad, limit: 10 });
+      const res = await adminRoomApi.getAdminRooms(
+        { page: pageToLoad, limit: 10 },
+        controller.signal,
+      );
+      if (isStale()) return;
       if (res.success) {
         setRooms(res.data.items);
         setCurrentPage(res.data.pagination.page);
@@ -155,17 +175,33 @@ export const AdminPage: React.FC = () => {
         setTotalRooms(res.data.pagination.total);
       }
     } catch (err: any) {
+      if (isStale()) return;
       setLoadError(
         err.response?.data?.message || 'Không thể tải danh sách phòng. Vui lòng thử lại.',
       );
     } finally {
-      setIsLoadingRooms(false);
+      if (roomsRequestRef.current === controller) {
+        roomsRequestRef.current = null;
+        setIsLoadingRooms(false);
+      }
     }
   }, []);
 
+  // Drop rooms loaded for a previous session before refetching for the new one.
+  const [roomsSessionId, setRoomsSessionId] = useState<string | undefined>(principalId);
+  if (roomsSessionId !== principalId) {
+    setRoomsSessionId(principalId);
+    setRooms([]);
+    setCurrentPage(1);
+    setTotalPages(1);
+    setTotalRooms(0);
+    setLoadError(null);
+    setIsLoadingRooms(true);
+  }
+
   useEffect(() => {
     fetchRooms(currentPage);
-  }, [fetchRooms, currentPage]);
+  }, [fetchRooms, currentPage, roomsSessionId]);
 
   // Open Create Form
   const handleOpenCreate = (trigger: HTMLButtonElement) => {

@@ -218,10 +218,10 @@ describe('AdminPage - Room Management & Form', () => {
       fireEvent.click(nextBtn);
 
       await waitFor(() => {
-        expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith({
-          page: 2,
-          limit: 10,
-        });
+        expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith(
+          { page: 2, limit: 10 },
+          expect.any(AbortSignal),
+        );
       });
     });
 
@@ -399,7 +399,10 @@ describe('AdminPage - Room Management & Form', () => {
       expect(screen.getByText('Tạo phòng mới thành công!')).toBeInTheDocument();
 
       // Should reload rooms on page 1
-      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith({ page: 1, limit: 10 });
+      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith(
+        { page: 1, limit: 10 },
+        expect.any(AbortSignal),
+      );
     });
   });
 
@@ -904,7 +907,10 @@ describe('AdminPage - Room Management & Form', () => {
         expect(screen.queryByTestId('admin-room-form')).not.toBeInTheDocument();
         expect(screen.getByText('Tạo phòng mới thành công!')).toBeInTheDocument();
       });
-      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith({ page: 1, limit: 10 });
+      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith(
+        { page: 1, limit: 10 },
+        expect.any(AbortSignal),
+      );
     });
 
     it.each([
@@ -1117,7 +1123,10 @@ describe('AdminPage - Room Management & Form', () => {
         expect(screen.getByText('Cập nhật thông tin phòng thành công!')).toBeInTheDocument();
       });
       // Preserved current page (page 1)
-      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith({ page: 1, limit: 10 });
+      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith(
+        { page: 1, limit: 10 },
+        expect.any(AbortSignal),
+      );
     });
 
     it('persists dirty form changes via updateRoom when user edits metadata after upload failure in create flow', async () => {
