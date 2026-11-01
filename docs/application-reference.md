@@ -433,6 +433,7 @@ Tất cả các lỗi trả về theo chuẩn JSON nhất quán:
     "message": "Bạn không có quyền thực hiện thao tác này"
   }
   ```
+- **Lỗi body request (CWB-53):** Body JSON/urlencoded vượt giới hạn mặc định của Express (100kb) trả `413 PAYLOAD_TOO_LARGE`; JSON sai cú pháp trả `400 VALIDATION_ERROR`. Hai lỗi này được xử lý ngay khi parse body, trước xác thực, và dùng cùng error shape ở trên. Chỉ lỗi ngoài dự kiến mới trả `500 INTERNAL_SERVER_ERROR` (không kèm stack hay thông tin nội bộ). Giới hạn upload ảnh phòng vẫn riêng (`413 FILE_TOO_LARGE`).
 
 ### 4. Hướng Dẫn Gắn Tuyến Đường Nghiệp Vụ Mới
 
@@ -733,6 +734,7 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
   - Chỉ check-in đơn `CONFIRMED` trong khoảng `startTime <= now < endTime`. Server lấy giờ sau khi khóa dòng booking; lưu `checkedInAt` đúng một lần, không đổi `paymentStatus`. Gọi lại đơn đã check-in ở trạng thái `CONFIRMED` hoặc `COMPLETED` trả `200` cùng timestamp; đơn không tồn tại trả `404`, sai thời gian/trạng thái trả `409 BOOKING_STATE_CONFLICT`.
   - DTO booking admin/customer có `checkedInAt` (ISO UTC hoặc `null`) và `attendanceTrackingEnabled` (boolean). Khách đã check-in vẫn giữ `CONFIRMED` cho đến khi ADMIN hoàn tất.
   - `PATCH /api/v1/admin/bookings/:id/complete` và `PATCH /api/v1/admin/bookings/:id/no-show` yêu cầu vai trò `ADMIN`, chỉ chuyển từ `CONFIRMED` khi `now >= endTime`. Không hỗ trợ trả phòng sớm; thanh toán vẫn là trạng thái riêng.
+  - Các endpoint thao tác booking của admin (`payment`, `cancel`, `check-in`, `complete`, `no-show`) không nhận query parameter. `complete`/`no-show` chỉ nhận body rỗng `{}` (hoặc không có body). Mọi field hoặc query dư bị từ chối `400 VALIDATION_ERROR` trước khi chạm dữ liệu (CWB-53). Thiếu token vẫn trả `401`, `CUSTOMER` vẫn trả `403` trước bước validate.
   - Server đọc `end_time` bằng `SELECT ... FOR UPDATE` trong transaction và lấy thời gian đánh giá sau khi đã lấy khóa. Trước giờ kết thúc trả `409 BOOKING_STATE_CONFLICT`, không đổi trạng thái hay giải phóng phòng.
   - Gọi lại cùng trạng thái đích trả `200` với bản ghi hiện tại. Trạng thái kết thúc khác trả `409 BOOKING_STATE_CONFLICT`; không tìm thấy trả `404 BOOKING_NOT_FOUND`.
   - Tạo booking vẫn khóa phòng, kiểm tra overlap `existing.start < requested.end AND existing.end > requested.start` với `CONFIRMED`; yêu cầu đặt trùng trả `409 BOOKING_CONFLICT`.
