@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type * as React from 'react';
 import { CircleAlert, Loader2, TriangleAlert } from 'lucide-react';
 import { AdminBookingItem } from '../../../types/admin-booking';
+import { useReturnFocus } from '../../../hooks/useReturnFocus';
 import { Field } from '@/components/common/Field';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
@@ -40,6 +41,7 @@ export function CancelBookingDialog({
 }: CancelBookingDialogProps) {
   // Keep the last booking so the content stays filled during the close animation.
   const [shown, setShown] = useState<AdminBookingItem | null>(booking);
+  const returnFocus = useReturnFocus();
   if (booking && booking !== shown) setShown(booking);
 
   const blockWhileSubmitting = (e: Event) => {
@@ -56,6 +58,7 @@ export function CancelBookingDialog({
       <DialogContent
         data-testid="admin-cancel-modal"
         className="sm:max-w-[460px]"
+        {...returnFocus}
         onEscapeKeyDown={blockWhileSubmitting}
         onInteractOutside={blockWhileSubmitting}
       >

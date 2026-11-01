@@ -13,6 +13,10 @@ import {
 } from '../components/admin/bookings/AdminBookingTable';
 import { ConfirmPaymentDialog } from '../components/admin/bookings/ConfirmPaymentDialog';
 import { CancelBookingDialog } from '../components/admin/bookings/CancelBookingDialog';
+import {
+  LifecycleConfirmDialog,
+  LifecycleConfirmTarget,
+} from '../components/admin/bookings/LifecycleConfirmDialog';
 import { useToast } from '../hooks/useToast';
 import { CircleCheck, ClipboardList, RotateCw, X } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -140,6 +144,9 @@ export const AdminBookingsPage: React.FC = () => {
   const [actionErrorMessage, setActionErrorMessage] = useState<string | null>(null);
   const [pendingBookingId, setPendingBookingId] = useState<string | null>(null);
   const pendingActionRef = useRef(false);
+
+  // Complete / no-show require an explicit confirmation step
+  const [lifecycleTarget, setLifecycleTarget] = useState<LifecycleConfirmTarget | null>(null);
 
   const requestIdRef = useRef<number>(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -292,6 +299,26 @@ export const AdminBookingsPage: React.FC = () => {
       pendingActionRef.current = false;
       setPendingBookingId(null);
     }
+  };
+
+  const handleRequestLifecycle = (
+    booking: AdminBookingItem,
+    action: LifecycleConfirmTarget['action'],
+  ) => {
+    if (pendingActionRef.current) return;
+    setLifecycleTarget({ booking, action });
+  };
+
+  const handleConfirmLifecycle = async () => {
+    if (!lifecycleTarget || pendingActionRef.current) return;
+    const { booking, action } = lifecycleTarget;
+    if (action === 'complete') {
+      await handleCompleteBooking(booking);
+    } else {
+      await handleMarkNoShow(booking);
+    }
+    // Outcome (success, 409 refresh, retryable error) is reported on the page.
+    setLifecycleTarget(null);
   };
 
   const handleCheckIn = async (booking: AdminBookingItem) => {
@@ -579,8 +606,8 @@ export const AdminBookingsPage: React.FC = () => {
             <AdminBookingTable
               bookings={bookings}
               onConfirmPayment={handleOpenPaymentModal}
-              onComplete={handleCompleteBooking}
-              onNoShow={handleMarkNoShow}
+              onComplete={(booking) => handleRequestLifecycle(booking, 'complete')}
+              onNoShow={(booking) => handleRequestLifecycle(booking, 'no-show')}
               onCancel={handleOpenCancelModal}
               onCheckIn={handleCheckIn}
               pendingBookingId={pendingBookingId}
@@ -626,6 +653,14 @@ export const AdminBookingsPage: React.FC = () => {
         error={cancelError}
         onSubmit={handleSubmitCancel}
         onClose={handleCloseCancelModal}
+      />
+
+      {/* Complete / No-show confirmation */}
+      <LifecycleConfirmDialog
+        target={lifecycleTarget}
+        isSubmitting={lifecycleTarget !== null && pendingBookingId === lifecycleTarget.booking.id}
+        onConfirm={handleConfirmLifecycle}
+        onClose={() => setLifecycleTarget(null)}
       />
     </div>
   );

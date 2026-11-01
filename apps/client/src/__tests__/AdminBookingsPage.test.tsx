@@ -691,6 +691,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
         .mockRejectedValueOnce(new Error('Network unavailable'));
       renderComponent();
       await user.click(await screen.findByTestId('complete-booking-btn-booking-1'));
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
       await waitFor(() =>
         expect(screen.getByRole('alert')).toHaveTextContent(
           'Không thể tải danh sách đặt phòng. Vui lòng thử lại.',
@@ -720,6 +721,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
 
       renderComponent();
       await user.click(await screen.findByTestId(buttonId));
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
 
       await waitFor(() => expect(adminBookingApi.getBookings).toHaveBeenCalledTimes(2));
       expect(await screen.findByTestId('admin-bookings-table')).toBeInTheDocument();
@@ -755,6 +757,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
 
       const completeBtn = screen.getByTestId('complete-booking-btn-booking-1');
       await user.click(completeBtn);
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
 
       await waitFor(() => {
         expect(adminBookingApi.completeBooking).toHaveBeenCalledWith('booking-1');
@@ -773,6 +776,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
 
       const noShowBtn = screen.getByTestId('no-show-booking-btn-booking-1');
       await user.click(noShowBtn);
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
 
       await waitFor(() => {
         expect(adminBookingApi.markNoShow).toHaveBeenCalledWith('booking-1');
@@ -801,6 +805,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
 
       const completeBtn = screen.getByTestId('complete-booking-btn-booking-1');
       await user.click(completeBtn);
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
 
       await waitFor(() => {
         expect(screen.getByText('Đơn đặt phòng đã bị hủy hoặc khách vắng mặt')).toBeInTheDocument();
@@ -825,10 +830,129 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
 
       const noShowBtn = screen.getByTestId('no-show-booking-btn-booking-1');
       await user.click(noShowBtn);
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
 
       await waitFor(() => {
         expect(screen.getByText('Đơn đặt phòng đã bị hủy hoặc đã hoàn tất')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Complete / No-show confirmation dialog (CWB-55)', () => {
+    it.each([
+      ['complete-booking-btn-booking-1', 'Xác nhận hoàn tất ca'],
+      ['no-show-booking-btn-booking-1', 'Xác nhận khách không đến'],
+    ])(
+      'opens a named alertdialog for %s and Escape returns focus without calling the API',
+      async (buttonId, title) => {
+        const user = userEvent.setup();
+        renderComponent();
+
+        const trigger = await screen.findByTestId(buttonId);
+        await user.click(trigger);
+
+        const dialog = await screen.findByRole('alertdialog', { name: title });
+        expect(dialog).toHaveTextContent('CS-20261003-USER');
+        expect(dialog).toContainElement(document.activeElement as HTMLElement);
+
+        // Tab stays trapped inside the dialog
+        await user.tab();
+        expect(dialog).toContainElement(document.activeElement as HTMLElement);
+        await user.tab();
+        expect(dialog).toContainElement(document.activeElement as HTMLElement);
+
+        await user.keyboard('{Escape}');
+        await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+        expect(trigger).toHaveFocus();
+        expect(adminBookingApi.completeBooking).not.toHaveBeenCalled();
+        expect(adminBookingApi.markNoShow).not.toHaveBeenCalled();
+      },
+    );
+
+    it('closes on "Quay lại" without changing the booking', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(await screen.findByTestId('no-show-booking-btn-booking-1'));
+      await user.click(await screen.findByTestId('lifecycle-confirm-cancel-btn'));
+
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(adminBookingApi.markNoShow).not.toHaveBeenCalled();
+    });
+
+    it('returns focus to the trigger when the payment dialog is dismissed with Escape', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(
+        mockBookingsResponse([
+          { ...mockBookingsList[0], paymentStatus: 'UNPAID', paymentMethod: null },
+        ]),
+      );
+      renderComponent();
+
+      const trigger = await screen.findByTestId('confirm-payment-btn-booking-1');
+      await user.click(trigger);
+      const dialog = await screen.findByRole('dialog', { name: 'Xác nhận thanh toán' });
+      expect(dialog).toContainElement(document.activeElement as HTMLElement);
+
+      await user.keyboard('{Escape}');
+      await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+      expect(trigger).toHaveFocus();
+    });
+
+    it('submits once, shows pending state and blocks Escape while the request is in flight', async () => {
+      const user = userEvent.setup();
+      let resolveComplete!: (value: unknown) => void;
+      vi.mocked(adminBookingApi.completeBooking).mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveComplete = resolve;
+        }) as never,
+      );
+      renderComponent();
+
+      await user.click(await screen.findByTestId('complete-booking-btn-booking-1'));
+      const confirmBtn = await screen.findByTestId('lifecycle-confirm-submit-btn');
+      await user.dblClick(confirmBtn);
+
+      await waitFor(() => expect(confirmBtn).toHaveTextContent('Đang hoàn tất…'));
+      expect(confirmBtn).toBeDisabled();
+      expect(screen.getByTestId('lifecycle-confirm-cancel-btn')).toBeDisabled();
+      expect(screen.getByTestId('complete-booking-btn-booking-1')).toBeDisabled();
+      expect(adminBookingApi.completeBooking).toHaveBeenCalledTimes(1);
+
+      await user.keyboard('{Escape}');
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+
+      resolveComplete({
+        success: true,
+        message: 'OK',
+        data: { ...mockBookingsList[0], status: 'COMPLETED' },
+      });
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+      expect(adminBookingApi.completeBooking).toHaveBeenCalledTimes(1);
+      expect(
+        await screen.findByText('Đã hoàn tất ca cho đơn CS-20261003-USER'),
+      ).toBeInTheDocument();
+    });
+
+    it('lets the admin retry after a failed attempt', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.markNoShow).mockRejectedValueOnce({
+        response: { status: 500, data: { message: 'Máy chủ tạm thời lỗi' } },
+      });
+      renderComponent();
+
+      await user.click(await screen.findByTestId('no-show-booking-btn-booking-1'));
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
+      expect(await screen.findByText('Máy chủ tạm thời lỗi')).toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument());
+
+      await user.click(screen.getByTestId('no-show-booking-btn-booking-1'));
+      await user.click(await screen.findByTestId('lifecycle-confirm-submit-btn'));
+
+      await waitFor(() => expect(adminBookingApi.markNoShow).toHaveBeenCalledTimes(2));
+      expect(
+        await screen.findByText('Đã đánh dấu không đến cho đơn CS-20261003-USER'),
+      ).toBeInTheDocument();
     });
   });
 });
