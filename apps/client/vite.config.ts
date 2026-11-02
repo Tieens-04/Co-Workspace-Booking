@@ -11,6 +11,22 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Framework code changes rarely; a separate chunk stays cached across app deploys.
+        manualChunks(id) {
+          if (
+            /[\\/]node_modules[\\/](react|react-dom|scheduler|react-router|react-router-dom)[\\/]/.test(
+              id,
+            )
+          ) {
+            return 'vendor-react';
+          }
+        },
+      },
+    },
+  },
   server: {
     port: 5173,
     proxy: {

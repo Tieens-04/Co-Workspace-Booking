@@ -1,4 +1,4 @@
-import { Suspense, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { m } from 'motion/react';
 import { CalendarCheck, DoorOpen, LayoutDashboard, LogOut, Menu, Store } from 'lucide-react';
@@ -19,7 +19,7 @@ import { BrandMark } from '../components/BrandMark';
 import { SkipLink } from '../components/SkipLink';
 import { ScrollToTop } from '../components/ScrollToTop';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { PageLoading } from '../components/PageLoading';
+import { RouteSuspense } from '../components/RouteSuspense';
 
 const NAV_ITEMS = [
   {
@@ -205,7 +205,7 @@ export function AdminLayout() {
           </div>
         </header>
         <main id="main-content" tabIndex={-1} className="flex-1 outline-none">
-          <Suspense fallback={<PageLoading />}>
+          <RouteSuspense>
             <m.div
               key={location.pathname}
               className="mx-auto w-full max-w-[1440px] px-4 py-6 sm:px-6 sm:py-8 lg:px-8"
@@ -215,7 +215,7 @@ export function AdminLayout() {
             >
               <Outlet />
             </m.div>
-          </Suspense>
+          </RouteSuspense>
         </main>
       </div>
     </div>

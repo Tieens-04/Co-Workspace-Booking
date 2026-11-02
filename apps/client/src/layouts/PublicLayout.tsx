@@ -1,11 +1,10 @@
-import { Suspense } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import { m } from 'motion/react';
 import { AppHeader } from './AppHeader';
 import { AppFooter } from './AppFooter';
 import { SkipLink } from '../components/SkipLink';
 import { ScrollToTop } from '../components/ScrollToTop';
-import { PageLoading } from '../components/PageLoading';
+import { RouteSuspense } from '../components/RouteSuspense';
 
 /**
  * Customer-facing shell: header, page outlet, footer.
@@ -21,7 +20,7 @@ export function PublicLayout() {
       <ScrollToTop />
       <AppHeader />
       <main id="main-content" tabIndex={-1} className="flex flex-1 flex-col outline-none">
-        <Suspense fallback={<PageLoading />}>
+        <RouteSuspense>
           <m.div
             key={location.pathname}
             className="flex flex-1 flex-col"
@@ -31,7 +30,7 @@ export function PublicLayout() {
           >
             <Outlet />
           </m.div>
-        </Suspense>
+        </RouteSuspense>
       </main>
       <AppFooter />
     </div>

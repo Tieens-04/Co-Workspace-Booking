@@ -70,6 +70,14 @@ Vì ứng dụng sử dụng React Router với HTML5 History API (`BrowserRoute
   2. Triển khai cơ chế **Refresh Token Rotation** (kết hợp Access Token ngắn hạn ~15 phút và Refresh Token trong cookie) để giảm thiểu tối đa cửa sổ rủi ro.
   3. Áp dụng Content Security Policy (CSP) chặt chẽ để ngăn chặn việc nạp script tùy tiện.
 
+### 6. Tách Bundle Theo Route (CWB-58)
+
+- Mọi trang và hai layout `AuthLayout`/`AdminLayout` được nạp bằng `React.lazy`. Guard `GuestRoute`/`AdminRoute`/`CustomerRoute` vẫn nạp sẵn, nên RBAC và chuyển hướng chạy trước khi tải bất kỳ code admin nào: khách và customer không bao giờ tải chunk admin.
+- `LazyMotion` nạp bộ tính năng `domMax` qua dynamic import (`src/lib/motion-features.ts`, thử lại 1 lần), không chặn lần render đầu.
+- `RouteSuspense` (Suspense + error boundary) bọc outlet của các layout và các layout lazy: trong lúc tải hiện `PageLoading`. Nếu tải chunk lỗi (mất mạng, vừa deploy bản mới), trang hiện `ErrorState` "Không thể tải trang" kèm nút tải lại, layout vẫn dùng được và lỗi tự xóa khi người dùng chuyển route.
+- `vite.config.ts` tách React/React Router thành chunk `vendor-react` để giữ cache qua các lần deploy mã app. Không nâng `chunkSizeWarningLimit`.
+- Số đo build production (Vite 6): JS entry giảm từ 677.81 KB (gzip 218.30 KB) xuống 566.44 KB (gzip 183.09 KB), gồm `index` 302.57 KB và `vendor-react` 263.87 KB; motion-features 97 KB tải async. Đo trên viewport Pixel 7: lần đầu vào `/` tải 816 KB JS chưa nén (gồm gsap của landing), chuyển sang `/rooms` thêm 27 KB, `/login` thêm 101 KB (zod + form auth); `/admin` khi chưa đăng nhập chuyển về `/login` mà không tải chunk admin.
+
 ---
 
 ## 🔐 API Xác Thực (Authentication API)

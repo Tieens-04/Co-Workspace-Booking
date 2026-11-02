@@ -1,17 +1,29 @@
 import { lazy } from 'react';
 import { BrowserRouter, Outlet, Route, Routes } from 'react-router-dom';
-import { LazyMotion, MotionConfig, domMax } from 'motion/react';
+import { LazyMotion, MotionConfig } from 'motion/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
 import { GuestRoute, AdminRoute, CustomerRoute } from './components/RouteGuard';
+import { RouteSuspense } from './components/RouteSuspense';
 import { PublicLayout } from './layouts/PublicLayout';
-import { AuthLayout } from './layouts/AuthLayout';
-import { AdminLayout } from './layouts/AdminLayout';
+
+// Animation features load after first paint; one retry covers a transient network blip.
+const loadMotionFeatures = () =>
+  import('./lib/motion-features')
+    .catch(() => import('./lib/motion-features'))
+    .then((mod) => mod.default);
 
 // Route-level code splitting: the landing page's GSAP and the admin screens load on demand.
-// Layouts wrap their <Outlet /> in <Suspense>, so the shell stays visible while a page loads.
+// Layouts wrap their <Outlet /> in <RouteSuspense>, so the shell stays visible while a page loads.
+// Auth/admin shells are lazy too; their route guards stay eager so RBAC runs before any download.
+const AuthLayout = lazy(() =>
+  import('./layouts/AuthLayout').then((m) => ({ default: m.AuthLayout })),
+);
+const AdminLayout = lazy(() =>
+  import('./layouts/AdminLayout').then((m) => ({ default: m.AdminLayout })),
+);
 const HomePage = lazy(() => import('./pages/HomePage').then((m) => ({ default: m.HomePage })));
 const RoomsPage = lazy(() => import('./pages/RoomsPage').then((m) => ({ default: m.RoomsPage })));
 const RoomDetailPage = lazy(() =>
@@ -45,7 +57,7 @@ export default function App() {
   return (
     <ThemeProvider>
       <MotionConfig reducedMotion="user">
-        <LazyMotion features={domMax} strict>
+        <LazyMotion features={loadMotionFeatures} strict>
           <TooltipProvider delayDuration={300}>
             <BrowserRouter>
               <AuthProvider>
@@ -72,7 +84,9 @@ export default function App() {
                     <Route
                       element={
                         <GuestRoute>
-                          <AuthLayout />
+                          <RouteSuspense>
+                            <AuthLayout />
+                          </RouteSuspense>
                         </GuestRoute>
                       }
                     >
@@ -84,7 +98,9 @@ export default function App() {
                       path="admin"
                       element={
                         <AdminRoute>
-                          <AdminLayout />
+                          <RouteSuspense>
+                            <AdminLayout />
+                          </RouteSuspense>
                         </AdminRoute>
                       }
                     >
