@@ -7,6 +7,7 @@ import { PaginationMeta } from '../types/room';
 import { AdminGuestBookingForm } from '../components/AdminGuestBookingForm';
 import { BookingFilters } from '../components/admin/bookings/BookingFilters';
 import { RevenueSummary } from '../components/admin/bookings/RevenueSummary';
+import { ReportExport } from '../components/admin/bookings/ReportExport';
 import {
   AdminBookingTable,
   AdminBookingTableSkeleton,
@@ -550,6 +551,9 @@ export const AdminBookingsPage: React.FC = () => {
 
       {/* Revenue KPI Summary */}
       <RevenueSummary data={revenueData} error={revenueError} />
+
+      {/* CSV export (CWB-69) */}
+      <ReportExport />
 
       {/* Booking List Table Section */}
       <section

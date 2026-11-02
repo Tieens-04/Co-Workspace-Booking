@@ -164,3 +164,32 @@ export type GetRevenueQueryInput = z.infer<typeof getRevenueQuerySchema>;
 export const checkInBookingParamsSchema = completeBookingParamsSchema;
 export type CheckInBookingParamsInput = z.infer<typeof checkInBookingParamsSchema>;
 export const checkInBookingBodySchema = z.object({}).strict().optional();
+
+export const MAX_EXPORT_DAYS = 92;
+
+const exportDate = (label: string) =>
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, `${label} phải có định dạng YYYY-MM-DD`)
+    .refine(isValidCalendarDate, `${label} phải là ngày thực tế hợp lệ`);
+
+/** CSV export filters (CWB-69): a bounded period is required. */
+export const exportReportQuerySchema = z
+  .object({
+    startDate: exportDate('startDate'),
+    endDate: exportDate('endDate'),
+    roomId: z.string().uuid('ID phòng không đúng định dạng UUID').optional(),
+    paymentStatus: z.enum(['PAID', 'UNPAID']).optional(),
+  })
+  .strict()
+  .refine((data) => data.startDate <= data.endDate, {
+    message: 'startDate không được sau endDate',
+    path: ['startDate'],
+  })
+  .refine(
+    (data) =>
+      (Date.parse(data.endDate) - Date.parse(data.startDate)) / 86_400_000 < MAX_EXPORT_DAYS,
+    { message: `Kỳ xuất tối đa ${MAX_EXPORT_DAYS} ngày`, path: ['endDate'] },
+  );
+
+export type ExportReportQueryInput = z.infer<typeof exportReportQuerySchema>;
