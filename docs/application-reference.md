@@ -92,6 +92,18 @@ Vì ứng dụng sử dụng React Router với HTML5 History API (`BrowserRoute
 
 Email, `fullName` và `phoneNumber` giới hạn 191 ký tự theo schema MySQL. Email trùng trả `409 EMAIL_ALREADY_EXISTS`; unique constraint khác trả `409 RESOURCE_CONFLICT`.
 
+- **Quên mật khẩu (CWB-64):** `POST /api/v1/auth/forgot-password` với body `{ email }`.
+  - Luôn trả `200` cùng một thông điệp, và trả ngay, dù email có đăng ký hay không. Việc tìm tài khoản, tạo token và gửi email chạy nền (được graceful shutdown chờ), nên thời gian phản hồi không tiết lộ email có tồn tại.
+  - Token là 32 byte ngẫu nhiên (base64url, 43 ký tự). Bảng `password_reset_tokens` chỉ lưu SHA-256 của token; hiệu lực 30 phút; yêu cầu mới thay thế link cũ chưa dùng.
+  - Thiếu/sai cấu hình SMTP thì không tạo token. Gửi email lỗi thì xóa token vừa tạo. Log chỉ ghi user id, không ghi email hay token.
+  - Link email: `${CLIENT_URL}/reset-password?token=...`, nên `CLIENT_URL` phải là URL công khai của frontend.
+  - Rate limit 5 yêu cầu/IP/15 phút; mọi yêu cầu đều được tính.
+- **Đặt lại mật khẩu:** `POST /api/v1/auth/reset-password` với body `{ token, newPassword }` (quy tắc mật khẩu như đăng ký).
+  - Token được tiêu thụ nguyên tử: chỉ cập nhật khi chưa dùng và chưa hết hạn, nên khi hai request đồng thời thì chỉ một request thành công. Đặt lại thành công thì vô hiệu hóa mọi link reset khác của tài khoản.
+  - Token sai/hết hạn/đã dùng trả `400 INVALID_RESET_TOKEN`. Rate limit 10 lần thất bại/IP/15 phút.
+  - JWT vẫn stateless như CWB-63: token đăng nhập đã cấp trước đó hết hạn theo `JWT_EXPIRES_IN`.
+  - Client: liên kết "Quên mật khẩu?" ở trang đăng nhập, trang `/forgot-password` và `/reset-password`. Token được xóa khỏi URL ngay khi trang mở.
+
 Biến môi trường cần thiết trong `apps/server/.env`:
 
 - `JWT_SECRET`: Khóa bí mật ký JWT (bắt buộc, tối thiểu 32 ký tự).
