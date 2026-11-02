@@ -21,7 +21,8 @@ npm run dev                                    # client http://localhost:5173, A
 
 - Needs the local MySQL from `apps/server/.env` (copied with the folder) and seed accounts
   (`npm run db:seed` in `apps/server` if the DB is empty). Test logins: customer
-  `nguyenvana@gmail.com`, admin `admin@cospace.vn` (seed password in `apps/server/prisma/seed.ts`).
+  `nguyenvana@cospace.example`, admin `admin@cospace.example` (demo seed password in
+  `apps/server/prisma/seed.ts`; the seed refuses production and non-local databases).
 - Any older sibling preview uses the same ports — run one project at a time.
 - Routes: `/`, `/rooms`, `/rooms/:id`, `/login`, `/register`, `/bookings`, `/bookings/:id`,
   `/booking-confirmation`, `/admin`, `/admin/dashboard`, `/admin/bookings`, any unknown path (404).

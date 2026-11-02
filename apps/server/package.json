@@ -22,6 +22,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:deploy:test": "tsx scripts/deploy-test-database.ts",
     "db:seed": "prisma db seed",
+    "admin:bootstrap": "node dist/scripts/bootstrap-admin.js",
     "db:studio": "prisma studio"
   },
   "dependencies": {

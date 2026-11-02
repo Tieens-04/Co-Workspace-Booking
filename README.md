@@ -61,6 +61,13 @@ Frontend: <http://localhost:5173> · Backend: <http://localhost:5000> · Health:
 
 Có thể chạy riêng bằng `npm run dev:client` hoặc `npm run dev:server`.
 
+### Dữ liệu demo và tài khoản admin (CWB-59)
+
+Migration, dữ liệu demo và tài khoản admin là ba bước riêng; triển khai chỉ tự chạy migration (`db:deploy`), không bao giờ tự chạy seed demo.
+
+- **Seed demo (chỉ dev/test):** `npm run db:seed --workspace=apps/server` tạo phòng, tiện ích và 3 tài khoản mẫu trên miền dành riêng `.example` (`admin@cospace.example`, `nguyenvana@cospace.example`, `tranthib@cospace.example`) với mật khẩu demo dùng chung ghi trong `apps/server/prisma/seed.ts`. Seed có thể chạy lặp lại. Seed bị từ chối khi `NODE_ENV=production`; chỉ chạy với database MySQL trên máy (`localhost`, `127.0.0.1`, `::1`). Host khác phải xác nhận rõ bằng `DEMO_SEED_CONFIRM_DATABASE=<tên database>` sau khi kiểm tra đó là database dev/test dùng một lần. Thông báo lỗi không in connection string.
+- **Admin production:** sau `db:deploy` và `build`, cung cấp `ADMIN_BOOTSTRAP_EMAIL`, `ADMIN_BOOTSTRAP_PASSWORD`, `ADMIN_BOOTSTRAP_FULL_NAME` (và tùy chọn `ADMIN_BOOTSTRAP_PHONE`) qua biến môi trường hoặc secret store, rồi chạy `npm run admin:bootstrap --workspace=apps/server` (trong container: `docker compose exec server npm run admin:bootstrap --workspace=apps/server`). Mật khẩu theo quy tắc đăng ký (8–72 byte), được hash bằng bcrypt với `BCRYPT_SALT_ROUNDS`, không bao giờ được in ra. Chạy lại với tài khoản ADMIN đã có sẽ không thay đổi gì (không đặt lại mật khẩu); email đã thuộc tài khoản CUSTOMER bị từ chối, không tự nâng quyền. Xóa các biến `ADMIN_BOOTSTRAP_*` khỏi môi trường sau khi tạo; không ghi chúng vào file được commit.
+
 ### Cấu hình email (CWB-44)
 
 Email xác nhận/hủy đặt phòng mã hóa mọi dữ liệu động khi chèn vào HTML (CWB-45), để ký tự đặc biệt và mã định dạng hiển thị nguyên văn, không tạo thẻ HTML hoặc liên kết. Bản văn bản thuần và dữ liệu booking giữ nguyên; lỗi gửi email không hoàn tác booking đã lưu.
