@@ -417,6 +417,20 @@ Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh s�
   - `413 FILE_TOO_LARGE`: Nếu bất kỳ file nào vượt quá 5MB.
 - **Phản hồi `201 Created`**: Trả về `RoomDetail` hoàn chỉnh chứa danh sách ảnh đã được cập nhật.
 
+### 5. Danh mục tiện ích (CWB-65)
+
+Chỉ `ADMIN` (thiếu token → `401`, `CUSTOMER` → `403`). `GET /api/v1/amenities` công khai giữ nguyên định dạng.
+
+| Endpoint                             | Body / Ghi chú                                                                                            | Thành công                                          | Lỗi                                                                            |
+| ------------------------------------ | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------ |
+| `GET /api/v1/admin/amenities`        | —                                                                                                         | `200` danh sách kèm `roomCount` (số phòng đang gán) | —                                                                              |
+| `POST /api/v1/admin/amenities`       | `name` (1–100), `icon?` (slug `[a-z0-9-]`, tối đa 50), `description?` (tối đa 500); `""` lưu thành `null` | `201` tiện ích mới                                  | `400 VALIDATION_ERROR`; `409 AMENITY_NAME_EXISTS` (không phân biệt hoa thường) |
+| `PATCH /api/v1/admin/amenities/:id`  | Một hoặc nhiều trường trên                                                                                | `200`                                               | `400`; `404 AMENITY_NOT_FOUND`; `409 AMENITY_NAME_EXISTS`                      |
+| `DELETE /api/v1/admin/amenities/:id` | Chỉ xóa khi chưa gán cho phòng nào                                                                        | `200`                                               | `404`; `409 AMENITY_IN_USE` kèm `details.roomCount`                            |
+
+- **Chính sách xóa:** không bao giờ xóa ngầm quan hệ Room–Amenity. Tiện ích đang gán phải được gỡ khỏi phòng trước (qua `PATCH /admin/rooms/:id` với `amenityIds`). Phép xóa khóa dòng tiện ích (`SELECT ... FOR UPDATE`) rồi kiểm tra số phòng trong cùng transaction. Thao tác gán phòng chạy đồng thời sẽ chờ khóa và thất bại do khóa ngoại, chứ không bị cascade mất.
+- **Client:** trang `/admin/amenities` (mục "Tiện ích" trên menu quản trị) gồm form thêm/sửa, danh sách kèm số phòng đang dùng, dialog xác nhận xóa (nút xóa bị vô hiệu khi tiện ích đang được gán), và trạng thái loading/lỗi/trống.
+
 ---
 
 ## 🛡️ Middleware Xác Thực & Phân Quyền Route (Auth & RBAC Middleware)
