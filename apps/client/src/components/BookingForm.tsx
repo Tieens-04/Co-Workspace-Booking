@@ -428,7 +428,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       if (controller.signal.aborted || abortControllerRef.current !== controller) return;
 
       if (res.success) {
-        showToast('Đặt phòng thành công! Email xác nhận đã được gửi.', 'success');
+        // Email is sent asynchronously after the response; only claim what was persisted.
+        showToast(`Đặt phòng thành công! Mã đặt phòng: ${res.data.bookingCode}.`, 'success');
         navigate('/booking-confirmation', {
           state: {
             booking: res.data,

@@ -72,6 +72,8 @@ Migration, dữ liệu demo và tài khoản admin là ba bước riêng; triể
 
 Email xác nhận/hủy đặt phòng mã hóa mọi dữ liệu động khi chèn vào HTML (CWB-45), để ký tự đặc biệt và mã định dạng hiển thị nguyên văn, không tạo thẻ HTML hoặc liên kết. Bản văn bản thuần và dữ liệu booking giữ nguyên; lỗi gửi email không hoàn tác booking đã lưu.
 
+Email được gửi bất đồng bộ sau khi API trả kết quả, nên response đặt/hủy phòng không chứa trạng thái gửi email. Giao diện chỉ xác nhận booking đã được lưu (kèm mã đặt phòng) và không khẳng định email đã gửi (CWB-56). Thiếu SMTP, gửi lỗi hoặc gửi chậm đều không đổi kết quả thành công của booking/hủy booking.
+
 Backend đọc sáu biến SMTP sau; biến môi trường của tiến trình ưu tiên hơn giá trị trong dotenv:
 
 | Biến          | Mặc định / ý nghĩa                                                         |
@@ -96,6 +98,8 @@ npm run start --workspace=apps/server
 ```
 
 Backend tự đọc `apps/server/.env`; không tự đọc `.env.production`. Với Docker Compose, dùng file `.env` ở gốc theo hướng dẫn bên dưới; Compose chuyển các biến SMTP vào container. Không đưa thông tin xác thực thật vào Git.
+
+**Bảo vệ file env (CWB-60):** `.gitignore` bỏ qua mọi file `.env` và `.env.*` ở mọi thư mục (`.env.production`, `.env.test`, `apps/*/.env`...); chỉ các template `*.example` chứa placeholder được track. Muốn thêm template mới, đặt tên kết thúc bằng `.example` và chỉ ghi giá trị mẫu. `.dockerignore` loại mọi file `.env*` khỏi build context, trừ các template và `apps/client/.env.production`; file này chỉ chứa cấu hình build công khai `VITE_*` được nhúng vào bundle, không đặt secret ở đó. `npm run test:tooling` kiểm tra quy tắc ignore bằng `git check-ignore`. Job CI `secret-scan` quét toàn bộ lịch sử Git bằng gitleaks theo `.gitleaks.toml` và ẩn giá trị trong log (`--redact`); allowlist chỉ gồm template, fixture test và mật khẩu MySQL dùng một lần của CI (`ci-disposable-*`, `e2e-disposable-*`). Nếu CI phát hiện secret thật: thu hồi/đổi secret đó ngay (rotation) như một việc riêng, không dán giá trị vào issue hay log; xóa khỏi code hiện tại chưa đủ vì secret vẫn nằm trong lịch sử.
 
 ## Chạy bằng Docker
 

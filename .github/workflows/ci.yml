@@ -13,6 +13,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # Scans full git history with .gitleaks.toml. --redact masks secret values, so --verbose
+      # only reveals rule, file, line and commit needed to triage a finding.
+      - name: Scan repository history for secrets
+        run: |
+          docker run --rm -v "$GITHUB_WORKSPACE:/repo" zricethezav/gitleaks:v8.21.2 \
+            git /repo --redact --verbose --no-banner --exit-code 1
+
   quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
