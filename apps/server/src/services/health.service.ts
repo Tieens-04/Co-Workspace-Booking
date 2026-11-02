@@ -1,4 +1,5 @@
 import { prisma } from '../utils/prisma.util.js';
+import { isShuttingDown } from '../utils/graceful-shutdown.util.js';
 
 export interface HealthCheckResult {
   status: 'OK' | 'DEGRADED';
@@ -6,6 +7,8 @@ export interface HealthCheckResult {
   uptime: number;
   service: string;
   database: 'connected' | 'disconnected';
+  /** True while the process drains for shutdown; readiness is then DEGRADED. */
+  shuttingDown?: boolean;
   environment: string;
   version: string;
 }
@@ -24,13 +27,15 @@ export class HealthService {
   }
 
   public static async getReadiness(): Promise<HealthCheckResult> {
+    const shuttingDown = isShuttingDown();
     const isDbConnected = await this.checkDatabase();
     return {
-      status: isDbConnected ? 'OK' : 'DEGRADED',
+      status: isDbConnected && !shuttingDown ? 'OK' : 'DEGRADED',
       timestamp: new Date().toISOString(),
       uptime: process.uptime(),
       service: 'Co-Space Working API',
       database: isDbConnected ? 'connected' : 'disconnected',
+      shuttingDown,
       environment: process.env.NODE_ENV || 'development',
       version: '1.0.0',
     };
