@@ -20,11 +20,12 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      # Scans full git history with .gitleaks.toml; findings are redacted so values never reach logs.
+      # Scans full git history with .gitleaks.toml. --redact masks secret values, so --verbose
+      # only reveals rule, file, line and commit needed to triage a finding.
       - name: Scan repository history for secrets
         run: |
           docker run --rm -v "$GITHUB_WORKSPACE:/repo" zricethezav/gitleaks:v8.21.2 \
-            git /repo --redact --no-banner --exit-code 1
+            git /repo --redact --verbose --no-banner --exit-code 1
 
   quality:
     runs-on: ubuntu-24.04
