@@ -1,0 +1,17 @@
+# Secret scanning config for CI (gitleaks). Extends the default ruleset.
+# Allowlisted paths contain only placeholders or disposable fixtures; never add real secrets there.
+title = "Co-Space Working gitleaks config"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Placeholder env templates, test fixtures and disposable CI service credentials"
+paths = [
+  '''(^|/)\.env(\.[A-Za-z0-9_-]+)*\.example$''',
+  '''(^|/)__tests__/''',
+  '''^e2e/''',
+]
+regexes = [
+  '''ci-disposable-[a-z-]+''',
+]
