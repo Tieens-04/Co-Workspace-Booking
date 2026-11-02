@@ -1,6 +1,6 @@
 import { BookingStatus, PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
-import { summarizeBookingRevenue } from '../utils/booking-revenue.util.js';
+import { summarizeRevenueGroups, toRevenueGroups } from '../utils/booking-revenue.util.js';
 import { lockRoomRow } from './room.repository.js';
 import {
   BLOCKING_BOOKING_STATUSES,
@@ -862,16 +862,16 @@ export class BookingRepository
       }
     }
 
-    const records = await prisma.booking.findMany({
+    // Aggregate in MySQL: at most 8 (status x payment) rows reach Node regardless of volume.
+    const groupRows = await prisma.booking.groupBy({
+      by: ['status', 'paymentStatus'],
       where,
-      select: {
-        status: true,
-        paymentStatus: true,
-        totalAmount: true,
-      },
+      _count: { _all: true },
+      _sum: { totalAmount: true },
     });
+    const groups = toRevenueGroups(groupRows);
 
-    const revenue = summarizeBookingRevenue(records);
+    const revenue = summarizeRevenueGroups(groups);
 
     return {
       period: {
@@ -879,7 +879,7 @@ export class BookingRepository
         endDate: filter.endDate ?? null,
       },
       ...revenue,
-      totalBookings: records.length,
+      totalBookings: groups.reduce((sum, group) => sum + group.count, 0),
     };
   }
 }

@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BookingStatus, PaymentStatus, Prisma, RoomStatus } from '@prisma/client';
 import { BookingRepository } from '../repositories/booking.repository.js';
 import { AdminDashboardRepository } from '../repositories/admin-dashboard.repository.js';
+import { groupBookingsByStatusAndPayment } from './support/booking-group-by.js';
 
 const database = vi.hoisted(() => ({
-  booking: { findMany: vi.fn(), count: vi.fn() },
+  booking: { findMany: vi.fn(), count: vi.fn(), groupBy: vi.fn() },
   room: { count: vi.fn(), findMany: vi.fn() },
 }));
 vi.mock('../utils/prisma.util.js', () => ({
@@ -42,6 +43,7 @@ describe('Revenue repositories: cancelled payments', () => {
       endTime: new Date('2030-01-01T02:00:00Z'),
     }));
     database.booking.findMany.mockResolvedValue(records);
+    database.booking.groupBy.mockResolvedValue(groupBookingsByStatusAndPayment(records));
     database.booking.count.mockResolvedValue(3);
     database.room.count.mockResolvedValue(1);
     database.room.findMany.mockResolvedValue([

@@ -1,6 +1,6 @@
 import { BookingStatus, Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
-import { summarizeBookingRevenue } from '../utils/booking-revenue.util.js';
+import { summarizeRevenueGroups, toRevenueGroups } from '../utils/booking-revenue.util.js';
 import { bookingRepository } from './booking.repository.js';
 import { calculateDashboardOccupancy } from '../utils/dashboard-occupancy.util.js';
 import {
@@ -76,43 +76,38 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
           },
         });
 
-        // 3. Query bookings in period [startDate, endDate)
-        const periodBookings = await tx.booking.findMany({
-          where: {
-            startTime: {
-              lt: endDate,
-            },
-            endTime: {
-              gt: startDate,
-            },
-          },
-          select: {
-            id: true,
-            roomId: true,
-            status: true,
-            paymentStatus: true,
-            totalAmount: true,
-            startTime: true,
-            endTime: true,
-          },
-        });
-
-        const revenue = summarizeBookingRevenue(periodBookings);
-
-        const statusBreakdown = {
-          confirmed: 0,
-          completed: 0,
-          cancelled: 0,
-          noShow: 0,
+        // 3. Bookings overlapping [startDate, endDate): money and status counts are aggregated
+        // in MySQL; only room-occupying intervals are loaded for the occupancy calculation.
+        const periodWhere: Prisma.BookingWhereInput = {
+          startTime: { lt: endDate },
+          endTime: { gt: startDate },
         };
+        const groupRows = await tx.booking.groupBy({
+          by: ['status', 'paymentStatus'],
+          where: periodWhere,
+          _count: { _all: true },
+          _sum: { totalAmount: true },
+        });
+        const groups = toRevenueGroups(groupRows);
+        const revenue = summarizeRevenueGroups(groups);
 
-        for (const b of periodBookings) {
-          // Status breakdown
-          if (b.status === BookingStatus.CONFIRMED) statusBreakdown.confirmed += 1;
-          else if (b.status === BookingStatus.COMPLETED) statusBreakdown.completed += 1;
-          else if (b.status === BookingStatus.CANCELLED) statusBreakdown.cancelled += 1;
-          else if (b.status === BookingStatus.NO_SHOW) statusBreakdown.noShow += 1;
-        }
+        const countByStatus = (status: BookingStatus) =>
+          groups.filter((g) => g.status === status).reduce((sum, g) => sum + g.count, 0);
+        const statusBreakdown = {
+          confirmed: countByStatus(BookingStatus.CONFIRMED),
+          completed: countByStatus(BookingStatus.COMPLETED),
+          cancelled: countByStatus(BookingStatus.CANCELLED),
+          noShow: countByStatus(BookingStatus.NO_SHOW),
+        };
+        const periodBookingsCount = groups.reduce((sum, g) => sum + g.count, 0);
+
+        const occupyingBookings = await tx.booking.findMany({
+          where: {
+            ...periodWhere,
+            status: { in: [BookingStatus.CONFIRMED, BookingStatus.COMPLETED] },
+          },
+          select: { roomId: true, status: true, startTime: true, endTime: true },
+        });
 
         const rooms = await tx.room.findMany({
           where: { createdAt: { lt: endDate } },
@@ -128,7 +123,7 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
         });
         const { bookedMinutes, totalPeriodRoomMinutes } = calculateDashboardOccupancy(
           rooms,
-          periodBookings,
+          occupyingBookings,
           startDate,
           endDate,
         );
@@ -137,7 +132,7 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
           totalAvailableRooms,
           totalRooms,
           todayBookingsCount,
-          periodBookingsCount: periodBookings.length,
+          periodBookingsCount,
           bookedMinutes,
           totalPeriodRoomMinutes,
           actualRevenue: revenue.actualRevenue,

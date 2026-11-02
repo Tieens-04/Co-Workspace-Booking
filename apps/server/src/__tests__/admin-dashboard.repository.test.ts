@@ -2,11 +2,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BookingStatus, PaymentStatus, Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { AdminDashboardRepository } from '../repositories/admin-dashboard.repository.js';
+import { groupBookingsByStatusAndPayment } from './support/booking-group-by.js';
 
 vi.mock('../utils/prisma.util.js', () => {
   const db = {
     room: { count: vi.fn(), findMany: vi.fn() },
-    booking: { count: vi.fn(), findMany: vi.fn() },
+    booking: { count: vi.fn(), findMany: vi.fn(), groupBy: vi.fn() },
     $transaction: vi.fn(),
   };
   return { default: db };
@@ -49,6 +50,11 @@ describe('Dashboard inventory over time', () => {
     vi.mocked(prisma.booking.count).mockResolvedValue(1);
     vi.mocked(prisma.room.findMany).mockResolvedValue([room()] as never);
     vi.mocked(prisma.booking.findMany).mockResolvedValue([booking()] as never);
+    // Aggregates derive from the same rows each test provides through findMany.
+    vi.mocked(prisma.booking.groupBy).mockImplementation((async () =>
+      groupBookingsByStatusAndPayment(
+        (await vi.mocked(prisma.booking.findMany).getMockImplementation()!({} as never)) as never,
+      )) as never);
   });
 
   it('excludes maintenance bookings from occupancy but preserves paid revenue and counts', async () => {
