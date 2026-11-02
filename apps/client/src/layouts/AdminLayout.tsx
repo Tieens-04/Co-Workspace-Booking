@@ -1,7 +1,15 @@
 import { useId, useState } from 'react';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { m } from 'motion/react';
-import { CalendarCheck, DoorOpen, LayoutDashboard, LogOut, Menu, Store } from 'lucide-react';
+import {
+  CalendarCheck,
+  DoorOpen,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Sparkles,
+  Store,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -35,6 +43,13 @@ const NAV_ITEMS = [
     label: 'Quản lý đặt phòng',
     icon: CalendarCheck,
     testId: 'admin-nav-bookings',
+    end: false,
+  },
+  {
+    to: '/admin/amenities',
+    label: 'Tiện ích',
+    icon: Sparkles,
+    testId: 'admin-nav-amenities',
     end: false,
   },
 ];

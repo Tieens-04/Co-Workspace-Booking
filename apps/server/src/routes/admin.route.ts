@@ -3,6 +3,13 @@ import { adminRoomController } from '../controllers/admin-room.controller.js';
 import { adminRoomImageController } from '../controllers/admin-room-image.controller.js';
 import { adminBookingController } from '../controllers/admin-booking.controller.js';
 import { adminDashboardController } from '../controllers/admin-dashboard.controller.js';
+import { adminAmenityController } from '../controllers/admin-amenity.controller.js';
+import {
+  amenityIdParamsSchema,
+  createAmenitySchema,
+  getAmenitiesQuerySchema,
+  updateAmenitySchema,
+} from '../validators/amenity.validator.js';
 import { validateQuery, validateBody, validateParams } from '../middlewares/validate.middleware.js';
 import { getRoomsQuerySchema, getRoomByIdParamsSchema } from '../validators/room.validator.js';
 import { createRoomSchema, updateRoomSchema } from '../validators/admin-room.validator.js';
@@ -106,6 +113,20 @@ router.get(
   '/dashboard/schedule',
   validateQuery(getDashboardScheduleQuerySchema),
   adminDashboardController.getSchedule,
+);
+
+router.get('/amenities', validateQuery(getAmenitiesQuerySchema), adminAmenityController.list);
+router.post('/amenities', validateBody(createAmenitySchema), adminAmenityController.create);
+router.patch(
+  '/amenities/:id',
+  validateParams(amenityIdParamsSchema),
+  validateBody(updateAmenitySchema),
+  adminAmenityController.update,
+);
+router.delete(
+  '/amenities/:id',
+  validateParams(amenityIdParamsSchema),
+  adminAmenityController.remove,
 );
 
 export default router;

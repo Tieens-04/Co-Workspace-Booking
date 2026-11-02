@@ -37,6 +37,9 @@ const AdminPage = lazy(() => import('./pages/AdminPage').then((m) => ({ default:
 const AdminBookingsPage = lazy(() =>
   import('./pages/AdminBookingsPage').then((m) => ({ default: m.AdminBookingsPage })),
 );
+const AdminAmenitiesPage = lazy(() =>
+  import('./pages/AdminAmenitiesPage').then((m) => ({ default: m.AdminAmenitiesPage })),
+);
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
 );
@@ -118,6 +121,7 @@ export default function App() {
                       <Route index element={<AdminPage />} />
                       <Route path="dashboard" element={<AdminDashboardPage />} />
                       <Route path="bookings" element={<AdminBookingsPage />} />
+                      <Route path="amenities" element={<AdminAmenitiesPage />} />
                     </Route>
                   </Routes>
                 </ToastProvider>
