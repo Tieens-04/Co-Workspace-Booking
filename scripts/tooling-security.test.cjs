@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const { spawnSync } = require('node:child_process');
 const { mkdtemp, rm, writeFile } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const { tmpdir } = require('node:os');
@@ -57,4 +58,35 @@ test('ESLint config matching uses the patched glob matcher', async () => {
   await configs.normalize();
   assert.equal(configs.getConfigStatus(path.resolve('/project/src/a/b.ts')), 'matched');
   assert.equal(configs.getConfigStatus(path.resolve('/project/test/b.ts')), 'unconfigured');
+});
+
+test('real env files are git-ignored everywhere while *.example templates stay tracked', () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  // --no-index checks the patterns themselves, independent of what is currently tracked.
+  const isIgnored = (file) => {
+    const result = spawnSync('git', ['check-ignore', '-q', '--no-index', file], { cwd: repoRoot });
+    assert.ok(result.status === 0 || result.status === 1, `git check-ignore failed for ${file}`);
+    return result.status === 0;
+  };
+
+  for (const dir of ['', 'apps/server/', 'apps/client/']) {
+    for (const name of [
+      '.env',
+      '.env.local',
+      '.env.production',
+      '.env.test',
+      '.env.staging.local',
+    ]) {
+      assert.equal(isIgnored(`${dir}${name}`), true, `${dir}${name} must be ignored`);
+    }
+  }
+  for (const template of [
+    '.env.example',
+    '.env.production.example',
+    'apps/server/.env.example',
+    'apps/server/.env.production.example',
+    'apps/client/.env.production.example',
+  ]) {
+    assert.equal(isIgnored(template), false, `${template} must stay tracked`);
+  }
 });

@@ -3,10 +3,12 @@ node_modules/
 .pnp
 .pnp.js
 
-# Environment Variables
+# Environment Variables: ignore every real env file in any directory.
+# Only placeholder templates named *.example may be tracked.
 .env
-.env.local
-.env.*.local
+.env.*
+!.env.example
+!.env.*.example
 
 # Production Build
 dist/
