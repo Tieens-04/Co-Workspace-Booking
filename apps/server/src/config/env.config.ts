@@ -29,6 +29,17 @@ if (!Number.isSafeInteger(jwtExpiresInSeconds) || jwtExpiresInSeconds <= 0) {
   throw new Error('JWT_EXPIRES_IN must be a positive integer duration with s, m, h or d units.');
 }
 
+// Must stay below the orchestrator stop grace period (docker compose stop_grace_period: 30s).
+const rawShutdownTimeout = process.env.SHUTDOWN_TIMEOUT_MS;
+const shutdownTimeoutMs = rawShutdownTimeout ? Number(rawShutdownTimeout) : 20000;
+if (
+  !Number.isInteger(shutdownTimeoutMs) ||
+  shutdownTimeoutMs < 1000 ||
+  shutdownTimeoutMs > 120000
+) {
+  throw new Error('SHUTDOWN_TIMEOUT_MS must be an integer between 1000 and 120000.');
+}
+
 const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
 if (!cloudinaryCloudName) {
   throw new Error('CLOUDINARY_CLOUD_NAME is required.');
@@ -53,6 +64,7 @@ export const ENV = {
   JWT_SECRET: jwtSecret,
   JWT_EXPIRES_IN_SECONDS: jwtExpiresInSeconds,
   BCRYPT_SALT_ROUNDS: saltRounds,
+  SHUTDOWN_TIMEOUT_MS: shutdownTimeoutMs,
   CLOUDINARY_CLOUD_NAME: cloudinaryCloudName,
   CLOUDINARY_API_KEY: cloudinaryApiKey,
   CLOUDINARY_API_SECRET: cloudinaryApiSecret,

@@ -16,7 +16,9 @@ export class HealthController {
     return sendError(
       res,
       'SERVICE_UNAVAILABLE',
-      'API Server đang hoạt động ở chế độ suy giảm (Database mất kết nối)',
+      readinessData.shuttingDown
+        ? 'API Server đang dừng, không nhận request mới'
+        : 'API Server đang hoạt động ở chế độ suy giảm (Database mất kết nối)',
       503,
       readinessData,
     );

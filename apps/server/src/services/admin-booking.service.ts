@@ -1,5 +1,6 @@
 import { PaymentMethod } from '@prisma/client';
 import { logEmailFailure } from '../utils/email-log.util.js';
+import { trackBackgroundTask } from '../utils/background-tasks.util.js';
 import {
   AdminBookingRepositoryContract,
   bookingRepository,
@@ -71,21 +72,23 @@ export class AdminBookingService {
       booking.customer.kind === 'USER' &&
       booking.customer.email
     ) {
-      void (async () => {
-        try {
-          await this.notificationService.sendBookingCancellation({
-            recipientEmail: booking.customer.email!,
-            customerName: booking.customer.name,
-            bookingCode: booking.bookingCode,
-            roomName: booking.room.name,
-            startTime: booking.startTime,
-            endTime: booking.endTime,
-            reason,
-          });
-        } catch (notifErr: unknown) {
-          logEmailFailure('admin cancellation', booking.bookingCode, notifErr);
-        }
-      })().catch(() => {});
+      trackBackgroundTask(
+        (async () => {
+          try {
+            await this.notificationService.sendBookingCancellation({
+              recipientEmail: booking.customer.email!,
+              customerName: booking.customer.name,
+              bookingCode: booking.bookingCode,
+              roomName: booking.room.name,
+              startTime: booking.startTime,
+              endTime: booking.endTime,
+              reason,
+            });
+          } catch (notifErr: unknown) {
+            logEmailFailure('admin cancellation', booking.bookingCode, notifErr);
+          }
+        })(),
+      );
     }
 
     return booking;
