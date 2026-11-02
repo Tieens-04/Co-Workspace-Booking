@@ -60,3 +60,13 @@ export interface LoginData {
   expiresIn: number;
   user: SafeUser;
 }
+
+export interface UpdateProfileRequest {
+  fullName?: string;
+  phoneNumber?: string | null;
+}
+
+export interface ChangePasswordRequest {
+  currentPassword: string;
+  newPassword: string;
+}

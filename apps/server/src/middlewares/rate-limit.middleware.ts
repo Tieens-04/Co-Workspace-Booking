@@ -49,3 +49,25 @@ export const resetLoginRateLimitOnSuccess = (
   });
   next();
 };
+
+/**
+ * Brute-force guard for POST /me/password: 5 failed attempts (wrong current password) per
+ * authenticated account per 15 minutes. Keyed by verified user id so one account cannot be
+ * hammered from many IPs; validation errors return before this limiter and are not counted.
+ */
+export const changePasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `user:${req.user?.sub ?? getClientRateLimitKey(req)}`,
+  handler: (_req, res) => {
+    return sendError(
+      res,
+      'TOO_MANY_REQUESTS',
+      'Quá nhiều lần nhập sai mật khẩu hiện tại. Vui lòng thử lại sau 15 phút.',
+      429,
+    );
+  },
+});

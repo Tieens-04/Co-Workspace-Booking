@@ -5,7 +5,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { ThemeProvider } from './context/ThemeContext';
 import { AuthProvider } from './context/AuthContext';
 import { ToastProvider } from './context/ToastContext';
-import { GuestRoute, AdminRoute, CustomerRoute } from './components/RouteGuard';
+import { GuestRoute, AdminRoute, CustomerRoute, AuthenticatedRoute } from './components/RouteGuard';
 import { RouteSuspense } from './components/RouteSuspense';
 import { PublicLayout } from './layouts/PublicLayout';
 
@@ -49,6 +49,9 @@ const BookingHistoryPage = lazy(() =>
 const BookingDetailPage = lazy(() =>
   import('./pages/BookingDetailPage').then((m) => ({ default: m.BookingDetailPage })),
 );
+const AccountPage = lazy(() =>
+  import('./pages/AccountPage').then((m) => ({ default: m.AccountPage })),
+);
 const NotFoundPage = lazy(() =>
   import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })),
 );
@@ -78,6 +81,14 @@ export default function App() {
                         <Route path="bookings" element={<BookingHistoryPage />} />
                         <Route path="bookings/:id" element={<BookingDetailPage />} />
                       </Route>
+                      <Route
+                        path="account"
+                        element={
+                          <AuthenticatedRoute>
+                            <AccountPage />
+                          </AuthenticatedRoute>
+                        }
+                      />
                       <Route path="*" element={<NotFoundPage />} />
                     </Route>
 

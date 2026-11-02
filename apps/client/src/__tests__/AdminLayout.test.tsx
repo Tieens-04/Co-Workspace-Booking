@@ -33,6 +33,7 @@ describe('AdminLayout', () => {
       sessionExpired: false,
       clearSessionExpiredNotice: vi.fn(),
       login: vi.fn(),
+      applyProfile: vi.fn(),
       logout: logoutMock,
     });
   });

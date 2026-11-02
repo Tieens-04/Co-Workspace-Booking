@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setUnauthorizedHandler } from '../services/api';
+import { meApi } from '../services/me.api';
 import { AuthPrincipal, SafeUser } from '../types/auth';
 import {
   decodeJwt,
@@ -167,6 +168,32 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
   }, [token, logout]);
 
+  const applyProfile = useCallback((user: SafeUser) => {
+    // Only merge display fields into the matching session; id/role always come from the token.
+    setPrincipal((current) =>
+      current && current.id === user.id
+        ? { ...current, email: user.email, fullName: user.fullName }
+        : current,
+    );
+  }, []);
+
+  // A restored token only carries id/role; load name/email from the API for this session.
+  const principalId = principal?.id;
+  const needsProfile = Boolean(token && principal && !principal.fullName);
+  useEffect(() => {
+    if (!needsProfile || !principalId) return;
+    const controller = new AbortController();
+    meApi
+      .getMe(controller.signal)
+      .then((res) => {
+        if (!controller.signal.aborted && res.data.id === principalId) applyProfile(res.data);
+      })
+      .catch(() => {
+        // Display-only enrichment: 401 is handled by the interceptor, other errors keep the fallback.
+      });
+    return () => controller.abort();
+  }, [needsProfile, principalId, token, applyProfile]);
+
   const value = useMemo<AuthContextType>(
     () => ({
       token,
@@ -176,9 +203,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       sessionExpired,
       clearSessionExpiredNotice,
       login,
+      applyProfile,
       logout,
     }),
-    [token, principal, isLoading, sessionExpired, clearSessionExpiredNotice, login, logout],
+    [
+      token,
+      principal,
+      isLoading,
+      sessionExpired,
+      clearSessionExpiredNotice,
+      login,
+      applyProfile,
+      logout,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
