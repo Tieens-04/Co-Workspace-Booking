@@ -11,6 +11,7 @@ import { parseVnDateTimeLocalToUtc } from '../utils/bookingTime';
 import { ApiResponse, RoomAvailabilityResponseData, RoomAvailabilitySlot } from '../types/room';
 import { TOKEN_STORAGE_KEY } from '../utils/token';
 import { createMockJwt } from './test-utils';
+import { ToastContext } from '../context/toast-context-base';
 
 vi.mock('../services/booking.api', () => ({
   bookingApi: {
@@ -1210,6 +1211,63 @@ describe('BookingForm', () => {
 
       expect(screen.queryByTestId('booking-review-section')).not.toBeInTheDocument();
       expect(screen.getByTestId('customer-booking-form')).toBeInTheDocument();
+    });
+  });
+
+  describe('Success feedback (CWB-56)', () => {
+    it('confirms the persisted booking without claiming the email was delivered', async () => {
+      const showToast = vi.fn();
+      vi.mocked(bookingApi.createBooking).mockResolvedValueOnce({
+        success: true,
+        message: 'Đặt phòng thành công',
+        data: {
+          id: 'booking-1',
+          bookingCode: 'CS-20261025-MAIL',
+          room: { id: 'room-uuid-1', name: 'Phòng Hội Thảo Alpha' },
+          startTime: '2026-10-25T03:00:00.000Z',
+          endTime: '2026-10-25T05:00:00.000Z',
+          totalAmount: '400000.00',
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
+          status: 'CONFIRMED',
+          paymentStatus: 'UNPAID',
+          paymentMethod: null,
+          note: null,
+        },
+      });
+
+      render(
+        <ToastContext.Provider value={{ showToast, removeToast: vi.fn() }}>
+          <MemoryRouter initialEntries={['/rooms/room-uuid-1']}>
+            <AuthProvider>
+              <Routes>
+                <Route path="/rooms/:id" element={<BookingForm {...defaultProps} />} />
+                <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
+              </Routes>
+            </AuthProvider>
+          </MemoryRouter>
+        </ToastContext.Provider>,
+      );
+
+      fireEvent.change(screen.getByLabelText(/Thời gian bắt đầu/i), {
+        target: { value: '2026-10-25T10:00' },
+      });
+      fireEvent.change(screen.getByLabelText(/Thời gian kết thúc/i), {
+        target: { value: '2026-10-25T12:00' },
+      });
+      await act(async () => {});
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('booking-submit-btn'));
+      });
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('booking-confirm-btn'));
+      });
+
+      expect(showToast).toHaveBeenCalledTimes(1);
+      const [message, tone] = showToast.mock.calls[0];
+      expect(tone).toBe('success');
+      expect(message).toContain('CS-20261025-MAIL');
+      expect(message).not.toMatch(/email/i);
     });
   });
 });

@@ -736,7 +736,7 @@ footer.foot { border-top: 1px solid var(--border); padding-block: 32px 48px; fon
             <button class="btn btn-outline btn-sm" type="button" data-open-dialog>Mở hộp thoại</button>
           </div>
           <div class="stage">
-            <div class="toast" data-tone="success" role="status"><svg class="i"><use href="#i-check"/></svg><div><strong>Đặt phòng thành công</strong><p>Mã CS-20261018-4821 đã được gửi tới email của bạn.</p></div><button class="btn btn-ghost btn-icon toast-x" type="button" aria-label="Đóng thông báo"><svg class="i i-sm"><use href="#i-x"/></svg></button></div>
+            <div class="toast" data-tone="success" role="status"><svg class="i"><use href="#i-check"/></svg><div><strong>Đặt phòng thành công</strong><p>Mã đặt phòng: CS-20261018-4821.</p></div><button class="btn btn-ghost btn-icon toast-x" type="button" aria-label="Đóng thông báo"><svg class="i i-sm"><use href="#i-x"/></svg></button></div>
             <div class="toast" data-tone="error" role="alert"><svg class="i"><use href="#i-alert"/></svg><div><strong>Khung giờ vừa được đặt</strong><p>Có người đã đặt 13:00 – 15:00 trước bạn. Hãy chọn khung giờ khác.</p></div><button class="btn btn-ghost btn-icon toast-x" type="button" aria-label="Đóng thông báo"><svg class="i i-sm"><use href="#i-x"/></svg></button></div>
             <div class="row"><button class="btn btn-outline btn-sm" type="button" id="toast-ok">Hiện thông báo thành công</button><button class="btn btn-outline btn-sm" type="button" id="toast-err">Hiện thông báo lỗi</button></div>
           </div>
@@ -1039,7 +1039,7 @@ footer.foot { border-top: 1px solid var(--border); padding-block: 32px 48px; fon
     toaster.appendChild(el);
     setTimeout(close, 4000);
   }
-  document.getElementById('toast-ok').addEventListener('click', function () { toast('success', 'Đặt phòng thành công', 'Mã CS-20261018-4821 đã được gửi tới email của bạn.'); });
+  document.getElementById('toast-ok').addEventListener('click', function () { toast('success', 'Đặt phòng thành công', 'Mã đặt phòng: CS-20261018-4821.'); });
   document.getElementById('toast-err').addEventListener('click', function () { toast('error', 'Khung giờ vừa được đặt', 'Có người đã đặt 13:00 – 15:00 trước bạn. Hãy chọn khung giờ khác.'); });
   document.getElementById('copy-code').addEventListener('click', function () {
     var done = function () { toast('success', 'Đã sao chép mã', 'CS-20261018-4821'); };

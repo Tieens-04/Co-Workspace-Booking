@@ -65,6 +65,8 @@ Có thể chạy riêng bằng `npm run dev:client` hoặc `npm run dev:server`.
 
 Email xác nhận/hủy đặt phòng mã hóa mọi dữ liệu động khi chèn vào HTML (CWB-45), để ký tự đặc biệt và mã định dạng hiển thị nguyên văn, không tạo thẻ HTML hoặc liên kết. Bản văn bản thuần và dữ liệu booking giữ nguyên; lỗi gửi email không hoàn tác booking đã lưu.
 
+Email được gửi bất đồng bộ sau khi API trả kết quả, nên response đặt/hủy phòng không chứa trạng thái gửi email. Giao diện chỉ xác nhận booking đã được lưu (kèm mã đặt phòng) và không khẳng định email đã gửi (CWB-56). Thiếu SMTP, gửi lỗi hoặc gửi chậm đều không đổi kết quả thành công của booking/hủy booking.
+
 Backend đọc sáu biến SMTP sau; biến môi trường của tiến trình ưu tiên hơn giá trị trong dotenv:
 
 | Biến          | Mặc định / ý nghĩa                                                         |

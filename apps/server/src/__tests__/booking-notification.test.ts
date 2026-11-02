@@ -183,6 +183,42 @@ describe('Booking Notification Integration', () => {
       expect(mockBookingRepo.createBooking).toHaveBeenCalledTimes(1);
     });
 
+    // CWB-56: delivery outcome (skipped when SMTP is missing, failed, or still pending)
+    // never changes the booking response.
+    it.each([
+      ['SMTP missing or send failed (false)', () => Promise.resolve(false)],
+      ['delivery still pending', () => new Promise<boolean>(() => {})],
+    ])('returns the persisted booking when email is %s', async (_label, outcome) => {
+      mockNotificationService.sendBookingConfirmation.mockImplementation(outcome);
+      const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
+
+      const result = await service.createBooking(
+        userId,
+        {
+          roomId: validRoomId,
+          startTime: '2026-10-14T10:00:00.000Z',
+          endTime: '2026-10-14T12:00:00.000Z',
+          note: null,
+        },
+        new Date('2026-10-14T08:00:00Z'),
+      );
+
+      expect(result.id).toBe('booking-1');
+      expect(result.status).toBe(BookingStatus.CONFIRMED);
+    });
+
+    it.each([
+      ['SMTP missing or send failed (false)', () => Promise.resolve(false)],
+      ['delivery still pending', () => new Promise<boolean>(() => {})],
+    ])('returns the cancelled booking when email is %s', async (_label, outcome) => {
+      mockNotificationService.sendBookingCancellation.mockImplementation(outcome);
+      const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
+
+      const result = await service.cancelBooking(userId, 'booking-1');
+
+      expect(result.status).toBe(BookingStatus.CANCELLED);
+    });
+
     it('triggers sendBookingCancellation on customer cancelBooking', async () => {
       const service = new BookingService(mockBookingRepo, mockUserRepo, mockNotificationService);
 
