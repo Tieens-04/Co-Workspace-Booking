@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const emailSchema = z.string().trim().toLowerCase().max(191).email('Email không đúng định dạng');
-const passwordSchema = z.string().refine((val) => Buffer.byteLength(val, 'utf8') <= 72, {
+export const passwordSchema = z.string().refine((val) => Buffer.byteLength(val, 'utf8') <= 72, {
   message: 'Mật khẩu không được vượt quá 72 bytes',
 });
 

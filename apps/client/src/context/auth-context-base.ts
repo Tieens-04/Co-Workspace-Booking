@@ -9,6 +9,8 @@ export interface AuthContextType {
   sessionExpired: boolean;
   clearSessionExpiredNotice: () => void;
   login: (accessToken: string, user: SafeUser) => boolean;
+  /** Refreshes name/email shown in the UI after a profile load or update. */
+  applyProfile: (user: SafeUser) => void;
   logout: (reason?: 'sessionExpired' | 'userAction') => void;
 }
 

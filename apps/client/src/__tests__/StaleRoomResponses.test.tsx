@@ -66,6 +66,7 @@ const authValue = (id: string): AuthContextType => ({
   sessionExpired: false,
   clearSessionExpiredNotice: vi.fn(),
   login: vi.fn(),
+  applyProfile: vi.fn(),
   logout: vi.fn(),
 });
 

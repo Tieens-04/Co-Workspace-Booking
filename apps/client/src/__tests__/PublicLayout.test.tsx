@@ -31,6 +31,7 @@ describe('PublicLayout', () => {
       sessionExpired: false,
       clearSessionExpiredNotice: vi.fn(),
       login: vi.fn(),
+      applyProfile: vi.fn(),
       logout: vi.fn(),
     });
   });

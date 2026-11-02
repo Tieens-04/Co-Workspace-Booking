@@ -8,6 +8,7 @@ import { generateToken } from '../utils/jwt.util.js';
 import { ENV } from '../config/env.config.js';
 import { errorHandler } from '../middlewares/error.middleware.js';
 import { verifyToken, checkRole } from '../middlewares/auth.middleware.js';
+import { userRepository } from '../repositories/user.repository.js';
 
 // Prevent any unexpected DB access in unit tests
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
@@ -56,17 +57,32 @@ describe('Auth & RBAC Middleware', () => {
       expect(res.status).toBe(404);
     });
 
-    it('returns 404 when CUSTOMER accesses /api/v1/me because endpoints are not yet defined', async () => {
-      const res = await request(app)
-        .get('/api/v1/me')
-        .set('Authorization', `Bearer ${customerToken}`);
-      expect(res.status).toBe(404);
-    });
+    it.each([
+      ['CUSTOMER', customerToken, 'customer-uuid-1', Role.CUSTOMER],
+      ['ADMIN', adminToken, 'admin-uuid-1', Role.ADMIN],
+    ])(
+      'lets %s reach /api/v1/me and resolves the account from the token subject (CWB-63)',
+      async (_label, token, sub, role) => {
+        const findById = vi.spyOn(userRepository, 'findById').mockResolvedValue({
+          id: sub,
+          email: `${sub}@example.com`,
+          passwordHash: 'hash',
+          fullName: 'Người dùng',
+          phoneNumber: null,
+          role,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
 
-    it('returns 404 when ADMIN accesses /api/v1/me because endpoints are not yet defined', async () => {
-      const res = await request(app).get('/api/v1/me').set('Authorization', `Bearer ${adminToken}`);
-      expect(res.status).toBe(404);
-    });
+        const res = await request(app).get('/api/v1/me').set('Authorization', `Bearer ${token}`);
+
+        expect(res.status).toBe(200);
+        expect(findById).toHaveBeenCalledWith(sub);
+        expect(res.body.data).toMatchObject({ id: sub, role });
+        expect(res.body.data).not.toHaveProperty('passwordHash');
+        findById.mockRestore();
+      },
+    );
 
     it('regression: public routes (/health, /auth/login, /auth/register) remain accessible without token', async () => {
       const healthRes = await request(app).get('/api/v1/health');

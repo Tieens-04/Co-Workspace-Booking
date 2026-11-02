@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, NavLink } from 'react-router-dom';
-import { Building2, Clock, LogIn, LogOut, Menu, Shield, UserPlus } from 'lucide-react';
+import { Building2, Clock, LogIn, LogOut, Menu, Shield, UserPlus, UserRound } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -86,6 +86,12 @@ export const AppHeader: React.FC = () => {
                     </NavLink>
                   </Button>
                 )}
+                <Button asChild variant="ghost">
+                  <NavLink to="/account" data-testid="header-account-link">
+                    <UserRound aria-hidden="true" />
+                    <span>Tài khoản</span>
+                  </NavLink>
+                </Button>
                 <Button variant="ghost" onClick={() => logout('userAction')}>
                   <LogOut aria-hidden="true" />
                   <span>Đăng xuất</span>
@@ -143,6 +149,12 @@ export const AppHeader: React.FC = () => {
                         </NavLink>
                       </Button>
                     )}
+                    <Button asChild variant="ghost" className="justify-start">
+                      <NavLink to="/account" onClick={closeMenu}>
+                        <UserRound aria-hidden="true" />
+                        Tài khoản
+                      </NavLink>
+                    </Button>
                     <Button
                       variant="ghost"
                       className="justify-start"

@@ -120,6 +120,7 @@ const renderWithContext = () => {
           sessionExpired: false,
           clearSessionExpiredNotice: vi.fn(),
           login: vi.fn(),
+          applyProfile: vi.fn(),
           logout: vi.fn(),
         }}
       >

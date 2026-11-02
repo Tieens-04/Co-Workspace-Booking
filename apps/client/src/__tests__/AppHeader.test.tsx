@@ -17,13 +17,14 @@ describe('AppHeader', () => {
       sessionExpired: false,
       clearSessionExpiredNotice: vi.fn(),
       login: vi.fn(),
+      applyProfile: vi.fn(),
       logout: vi.fn(),
     });
 
     render(
       <MemoryRouter>
         <AppHeader />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.getByText(/Co-Space/i)).toBeInTheDocument();
@@ -46,18 +47,22 @@ describe('AppHeader', () => {
       sessionExpired: false,
       clearSessionExpiredNotice: vi.fn(),
       login: vi.fn(),
+      applyProfile: vi.fn(),
       logout: logoutMock,
     });
 
     render(
       <MemoryRouter>
         <AppHeader />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.getByText(/Nguyen Van A/i)).toBeInTheDocument();
     expect(screen.getByText('CUSTOMER')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Lịch sử đặt phòng/i })).toHaveAttribute('href', '/bookings');
+    expect(screen.getByRole('link', { name: /Lịch sử đặt phòng/i })).toHaveAttribute(
+      'href',
+      '/bookings',
+    );
     expect(screen.queryByRole('link', { name: /Khu vực Quản trị/i })).not.toBeInTheDocument();
   });
 
@@ -76,17 +81,21 @@ describe('AppHeader', () => {
       sessionExpired: false,
       clearSessionExpiredNotice: vi.fn(),
       login: vi.fn(),
+      applyProfile: vi.fn(),
       logout: logoutMock,
     });
 
     render(
       <MemoryRouter>
         <AppHeader />
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.getByText('ADMIN')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Khu vực Quản trị/i })).toHaveAttribute('href', '/admin');
+    expect(screen.getByRole('link', { name: /Khu vực Quản trị/i })).toHaveAttribute(
+      'href',
+      '/admin',
+    );
 
     const logoutBtn = screen.getByRole('button', { name: /Đăng xuất/i });
     await userEvent.click(logoutBtn);

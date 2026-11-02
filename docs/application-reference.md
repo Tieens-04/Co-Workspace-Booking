@@ -113,6 +113,22 @@ Integration tests từ chối chạy nếu thiếu URL hoặc dùng schema khôn
 
 ---
 
+## 👤 API Tài Khoản Cá Nhân (`/api/v1/me`, CWB-63)
+
+Áp dụng cho mọi vai trò đã đăng nhập (`CUSTOMER`, `ADMIN`). Mọi thao tác luôn dùng tài khoản trong JWT đã xác thực (`sub`); request không thể chỉ định `userId`, nên không có IDOR. Không có/sai token → `401`; token hợp lệ nhưng tài khoản đã bị xóa → `401`. Không nhận query parameter.
+
+| Endpoint                   | Body                                                           | Thành công                                                          | Lỗi                                                                                                                   |
+| -------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/me`           | —                                                              | `200` `SafeUser` (`id`, `email`, `fullName`, `phoneNumber`, `role`) | `401`                                                                                                                 |
+| `PATCH /api/v1/me`         | `fullName?` (1–191 ký tự), `phoneNumber?` (`""`/`null` để xóa) | `200` `SafeUser` đã cập nhật                                        | `400 VALIDATION_ERROR` với body rỗng hoặc field khác (`role`, `email`, `id`, `passwordHash`...)                       |
+| `POST /api/v1/me/password` | `currentPassword`, `newPassword` (8–72 byte, khác mật khẩu cũ) | `200` `{ accessToken, tokenType, expiresIn, user }`                 | `400 INVALID_CURRENT_PASSWORD`; `400 VALIDATION_ERROR`; `429 TOO_MANY_REQUESTS` sau 5 lần sai trong 15 phút/tài khoản |
+
+- Sai mật khẩu hiện tại trả `400` (không phải `401`) để không kết thúc phiên đang dùng. Mật khẩu mới được hash bằng bcrypt (`BCRYPT_SALT_ROUNDS`), không bao giờ được trả về hay ghi log.
+- **Token sau khi đổi mật khẩu:** JWT giữ cơ chế stateless hiện tại. Phiên đang dùng nhận token mới trong response; token đã cấp trước đó (thiết bị khác) vẫn hợp lệ đến khi hết hạn `JWT_EXPIRES_IN`. Muốn thu hồi ngay cần thêm kiểm tra phía server (ví dụ `passwordChangedAt`/token version), là thay đổi riêng.
+- **Client:** trang `/account` (guard `AuthenticatedRoute`, liên kết "Tài khoản" trên header) cho sửa họ tên/số điện thoại và đổi mật khẩu, có trạng thái loading/lỗi/thử lại. Sau khi refresh, `AuthContext` gọi `GET /me` để khôi phục tên/email trên header (token chỉ chứa `id`/`role`); vẫn lưu token như trước, không lưu thêm dữ liệu hồ sơ vào `localStorage`.
+
+---
+
 ## 🚪 API Danh Sách & Chi Tiết Phòng (Room API)
 
 Cung cấp các endpoint công khai (không cần xác thực) phục vụ tìm kiếm, lọc và xem chi tiết phòng làm việc.

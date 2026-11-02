@@ -114,3 +114,20 @@ export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }
 
   return <>{children}</>;
 };
+
+/** Any signed-in role (CUSTOMER or ADMIN), e.g. the personal account page. */
+export const AuthenticatedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, principal, isLoading } = useAuth();
+  const location = useLocation();
+
+  if (isLoading) {
+    return <RouteLoading />;
+  }
+
+  if (!isAuthenticated || !principal) {
+    sanitizeHistoryState();
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+
+  return <>{children}</>;
+};
