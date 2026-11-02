@@ -261,5 +261,6 @@ Xem [kế hoạch và định nghĩa CWB-42](docs/plans/cwb-42-dashboard-occupan
 
 - `apps/client/`: giao diện React, routes, hooks và API client.
 - `apps/server/`: REST API, services, repositories và Prisma migrations.
+- [Quy tắc nghiệp vụ đặt phòng](docs/business-rules.md): nguồn chuẩn cho policy thời gian (slot 30 phút, 1–8 giờ, đặt trước 30 phút, hủy trước ≥ 1 giờ), vòng đời booking/thanh toán, bằng chứng test và QA checklist. Policy cũ 4 giờ/2 giờ trong Jira CWB-19/CWB-26 đã bị thay thế.
 - [API và luồng nghiệp vụ](docs/application-reference.md): xác thực, phân quyền, phòng, đặt chỗ và các lệnh test theo tính năng.
 - [Quy tắc giao diện](apps/client/DESIGN.md) · [Thuật ngữ](GLOSSARY.md) · [Quyết định kiến trúc](docs/adr/).
