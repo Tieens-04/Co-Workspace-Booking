@@ -71,3 +71,29 @@ export const changePasswordRateLimiter = rateLimit({
     );
   },
 });
+
+const tooManyAttempts = (message: string) => (_req: Request, res: Response) =>
+  sendError(res, 'TOO_MANY_REQUESTS', message, 429);
+
+/** Every forgot-password request counts (responses are always 200): 5 per IP per 15 minutes. */
+export const forgotPasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientRateLimitKey(req),
+  handler: tooManyAttempts('Quá nhiều yêu cầu đặt lại mật khẩu. Vui lòng thử lại sau 15 phút.'),
+});
+
+/** Failed reset attempts (invalid/expired token): 10 per IP per 15 minutes. */
+export const resetPasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientRateLimitKey(req),
+  handler: tooManyAttempts(
+    'Quá nhiều lần đặt lại mật khẩu không thành công. Vui lòng thử lại sau.',
+  ),
+});

@@ -1,9 +1,32 @@
 import { Request, Response, NextFunction } from 'express';
 import { authService, AuthService } from '../services/auth.service.js';
 import { sendSuccess } from '../utils/response.util.js';
+import { passwordResetService, PasswordResetService } from '../services/password-reset.service.js';
 
 export class AuthController {
-  constructor(private readonly service: AuthService = authService) {}
+  constructor(
+    private readonly service: AuthService = authService,
+    private readonly resetService: PasswordResetService = passwordResetService,
+  ) {}
+
+  forgotPassword = (req: Request, res: Response) => {
+    // Same response whether or not the email exists (no account enumeration).
+    this.resetService.requestReset(req.body.email);
+    return sendSuccess(
+      res,
+      null,
+      'Nếu email đã đăng ký, chúng tôi đã gửi hướng dẫn đặt lại mật khẩu. Vui lòng kiểm tra hộp thư.',
+    );
+  };
+
+  resetPassword = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await this.resetService.resetPassword(req.body.token, req.body.newPassword);
+      return sendSuccess(res, null, 'Đặt lại mật khẩu thành công. Vui lòng đăng nhập lại.');
+    } catch (err) {
+      return next(err);
+    }
+  };
 
   register = async (req: Request, res: Response, next: NextFunction) => {
     try {

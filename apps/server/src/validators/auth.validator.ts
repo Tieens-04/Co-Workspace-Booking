@@ -23,3 +23,16 @@ export const loginSchema = z
 
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
+
+export const forgotPasswordSchema = z.object({ email: emailSchema }).strict();
+
+export const resetPasswordSchema = z
+  .object({
+    // 32 random bytes encoded as base64url (43 characters).
+    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Liên kết đặt lại mật khẩu không hợp lệ'),
+    newPassword: passwordSchema.min(8, 'Mật khẩu mới phải có ít nhất 8 ký tự'),
+  })
+  .strict();
+
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
+export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
