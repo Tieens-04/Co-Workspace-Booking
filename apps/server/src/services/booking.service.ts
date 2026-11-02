@@ -15,6 +15,7 @@ import { validateBookingTime } from '../utils/booking-time.util.js';
 import { generateBookingCode } from '../utils/booking-code.util.js';
 import { AppError } from '../utils/error.util.js';
 import { logEmailFailure } from '../utils/email-log.util.js';
+import { trackBackgroundTask } from '../utils/background-tasks.util.js';
 import { userRepository, UserRepository } from '../repositories/user.repository.js';
 import {
   notificationService as defaultNotificationService,
@@ -86,24 +87,26 @@ export class BookingService {
         });
 
         if (identity.userId) {
-          void (async () => {
-            try {
-              const user = await this.userRepo.findById(identity.userId!);
-              if (user?.email) {
-                await this.notificationService.sendBookingConfirmation({
-                  recipientEmail: user.email,
-                  customerName: user.fullName,
-                  bookingCode: booking.bookingCode,
-                  roomName: booking.room.name,
-                  startTime: booking.startTime,
-                  endTime: booking.endTime,
-                  totalAmount: booking.totalAmount,
-                });
+          trackBackgroundTask(
+            (async () => {
+              try {
+                const user = await this.userRepo.findById(identity.userId!);
+                if (user?.email) {
+                  await this.notificationService.sendBookingConfirmation({
+                    recipientEmail: user.email,
+                    customerName: user.fullName,
+                    bookingCode: booking.bookingCode,
+                    roomName: booking.room.name,
+                    startTime: booking.startTime,
+                    endTime: booking.endTime,
+                    totalAmount: booking.totalAmount,
+                  });
+                }
+              } catch (notifErr: unknown) {
+                logEmailFailure('confirmation', booking.bookingCode, notifErr);
               }
-            } catch (notifErr: unknown) {
-              logEmailFailure('confirmation', booking.bookingCode, notifErr);
-            }
-          })().catch(() => {});
+            })(),
+          );
         }
 
         return booking;
@@ -168,24 +171,26 @@ export class BookingService {
     const booking = await this.bookingRepo.cancelBooking(userId, id, clock);
 
     if (booking.isNewlyCancelled !== false) {
-      void (async () => {
-        try {
-          const user = await this.userRepo.findById(userId);
-          if (user?.email) {
-            await this.notificationService.sendBookingCancellation({
-              recipientEmail: user.email,
-              customerName: user.fullName,
-              bookingCode: booking.bookingCode,
-              roomName: booking.room.name,
-              startTime: booking.startTime,
-              endTime: booking.endTime,
-              reason: booking.cancellationReason,
-            });
+      trackBackgroundTask(
+        (async () => {
+          try {
+            const user = await this.userRepo.findById(userId);
+            if (user?.email) {
+              await this.notificationService.sendBookingCancellation({
+                recipientEmail: user.email,
+                customerName: user.fullName,
+                bookingCode: booking.bookingCode,
+                roomName: booking.room.name,
+                startTime: booking.startTime,
+                endTime: booking.endTime,
+                reason: booking.cancellationReason,
+              });
+            }
+          } catch (notifErr: unknown) {
+            logEmailFailure('cancellation', booking.bookingCode, notifErr);
           }
-        } catch (notifErr: unknown) {
-          logEmailFailure('cancellation', booking.bookingCode, notifErr);
-        }
-      })().catch(() => {});
+        })(),
+      );
     }
 
     return booking;
