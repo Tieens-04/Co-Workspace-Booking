@@ -12,6 +12,7 @@ paths = [
   '''(^|/)__tests__/''',
   '''^e2e/''',
 ]
+# Credentials of throwaway MySQL service containers in CI (quality: ci-*, browser-e2e: e2e-*).
 regexes = [
-  '''ci-disposable-[a-z-]+''',
+  '''(ci|e2e)-disposable-[a-z-]+''',
 ]
