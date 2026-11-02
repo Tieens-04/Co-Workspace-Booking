@@ -1,9 +1,9 @@
-import { Suspense, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useLocation, useOutlet } from 'react-router-dom';
 import { AnimatePresence, m } from 'motion/react';
 import { DURATION, EASE_EDITORIAL } from '@/lib/motion';
 import { cn } from '@/lib/utils';
-import { PageLoading } from '../components/PageLoading';
+import { RouteSuspense } from '../components/RouteSuspense';
 import { BrandMark } from '../components/BrandMark';
 import { SkipLink } from '../components/SkipLink';
 import { ScrollToTop } from '../components/ScrollToTop';
@@ -126,7 +126,7 @@ export function AuthLayout() {
           <div className="w-full max-w-[440px] grid gap-6">
             <AuthTabs />
             <div className="overflow-x-clip">
-              <Suspense fallback={<PageLoading />}>
+              <RouteSuspense>
                 <AnimatePresence mode="wait" custom={direction}>
                   <m.div
                     key={location.pathname}
@@ -140,7 +140,7 @@ export function AuthLayout() {
                     {outlet}
                   </m.div>
                 </AnimatePresence>
-              </Suspense>
+              </RouteSuspense>
             </div>
           </div>
         </main>
