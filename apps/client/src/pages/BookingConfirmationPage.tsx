@@ -1,5 +1,6 @@
 import React, { useContext, useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { bookingApi } from '../services/booking.api';
 import { BookingResult } from '../types/booking';
 import { formatCurrency } from '../utils/format';
 import { AuthContext } from '../context/auth-context-base';
@@ -7,7 +8,7 @@ import { isValidBookingResult, sanitizeHistoryState } from '../utils/history';
 import { ArrowLeft, ArrowRight, Banknote, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { EmptyState } from '../components/common/EmptyState';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { StatusBadge } from '../components/common/StatusBadge';
 import { DetailList, DetailRow } from '../components/booking/DetailList';
 import { Notice } from '../components/booking/Notice';
@@ -53,18 +54,58 @@ export const BookingConfirmationPage: React.FC = () => {
     return null;
   });
 
-  const booking = snapshot?.booking;
   const customerId = snapshot?.customerId;
-
+  const isCustomerSession = Boolean(isAuthenticated && principal && principal.role === 'CUSTOMER');
   const isAuthorizedCustomer = Boolean(
-    isAuthenticated &&
-    principal &&
-    principal.role === 'CUSTOMER' &&
-    customerId &&
-    customerId === principal.id,
+    isCustomerSession && customerId && principal && customerId === principal.id,
   );
 
-  const isValidBooking = isAuthorizedCustomer && Boolean(booking);
+  // CWB-70: with an id in the URL the page always loads the latest booking from the
+  // ownership-checked detail API; route state is only an instant preview for the same id/user.
+  const { id: routeId } = useParams<{ id?: string }>();
+  const fetchKey = `${principal?.id ?? ''}:${routeId ?? ''}`;
+  const [retryIndex, setRetryIndex] = useState(0);
+  const [fetched, setFetched] = useState<{
+    key: string;
+    booking: BookingResult | null;
+    error: 'not-found' | 'failed' | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!routeId || isLoading || !isCustomerSession) return;
+    const controller = new AbortController();
+    const key = fetchKey;
+    bookingApi
+      .getBookingById(routeId, controller.signal)
+      .then((res) => {
+        if (controller.signal.aborted) return;
+        setFetched({
+          key,
+          booking: res.success ? res.data : null,
+          error: res.success ? null : 'failed',
+        });
+      })
+      .catch((err: { response?: { status?: number } }) => {
+        if (controller.signal.aborted) return;
+        const status = err.response?.status;
+        setFetched({
+          key,
+          booking: null,
+          error: status === 404 || status === 400 ? 'not-found' : 'failed',
+        });
+      });
+    return () => controller.abort();
+  }, [routeId, fetchKey, isLoading, isCustomerSession, retryIndex]);
+
+  const current = fetched?.key === fetchKey ? fetched : null;
+  const preview =
+    isAuthorizedCustomer && snapshot && (!routeId || snapshot.booking.id === routeId)
+      ? snapshot.booking
+      : undefined;
+  const booking = routeId ? (current?.booking ?? (current ? undefined : preview)) : preview;
+  const isFetchingDetail = Boolean(routeId && isCustomerSession && !current && !preview);
+  const fetchFailed = Boolean(routeId && current?.error === 'failed');
+  const isValidBooking = Boolean(booking) && (routeId ? isCustomerSession : isAuthorizedCustomer);
 
   // Sanitize browser history state on mount to prevent
   // booking data from lingering in history across logout or navigation,
@@ -81,7 +122,22 @@ export const BookingConfirmationPage: React.FC = () => {
     }
   }, [isLoading, isAuthorizedCustomer, isValidBooking]);
 
-  if (isLoading) {
+  if (fetchFailed) {
+    return (
+      <div className="container-page py-10 md:py-16">
+        <ErrorState
+          className="mx-auto max-w-3xl"
+          title="Không thể tải thông tin đặt phòng"
+          description="Đơn của bạn vẫn được lưu. Vui lòng thử lại hoặc xem trong lịch sử đặt phòng."
+          onRetry={() => setRetryIndex((n) => n + 1)}
+          retryTestId="confirmation-retry"
+          data-testid="confirmation-load-error"
+        />
+      </div>
+    );
+  }
+
+  if (isLoading || isFetchingDetail) {
     return (
       <div className="container-page py-10 md:py-14">
         <div className="mx-auto grid max-w-3xl gap-4" role="status" aria-busy="true">
@@ -105,9 +161,8 @@ export const BookingConfirmationPage: React.FC = () => {
             title="Không tìm thấy thông tin đặt phòng"
             description={
               <>
-                Trang xác nhận không có dữ liệu đặt phòng hợp lệ hoặc phiên làm việc đã kết thúc.
-                Vui lòng kiểm tra lại thông tin và thực hiện đặt chỗ mới. Nếu bạn vừa đặt phòng, đơn
-                vẫn được lưu trong lịch sử đặt phòng của bạn.
+                Không có đơn đặt phòng nào thuộc tài khoản này khớp với liên kết hiện tại. Nếu bạn
+                vừa đặt phòng, đơn vẫn được lưu trong lịch sử đặt phòng của bạn; không cần đặt lại.
               </>
             }
             action={
