@@ -52,6 +52,12 @@ const BookingHistoryPage = lazy(() =>
 const BookingDetailPage = lazy(() =>
   import('./pages/BookingDetailPage').then((m) => ({ default: m.BookingDetailPage })),
 );
+const ForgotPasswordPage = lazy(() =>
+  import('./pages/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
+);
+const ResetPasswordPage = lazy(() =>
+  import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })),
+);
 const AccountPage = lazy(() =>
   import('./pages/AccountPage').then((m) => ({ default: m.AccountPage })),
 );
@@ -106,6 +112,8 @@ export default function App() {
                     >
                       <Route path="login" element={<LoginPage />} />
                       <Route path="register" element={<RegisterPage />} />
+                      <Route path="forgot-password" element={<ForgotPasswordPage />} />
+                      <Route path="reset-password" element={<ResetPasswordPage />} />
                     </Route>
 
                     <Route

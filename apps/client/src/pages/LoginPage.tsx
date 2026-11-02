@@ -227,6 +227,13 @@ export const LoginPage: React.FC = () => {
                 required
               />
             </Field>
+            <Link
+              to="/forgot-password"
+              className="-mt-2 justify-self-end text-sm text-muted-foreground underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground"
+              data-testid="forgot-password-link"
+            >
+              Quên mật khẩu?
+            </Link>
 
             <Button type="submit" size="lg" className="mt-1 w-full" disabled={isSubmitting}>
               {isSubmitting && <LoaderCircle aria-hidden="true" className="animate-spin" />}

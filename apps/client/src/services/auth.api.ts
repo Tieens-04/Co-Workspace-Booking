@@ -13,6 +13,22 @@ export const authApi = {
     return response.data;
   },
 
+  /** Always resolves with the same message whether or not the email is registered. */
+  async forgotPassword(email: string): Promise<ApiSuccessResponse<null>> {
+    const response = await apiClient.post<ApiSuccessResponse<null>>('/auth/forgot-password', {
+      email,
+    });
+    return response.data;
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<ApiSuccessResponse<null>> {
+    const response = await apiClient.post<ApiSuccessResponse<null>>('/auth/reset-password', {
+      token,
+      newPassword,
+    });
+    return response.data;
+  },
+
   async login(payload: LoginRequest): Promise<ApiSuccessResponse<LoginData>> {
     const response = await apiClient.post<ApiSuccessResponse<LoginData>>('/auth/login', payload);
     return response.data;
