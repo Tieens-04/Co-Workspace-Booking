@@ -28,7 +28,9 @@ import {
   markNoShowBodySchema,
   adminBookingMutationQuerySchema,
   getRevenueQuerySchema,
+  exportReportQuerySchema,
 } from '../validators/admin-booking.validator.js';
+import { adminReportController } from '../controllers/admin-report.controller.js';
 import {
   getDashboardKpiQuerySchema,
   getDashboardScheduleQuerySchema,
@@ -127,6 +129,17 @@ router.delete(
   '/amenities/:id',
   validateParams(amenityIdParamsSchema),
   adminAmenityController.remove,
+);
+
+router.get(
+  '/reports/bookings.csv',
+  validateQuery(exportReportQuerySchema),
+  adminReportController.bookings,
+);
+router.get(
+  '/reports/revenue.csv',
+  validateQuery(exportReportQuerySchema),
+  adminReportController.revenue,
 );
 
 export default router;
