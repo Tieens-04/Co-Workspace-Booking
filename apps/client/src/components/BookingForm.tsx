@@ -430,7 +430,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       if (res.success) {
         // Email is sent asynchronously after the response; only claim what was persisted.
         showToast(`Đặt phòng thành công! Mã đặt phòng: ${res.data.bookingCode}.`, 'success');
-        navigate('/booking-confirmation', {
+        navigate(`/booking-confirmation/${res.data.id}`, {
           state: {
             booking: res.data,
             customerId: currentUserId,

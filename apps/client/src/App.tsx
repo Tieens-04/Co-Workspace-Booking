@@ -81,6 +81,10 @@ export default function App() {
                         }
                       >
                         <Route path="booking-confirmation" element={<BookingConfirmationPage />} />
+                        <Route
+                          path="booking-confirmation/:id"
+                          element={<BookingConfirmationPage />}
+                        />
                         <Route path="bookings" element={<BookingHistoryPage />} />
                         <Route path="bookings/:id" element={<BookingDetailPage />} />
                       </Route>

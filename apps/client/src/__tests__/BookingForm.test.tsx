@@ -16,6 +16,14 @@ import { ToastContext } from '../context/toast-context-base';
 vi.mock('../services/booking.api', () => ({
   bookingApi: {
     createBooking: vi.fn(),
+    // The confirmation page reloads the created booking by id (CWB-70).
+    getBookingById: vi.fn(async (id: string) => {
+      const { bookingApi: api } = await import('../services/booking.api');
+      const last = vi.mocked(api.createBooking).mock.results.at(-1);
+      const created = last ? await last.value : null;
+      if (created?.data?.id === id) return created;
+      throw { response: { status: 404 } };
+    }),
   },
 }));
 
@@ -88,6 +96,7 @@ describe('BookingForm', () => {
           <Routes>
             <Route path="/rooms/:id" element={<BookingForm {...defaultProps} {...props} />} />
             <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
+            <Route path="/booking-confirmation/:id" element={<BookingConfirmationPage />} />
             <Route path="/login" element={<div>Mock Login Page</div>} />
           </Routes>
         </AuthProvider>
@@ -669,6 +678,7 @@ describe('BookingForm', () => {
               element={<BookingForm {...defaultProps} roomId="room-uuid-2" />}
             />
             <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
+            <Route path="/booking-confirmation/:id" element={<BookingConfirmationPage />} />
           </Routes>
         </MemoryRouter>,
       );
@@ -1243,6 +1253,7 @@ describe('BookingForm', () => {
               <Routes>
                 <Route path="/rooms/:id" element={<BookingForm {...defaultProps} />} />
                 <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
+                <Route path="/booking-confirmation/:id" element={<BookingConfirmationPage />} />
               </Routes>
             </AuthProvider>
           </MemoryRouter>
