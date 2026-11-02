@@ -1,20 +1,29 @@
+import 'dotenv/config';
+import { pathToFileURL } from 'node:url';
 import { Prisma, PrismaClient, Role, RoomStatus } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { assertDemoSeedAllowed } from './demo-seed-guard.js';
 
-const prisma = new PrismaClient();
+// Demo-only accounts on a reserved domain (RFC 2606) so no real mailbox can receive mail.
+export const DEMO_USER_EMAILS = {
+  admin: 'admin@cospace.example',
+  customer1: 'nguyenvana@cospace.example',
+  customer2: 'tranthib@cospace.example',
+} as const;
 
-async function main() {
+/** Idempotent demo data. Callers must enforce assertDemoSeedAllowed first. */
+export async function seedDemoData(prisma: PrismaClient) {
   console.log('🌱 Starting database seed...');
 
-  // 1. Hash password chung cho seed data (mật khẩu mặc định: Password123@)
+  // 1. Hash password chung cho seed data (mật khẩu demo: Password123@, chỉ dùng dev/test)
   const defaultPasswordHash = await bcrypt.hash('Password123@', 10);
 
   // 2. Tạo Users (1 ADMIN, 2 CUSTOMER)
   const admin = await prisma.user.upsert({
-    where: { email: 'admin@cospace.vn' },
+    where: { email: DEMO_USER_EMAILS.admin },
     update: {},
     create: {
-      email: 'admin@cospace.vn',
+      email: DEMO_USER_EMAILS.admin,
       fullName: 'System Admin',
       passwordHash: defaultPasswordHash,
       phoneNumber: '0901234567',
@@ -23,10 +32,10 @@ async function main() {
   });
 
   const customer1 = await prisma.user.upsert({
-    where: { email: 'nguyenvana@gmail.com' },
+    where: { email: DEMO_USER_EMAILS.customer1 },
     update: {},
     create: {
-      email: 'nguyenvana@gmail.com',
+      email: DEMO_USER_EMAILS.customer1,
       fullName: 'Nguyễn Văn A',
       passwordHash: defaultPasswordHash,
       phoneNumber: '0912345678',
@@ -35,10 +44,10 @@ async function main() {
   });
 
   const customer2 = await prisma.user.upsert({
-    where: { email: 'tranthib@gmail.com' },
+    where: { email: DEMO_USER_EMAILS.customer2 },
     update: {},
     create: {
-      email: 'tranthib@gmail.com',
+      email: DEMO_USER_EMAILS.customer2,
       fullName: 'Trần Thị B',
       passwordHash: defaultPasswordHash,
       phoneNumber: '0923456789',
@@ -239,11 +248,21 @@ async function main() {
   console.log('🎉 Database seed completed successfully!');
 }
 
-main()
-  .catch((e) => {
-    console.error('❌ Seed error:', e);
-    process.exit(1);
-  })
-  .finally(async () => {
+async function main() {
+  const databaseName = assertDemoSeedAllowed(process.env);
+  console.log(`🔒 Demo seed allowed for database "${databaseName}".`);
+  const prisma = new PrismaClient();
+  try {
+    await seedDemoData(prisma);
+  } finally {
     await prisma.$disconnect();
+  }
+}
+
+// Run only when executed directly (prisma db seed / npm run seed), not when imported by tests.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((e) => {
+    console.error('❌ Seed error:', e instanceof Error ? e.message : e);
+    process.exit(1);
   });
+}
