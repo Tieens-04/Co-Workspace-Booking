@@ -639,6 +639,10 @@ Revenue API (`GET /api/v1/admin/revenue`, alias `/admin/bookings/revenue`) và K
 - `paidBookings`/`paidBookingsCount` đếm mọi booking PAID; `unpaidBookings`/`unpaidBookingsCount`
   chỉ đếm UNPAID chưa bị hủy. Số đơn hủy đếm độc lập và có thể đồng thời thuộc nhóm PAID;
   không cộng các nhóm này để suy ra tổng số booking.
+- Tiền và số lượng được tổng hợp ngay trong MySQL bằng `groupBy (status, paymentStatus)` với
+  `SUM(total_amount)`/`COUNT(*)`, nên chỉ tối đa 8 dòng được trả về Node dù dữ liệu lớn đến đâu
+  (CWB-57). KPI chỉ tải khoảng thời gian của booking `CONFIRMED`/`COMPLETED` để tính lấp đầy.
+  Cả hai báo cáo dùng chung một hàm quy tắc (`summarizeRevenueGroups`).
 
 Booking đã hủy không đóng góp thời gian sử dụng phòng dù đã PAID. Ví dụ PAID `100.00`
 sau hủy vẫn đóng góp `100.00` vào actual và potential, `0.00` vào unpaid.
