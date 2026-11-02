@@ -66,6 +66,8 @@ test('admin checks in current booking and completes an attended ended booking', 
   );
   await page.goto(`/admin/bookings?bookingCode=${ended.bookingCode}`);
   await page.getByTestId(`complete-booking-btn-${ended.id}`).click();
+  await expect(page.getByRole('alertdialog', { name: 'Xác nhận hoàn tất ca' })).toBeVisible();
+  await page.getByTestId('lifecycle-confirm-submit-btn').click();
   await expect(page.getByTestId(`booking-status-${ended.id}`)).toHaveAttribute(
     'data-status',
     'COMPLETED',

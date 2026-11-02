@@ -750,6 +750,8 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - Phân trang đầy đủ kèm trạng thái trống/rỗng thân thiện.
     - Hiện “Check-in” trong giờ đặt phòng khi chưa ghi nhận khách đến; hiển thị thời gian check-in theo giờ Việt Nam, hoặc “Chưa check-in” / “Chưa có dữ liệu check-in” cho dữ liệu lịch sử. Sau `endTime`, hiện “Hoàn tất” khi đã check-in hoặc thuộc dữ liệu lịch sử; “Không đến” chỉ khi chưa check-in. Cập nhật tại cả `startTime`, `endTime` và khi focus; server quyết định điều kiện thời gian.
     - Lỗi thao tác hiển thị riêng, không thay thế bảng danh sách. Khi complete/no-show trả `409`, giữ bảng trong lúc tải lại dữ liệu và không báo thành công.
+    - Hoàn tất / Không đến phải xác nhận qua `alertdialog` có tên (CWB-55). Trong lúc request đang chạy, nút của booking đó và nút xác nhận bị khóa, Escape không đóng dialog, bấm lặp chỉ gửi một request. Dialog đóng khi có kết quả; lỗi hiển thị trên trang và có thể thử lại. Server vẫn là nơi quyết định trạng thái hợp lệ.
+    - Dialog thanh toán, hủy đơn và xác nhận lifecycle giữ focus trong dialog (Tab trap) và trả focus về nút đã mở dialog khi đóng.
   - **Form Đặt phòng Khách vãng lai (`AdminGuestBookingForm`)**:
     - Nhập họ tên và số điện thoại khách vãng lai.
     - Danh sách chọn phòng làm việc kèm trạng thái và giá. Chặn chọn phòng đang bảo trì (`MAINTENANCE`).
