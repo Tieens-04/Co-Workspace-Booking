@@ -21,6 +21,7 @@ import {
 } from '../utils/booking-time.util.js';
 import { getDayBounds } from '../utils/room-availability.util.js';
 import { AppError } from '../utils/error.util.js';
+import { BookingIdempotency, idempotencyKeyReused } from '../utils/idempotency.util.js';
 
 export type BookingUserIdentity = {
   userId: string;
@@ -43,7 +44,32 @@ export type CreateBookingRepoInput = {
   endDate: Date;
   durationMinutes: number;
   note?: string | null;
+  idempotency?: BookingIdempotency;
 } & BookingIdentity;
+
+/** Result of createBooking; `idempotentReplay` marks a retried request answered with the original. */
+export type CreatedBookingResult = BookingResponseDto & { idempotentReplay?: boolean };
+
+const createdBookingInclude = { room: { select: { id: true, name: true } } } as const;
+
+function toBookingResponse(
+  booking: Prisma.BookingGetPayload<{ include: typeof createdBookingInclude }>,
+): BookingResponseDto {
+  return {
+    id: booking.id,
+    bookingCode: booking.bookingCode,
+    room: { id: booking.room.id, name: booking.room.name },
+    startTime: booking.startTime,
+    endTime: booking.endTime,
+    checkedInAt: booking.checkedInAt,
+    attendanceTrackingEnabled: booking.attendanceTrackingEnabled,
+    totalAmount: booking.totalAmount.toFixed(2),
+    note: booking.note,
+    status: booking.status,
+    paymentStatus: booking.paymentStatus,
+    paymentMethod: booking.paymentMethod,
+  };
+}
 
 export function assertValidBookingIdentity(data: BookingIdentity): void {
   if (data.userId && (data.guestName || data.guestPhone)) {
@@ -192,7 +218,7 @@ export function mapAdminBookingRecordToDto(
 }
 
 export interface BookingRepositoryContract {
-  createBooking(data: CreateBookingRepoInput): Promise<BookingResponseDto>;
+  createBooking(data: CreateBookingRepoInput): Promise<CreatedBookingResult>;
   findManyAndCountForUser(
     userId: string,
     filter: FindUserBookingsFilter,
@@ -225,11 +251,33 @@ export interface AdminBookingRepositoryContract {
 export class BookingRepository
   implements BookingRepositoryContract, AdminBookingRepositoryContract
 {
-  async createBooking(data: CreateBookingRepoInput): Promise<BookingResponseDto> {
+  async createBooking(data: CreateBookingRepoInput): Promise<CreatedBookingResult> {
     assertValidBookingIdentity(data);
     return prisma.$transaction(async (tx) => {
       // 1. Lock room row in MySQL with FOR UPDATE
       const lockedRoom = await lockRoomRow(tx, data.roomId);
+
+      // 1b. Idempotent retry (CWB-66): checked after the room lock so concurrent duplicates of
+      // the same intent serialize, and before time/overlap rules so a retry after a lost response
+      // still returns the booking it already created. The locking read sees the latest commit.
+      if (data.idempotency) {
+        const [previous] = await tx.$queryRaw<
+          Array<{ id: string; idempotency_hash: string | null }>
+        >(
+          Prisma.sql`SELECT id, idempotency_hash FROM bookings
+            WHERE idempotency_scope = ${data.idempotency.scope}
+              AND idempotency_key = ${data.idempotency.key}
+            FOR UPDATE`,
+        );
+        if (previous) {
+          if (previous.idempotency_hash !== data.idempotency.hash) throw idempotencyKeyReused();
+          const original = await tx.booking.findUniqueOrThrow({
+            where: { id: previous.id },
+            include: createdBookingInclude,
+          });
+          return { ...toBookingResponse(original), idempotentReplay: true };
+        }
+      }
 
       // 2. Reject if room is currently in MAINTENANCE
       if (lockedRoom.status === 'MAINTENANCE') {
@@ -282,31 +330,14 @@ export class BookingRepository
           status: BookingStatus.CONFIRMED,
           paymentStatus: PaymentStatus.UNPAID,
           paymentMethod: null,
+          idempotencyScope: data.idempotency?.scope ?? null,
+          idempotencyKey: data.idempotency?.key ?? null,
+          idempotencyHash: data.idempotency?.hash ?? null,
         },
-        include: {
-          room: {
-            select: { id: true, name: true },
-          },
-        },
+        include: createdBookingInclude,
       });
 
-      return {
-        id: createdBooking.id,
-        bookingCode: createdBooking.bookingCode,
-        room: {
-          id: createdBooking.room.id,
-          name: createdBooking.room.name,
-        },
-        startTime: createdBooking.startTime,
-        endTime: createdBooking.endTime,
-        checkedInAt: createdBooking.checkedInAt,
-        attendanceTrackingEnabled: createdBooking.attendanceTrackingEnabled,
-        totalAmount: createdBooking.totalAmount.toFixed(2),
-        note: createdBooking.note,
-        status: createdBooking.status,
-        paymentStatus: createdBooking.paymentStatus,
-        paymentMethod: createdBooking.paymentMethod,
-      };
+      return toBookingResponse(createdBooking);
     });
   }
 

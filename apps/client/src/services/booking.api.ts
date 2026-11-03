@@ -11,9 +11,11 @@ export const bookingApi = {
   createBooking: async (
     payload: CreateBookingPayload,
     signal?: AbortSignal,
+    idempotencyKey?: string,
   ): Promise<CreateBookingResponse> => {
     const response = await apiClient.post<CreateBookingResponse>('/bookings', payload, {
       signal,
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
     });
     return response.data;
   },

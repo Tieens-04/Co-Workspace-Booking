@@ -240,6 +240,7 @@ describe('BookingForm', () => {
           endTime: parseVnDateTimeLocalToUtc('2026-10-25T18:00')!.toISOString(),
         }),
         expect.any(AbortSignal),
+        expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/),
       );
     });
 
@@ -362,6 +363,7 @@ describe('BookingForm', () => {
           note: 'Cần thêm 2 ghế',
         },
         expect.any(AbortSignal),
+        expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/),
       );
 
       // Verify confirmation screen (AC2)

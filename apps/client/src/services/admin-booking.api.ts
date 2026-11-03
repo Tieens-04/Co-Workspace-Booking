@@ -40,12 +40,14 @@ export const adminBookingApi = {
   createGuestBooking: async (
     payload: CreateGuestBookingPayload,
     signal?: AbortSignal,
+    idempotencyKey?: string,
   ): Promise<AdminGuestBookingApiResponse> => {
     const response = await apiClient.post<AdminGuestBookingApiResponse>(
       '/admin/bookings/guest',
       payload,
       {
         signal,
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       },
     );
     return response.data;
