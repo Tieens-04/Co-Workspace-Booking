@@ -35,7 +35,8 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
   };
 
   /** Notification double; `canDeliver` true so the worker really attempts delivery. */
-  const fakeNotifier = (outcome: () => Promise<boolean> = async () => true) => {
+  type Payload = { bookingCode: string };
+  const fakeNotifier = (outcome: (payload: Payload) => Promise<boolean> = async () => true) => {
     const confirmation = vi.fn(outcome);
     const cancellation = vi.fn(outcome);
     const notifier = {

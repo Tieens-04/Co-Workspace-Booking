@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { BookingService } from '../services/booking.service.js';
 import { AdminBookingService } from '../services/admin-booking.service.js';
 import { BookingStatus, PaymentStatus } from '@prisma/client';
@@ -13,7 +13,7 @@ import { AdminBookingResponseDto } from '../types/admin-booking.type.js';
 describe('Booking notification triggers (outbox)', () => {
   let mockBookingRepo: any;
   let mockAdminBookingRepo: any;
-  let outbox: { kick: ReturnType<typeof vi.fn> };
+  let outbox: { kick: Mock<() => void> };
 
   const validRoomId = '11111111-1111-4111-8111-111111111111';
   const userId = 'user-uuid-1';
@@ -57,7 +57,7 @@ describe('Booking notification triggers (outbox)', () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
-    outbox = { kick: vi.fn() };
+    outbox = { kick: vi.fn<() => void>() };
     mockBookingRepo = {
       createBooking: vi.fn().mockResolvedValue(mockBooking),
       cancelBooking: vi.fn().mockResolvedValue({
