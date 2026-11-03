@@ -16,6 +16,7 @@
 | `/admin`                | Trang quản trị phòng làm việc dành cho vai trò `ADMIN`: danh sách phòng phân trang, xem tiện ích/ảnh, form inline tạo và chỉnh sửa phòng dùng chung, quản lý danh sách URL ảnh thủ công.            | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
 | `/admin/bookings`       | Trang quản trị đặt phòng dành cho vai trò `ADMIN`: tra cứu đơn theo mã, lọc theo ngày sử dụng phòng (giờ VN), lọc theo trạng thái (kết hợp logic AND); form đặt phòng trực tiếp cho khách vãng lai. | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
 | `/admin/audit`          | Lịch sử thao tác (CWB-67) dành cho `ADMIN`: lọc theo đối tượng, thao tác, ID; phân trang 20 sự kiện/trang; hiển thị trường thay đổi trước → sau.                                                    | Như `/admin`: chưa đăng nhập → `/login`; `CUSTOMER` → giao diện 403.                                                                                                                                                                                                                              |
+| `/admin/emails`         | Email thông báo (CWB-68) dành cho `ADMIN`: trạng thái gửi email xác nhận/hủy, lọc theo trạng thái, nút gửi lại cho email `FAILED`/`SKIPPED`.                                                        | Như `/admin`: chưa đăng nhập → `/login`; `CUSTOMER` → giao diện 403.                                                                                                                                                                                                                              |
 | `/booking-confirmation` | Màn hình xác nhận đặt phòng thành công: hiển thị mã đặt phòng, thông tin phòng, thời gian, trạng thái, liên kết xem chi tiết/lịch sử và hướng dẫn thanh toán tại quầy.                              | Nhận dữ liệu đặt phòng qua router state sau khi tạo thành công. Truy cập trực tiếp không có state sẽ hiển thị giao diện fallback thông báo thân thiện và nút quay lại danh sách phòng.                                                                                                            |
 | `/bookings`             | Trang lịch sử đặt phòng dành cho vai trò `CUSTOMER`: danh sách đơn phân trang (10 đơn/trang), 3 bộ lọc (Tất cả, Sắp tới, Đã hoàn tất), hiển thị rõ mã đơn, ngày giờ, số tiền và trạng thái.         | Khách chưa đăng nhập → chuyển hướng sang `/login`. Vai trò `ADMIN` truy cập → chuyển về trang chủ `/`. Đổi tài khoản tự động làm mới dữ liệu, không rò rỉ đơn của phiên cũ.                                                                                                                       |
 | `/bookings/:id`         | Trang chi tiết đặt phòng dành cho vai trò `CUSTOMER`: tải trực tiếp dữ liệu từ API bằng UUID, kiểm tra quyền sở hữu IDOR phía server, hiển thị đầy đủ thông tin phòng, giờ VN, tiền và trạng thái.  | Khách chưa đăng nhập → chuyển hướng sang `/login`. Đơn không tồn tại hoặc thuộc người khác → hiển thị thông báo không tìm thấy (404), kèm liên kết quay lại lịch sử và danh sách phòng.                                                                                                           |
@@ -862,6 +863,25 @@ npm run test --workspace=apps/client -- src/__tests__/AdminBookingsPage.test.tsx
 ```bash
 npm run test:integration --workspace=apps/server -- src/__tests__/audit-log.integration.test.ts
 npm run test --workspace=apps/client -- src/__tests__/AdminAuditPage.test.tsx
+```
+
+### 8. Hàng Đợi Email Bền Vững (Email Outbox, CWB-68)
+
+- **Ghi hàng đợi**: tạo booking của CUSTOMER, khách tự hủy và admin hủy booking của tài khoản đã đăng ký ghi một dòng `email_outbox` **trong cùng transaction** với thay đổi booking. Rollback booking thì không có email; email lỗi không bao giờ hoàn tác booking/hủy booking. Booking khách vãng lai không có email nên không ghi hàng đợi.
+- **Không gửi lặp theo sự kiện**: khóa duy nhất `(kind, booking_id)` nên mỗi booking có tối đa 1 email xác nhận và 1 email hủy; hủy lặp lại (khách/admin) hoặc retry `Idempotency-Key` không tạo email mới.
+- **Không lưu dữ liệu nhạy cảm**: hàng đợi chỉ lưu loại email và booking id; người nhận và nội dung được dựng từ booking lúc gửi. Email đặt lại mật khẩu vẫn gửi trực tiếp, token không bao giờ vào hàng đợi. Log chỉ ghi mã booking và mã lỗi an toàn.
+- **Worker**: chạy trong backend (`server.ts`), quét mỗi 15 giây và ngay sau mỗi booking/hủy. Mỗi lượt lấy tối đa 10 email đến hạn bằng `SELECT ... FOR UPDATE SKIP LOCKED` rồi đẩy hạn thử tiếp (lease 2 phút) trước khi gửi, nên nhiều worker/instance không lấy trùng một email.
+- **Retry có giới hạn**: lỗi SMTP → thử lại sau 30s, 60s, 120s, ... (tối đa 1 giờ), quá 5 lần → `FAILED`. Worker chết giữa chừng thì email được lấy lại khi hết lease.
+- **Trạng thái**: `QUEUED` (chờ gửi/đang chờ thử lại), `SENT`, `FAILED`, `SKIPPED` (`last_error`: `SMTP_DISABLED` khi chưa cấu hình SMTP, `NO_RECIPIENT`, `BOOKING_CANCELLED` khi đơn bị hủy trước khi gửi email xác nhận).
+- **Cam kết giao nhận**: at-least-once, **không** exactly-once. Nếu SMTP đã nhận thư nhưng tiến trình dừng trước khi ghi `SENT`, email có thể được gửi lại sau khi hết lease.
+- **API ADMIN** (thiếu token `401`, CUSTOMER `403`):
+  - `GET /api/v1/admin/email-outbox?page=&limit=&status=&bookingId=`: `limit` 1–100 (mặc định 20), `status` thuộc 4 trạng thái trên, `bookingId` là UUID, trường lạ → `400`. Không trả địa chỉ người nhận.
+  - `POST /api/v1/admin/email-outbox/:id/retry`: chỉ email `FAILED`/`SKIPPED` → về `QUEUED` với lượt thử mới; trạng thái khác → `409 EMAIL_NOT_RETRYABLE`; không tồn tại → `404 EMAIL_NOT_FOUND`.
+- **Giao diện**: `/admin/emails` ("Email thông báo") lọc theo trạng thái, phân trang, nút "Gửi lại".
+
+```bash
+npm run test:integration --workspace=apps/server -- src/__tests__/email-outbox.integration.test.ts
+npm run test --workspace=apps/client -- src/__tests__/AdminEmailsPage.test.tsx
 ```
 
 ---

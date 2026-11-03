@@ -22,6 +22,7 @@ import {
 import { getDayBounds } from '../utils/room-availability.util.js';
 import { AppError } from '../utils/error.util.js';
 import { AuditAction, AuditActor, recordAuditEvent } from './audit.repository.js';
+import { enqueueBookingEmail } from './email-outbox.repository.js';
 import { BookingIdempotency, idempotencyKeyReused } from '../utils/idempotency.util.js';
 
 export type BookingUserIdentity = {
@@ -413,6 +414,10 @@ export class BookingRepository
         });
       }
 
+      if (data.userId) {
+        await enqueueBookingEmail(tx, 'BOOKING_CONFIRMATION', createdBooking.id);
+      }
+
       return toBookingResponse(createdBooking);
     });
   }
@@ -529,6 +534,8 @@ export class BookingRepository
         },
         select: bookingReadSelect,
       });
+
+      await enqueueBookingEmail(tx, 'BOOKING_CANCELLATION', id);
 
       const dto = mapBookingRecordToDto(updated);
       dto.isNewlyCancelled = true;
@@ -700,6 +707,10 @@ export class BookingRepository
       await auditBookingChange(tx, actor, 'BOOKING_CANCELLED_BY_ADMIN', id, auditBefore, updated);
 
       const dto = mapAdminBookingRecordToDto(updated);
+      // Walk-in guests have no email address; only registered customers are notified.
+      if (dto.customer.kind === 'USER') {
+        await enqueueBookingEmail(tx, 'BOOKING_CANCELLATION', id);
+      }
       dto.isNewlyCancelled = true;
       return dto;
     });

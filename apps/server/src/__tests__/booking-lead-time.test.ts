@@ -3,13 +3,13 @@ import request from 'supertest';
 import { Prisma, Role } from '@prisma/client';
 import app from '../app.js';
 import { generateToken } from '../utils/jwt.util.js';
-import { notificationService } from '../services/notification.service.js';
 import { lockRoomRow } from '../repositories/room.repository.js';
 
 const db = vi.hoisted(() => {
   const tx = {
     booking: { findMany: vi.fn(), create: vi.fn() },
     auditEvent: { create: vi.fn() },
+    emailOutbox: { createMany: vi.fn() },
   };
   return { tx, transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(tx)) };
 });
@@ -50,7 +50,6 @@ describe('Booking lead time at the persistence boundary', () => {
       paymentStatus: 'UNPAID',
       paymentMethod: null,
     });
-    vi.spyOn(notificationService, 'sendBookingConfirmation').mockResolvedValue(true);
   });
 
   afterEach(() => {
@@ -85,7 +84,7 @@ describe('Booking lead time at the persistence boundary', () => {
       expect(response.status).toBe(400);
       expect(response.body.code).toBe('ADVANCE_NOTICE');
       expect(db.tx.booking.create).not.toHaveBeenCalled();
-      expect(notificationService.sendBookingConfirmation).not.toHaveBeenCalled();
+      expect(db.tx.emailOutbox.createMany).not.toHaveBeenCalled();
     });
 
     it.each([0, -1])(
@@ -128,7 +127,7 @@ describe('Booking lead time at the persistence boundary', () => {
       expect(db.transaction).toHaveBeenCalledTimes(2);
       expect(lockRoomRow).toHaveBeenCalledTimes(2);
       expect(db.tx.booking.create).toHaveBeenCalledTimes(1);
-      expect(notificationService.sendBookingConfirmation).not.toHaveBeenCalled();
+      expect(db.tx.emailOutbox.createMany).not.toHaveBeenCalled();
     });
   }
 
@@ -141,6 +140,6 @@ describe('Booking lead time at the persistence boundary', () => {
     expect(response.status).toBe(400);
     expect(response.body.code).toBe('ADVANCE_NOTICE');
     expect(db.tx.booking.create).not.toHaveBeenCalled();
-    expect(notificationService.sendBookingConfirmation).not.toHaveBeenCalled();
+    expect(db.tx.emailOutbox.createMany).not.toHaveBeenCalled();
   });
 });

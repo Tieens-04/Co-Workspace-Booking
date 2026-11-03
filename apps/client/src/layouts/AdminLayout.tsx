@@ -7,6 +7,7 @@ import {
   History,
   LayoutDashboard,
   LogOut,
+  Mail,
   Menu,
   Sparkles,
   Store,
@@ -58,6 +59,13 @@ const NAV_ITEMS = [
     label: 'Lịch sử thao tác',
     icon: History,
     testId: 'admin-nav-audit',
+    end: false,
+  },
+  {
+    to: '/admin/emails',
+    label: 'Email thông báo',
+    icon: Mail,
+    testId: 'admin-nav-emails',
     end: false,
   },
 ];

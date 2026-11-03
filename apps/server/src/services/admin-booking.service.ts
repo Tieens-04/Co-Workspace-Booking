@@ -1,7 +1,5 @@
 import { PaymentMethod } from '@prisma/client';
 import type { AuditActor } from '../repositories/audit.repository.js';
-import { logEmailFailure } from '../utils/email-log.util.js';
-import { trackBackgroundTask } from '../utils/background-tasks.util.js';
 import {
   AdminBookingRepositoryContract,
   bookingRepository,
@@ -15,16 +13,13 @@ import {
   AdminRevenueResponseDto,
 } from '../types/admin-booking.type.js';
 import { CreateGuestBookingInput } from '../validators/admin-booking.validator.js';
-import {
-  notificationService as defaultNotificationService,
-  NotificationService,
-} from './notification.service.js';
+import { emailOutboxService, EmailOutboxService } from './email-outbox.service.js';
 
 export class AdminBookingService {
   constructor(
     private readonly bookingService: BookingService = defaultBookingService,
     private readonly adminBookingRepo: AdminBookingRepositoryContract = bookingRepository,
-    private readonly notificationService: NotificationService = defaultNotificationService,
+    private readonly emailOutbox: Pick<EmailOutboxService, 'kick'> = emailOutboxService,
   ) {}
 
   async getBookings(
@@ -78,28 +73,9 @@ export class AdminBookingService {
   ): Promise<AdminBookingResponseDto> {
     const booking = await this.adminBookingRepo.cancelBookingForAdmin(id, reason, actor);
 
-    if (
-      booking.isNewlyCancelled !== false &&
-      booking.customer.kind === 'USER' &&
-      booking.customer.email
-    ) {
-      trackBackgroundTask(
-        (async () => {
-          try {
-            await this.notificationService.sendBookingCancellation({
-              recipientEmail: booking.customer.email!,
-              customerName: booking.customer.name,
-              bookingCode: booking.bookingCode,
-              roomName: booking.room.name,
-              startTime: booking.startTime,
-              endTime: booking.endTime,
-              reason,
-            });
-          } catch (notifErr: unknown) {
-            logEmailFailure('admin cancellation', booking.bookingCode, notifErr);
-          }
-        })(),
-      );
+    // Queued in the cancel transaction for registered customers only (guests have no email).
+    if (booking.isNewlyCancelled !== false && booking.customer.kind === 'USER') {
+      this.emailOutbox.kick();
     }
 
     return booking;

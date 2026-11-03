@@ -72,7 +72,7 @@ Migration, dữ liệu demo và tài khoản admin là ba bước riêng; triể
 
 Email xác nhận/hủy đặt phòng mã hóa mọi dữ liệu động khi chèn vào HTML (CWB-45), để ký tự đặc biệt và mã định dạng hiển thị nguyên văn, không tạo thẻ HTML hoặc liên kết. Bản văn bản thuần và dữ liệu booking giữ nguyên; lỗi gửi email không hoàn tác booking đã lưu.
 
-Email được gửi bất đồng bộ sau khi API trả kết quả, nên response đặt/hủy phòng không chứa trạng thái gửi email. Giao diện chỉ xác nhận booking đã được lưu (kèm mã đặt phòng) và không khẳng định email đã gửi (CWB-56). Thiếu SMTP, gửi lỗi hoặc gửi chậm đều không đổi kết quả thành công của booking/hủy booking.
+Email xác nhận/hủy được ghi vào hàng đợi bền vững `email_outbox` trong cùng transaction với booking/hủy booking, rồi worker trong backend gửi bất đồng bộ (thử lại có giới hạn, xem [tài liệu API](docs/application-reference.md) mục CWB-68). Response đặt/hủy phòng không chứa trạng thái gửi email. Giao diện chỉ xác nhận booking đã được lưu (kèm mã đặt phòng) và không khẳng định email đã gửi (CWB-56). Thiếu SMTP, gửi lỗi hoặc gửi chậm đều không đổi kết quả thành công của booking/hủy booking.
 
 Backend đọc sáu biến SMTP sau; biến môi trường của tiến trình ưu tiên hơn giá trị trong dotenv:
 
@@ -109,7 +109,7 @@ cp .env.production.example .env
 docker compose up -d --build
 ```
 
-Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). API ở `/api/v1`; liveness ở `/health`, readiness (kiểm tra DB, trả `503` khi DB mất kết nối hoặc đang dừng) ở `/api/v1/health` và được dùng cho healthcheck của container. Backend không công khai cổng `5000`; MySQL chỉ bind `127.0.0.1`. Khi dừng (`SIGTERM`), backend chờ request và email đang gửi trong `SHUTDOWN_TIMEOUT_MS` (mặc định 20000) rồi ngắt kết nối DB. Quy trình HTTPS, sao lưu trước migration, rollback/khôi phục và bằng chứng phát hành: [docs/release-runbook.md](docs/release-runbook.md). Migrations được áp dụng tự động khi container backend khởi động qua `npm run db:deploy`, dùng Prisma CLI đã khóa trong dependencies của workspace server. Prisma CLI và client được npm hoist về dependencies ở gốc và được mang theo trong image; lệnh khởi động không tự tải Prisma phiên bản mới.
+Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). API ở `/api/v1`; liveness ở `/health`, readiness (kiểm tra DB, trả `503` khi DB mất kết nối hoặc đang dừng) ở `/api/v1/health` và được dùng cho healthcheck của container. Backend không công khai cổng `5000`; MySQL chỉ bind `127.0.0.1`. Khi dừng (`SIGTERM`), backend dừng worker email, chờ request và lượt gửi email đang chạy trong `SHUTDOWN_TIMEOUT_MS` (mặc định 20000) rồi ngắt kết nối DB. Quy trình HTTPS, sao lưu trước migration, rollback/khôi phục và bằng chứng phát hành: [docs/release-runbook.md](docs/release-runbook.md). Migrations được áp dụng tự động khi container backend khởi động qua `npm run db:deploy`, dùng Prisma CLI đã khóa trong dependencies của workspace server. Prisma CLI và client được npm hoist về dependencies ở gốc và được mang theo trong image; lệnh khởi động không tự tải Prisma phiên bản mới.
 
 **Reverse proxy:** chạy trực tiếp giữ `TRUST_PROXY=false`, kể cả production. Compose đặt `true` để tin đúng một Nginx; Nginx ghi đè header chuyển tiếp bằng IP kết nối. Chỉ bật khi đã chặn truy cập trực tiếp backend; cần đánh giá lại nếu thêm CDN/load balancer.
 

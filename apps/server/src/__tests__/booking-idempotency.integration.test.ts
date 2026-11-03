@@ -6,7 +6,6 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { hashPassword } from '../utils/password.util.js';
-import { notificationService } from '../services/notification.service.js';
 import { drainBackgroundTasks } from '../utils/background-tasks.util.js';
 
 describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
@@ -82,7 +81,6 @@ describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
   });
 
   it('returns the original booking when a request is retried after its response was lost', async () => {
-    const send = vi.spyOn(notificationService, 'sendBookingConfirmation').mockResolvedValue(true);
     const key = randomUUID();
     const body = { roomId, ...nextSlot(), note: 'Ghi chú' };
     const before = await countIn(roomId);
@@ -98,7 +96,8 @@ describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
     expect(retry.body.data).toEqual(first.body.data);
     expect(retry.body.data).not.toHaveProperty('idempotentReplay');
     expect(await countIn(roomId)).toBe(before + 1);
-    expect(send).toHaveBeenCalledTimes(1);
+    // CWB-68: the replay queues no second confirmation email.
+    expect(await prisma.emailOutbox.count({ where: { bookingId: first.body.data.id } })).toBe(1);
   });
 
   it('serializes concurrent requests with the same key into one booking', async () => {

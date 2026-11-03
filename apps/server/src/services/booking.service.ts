@@ -21,21 +21,14 @@ import {
 import { validateBookingTime } from '../utils/booking-time.util.js';
 import { generateBookingCode } from '../utils/booking-code.util.js';
 import { AppError } from '../utils/error.util.js';
-import { logEmailFailure } from '../utils/email-log.util.js';
-import { trackBackgroundTask } from '../utils/background-tasks.util.js';
-import { userRepository, UserRepository } from '../repositories/user.repository.js';
-import {
-  notificationService as defaultNotificationService,
-  NotificationService,
-} from './notification.service.js';
+import { emailOutboxService, EmailOutboxService } from './email-outbox.service.js';
 
 export const MAX_CODE_RETRIES = 5;
 
 export class BookingService {
   constructor(
     private readonly bookingRepo: BookingRepositoryContract = bookingRepository,
-    private readonly userRepo: UserRepository = userRepository,
-    private readonly notificationService: NotificationService = defaultNotificationService,
+    private readonly emailOutbox: Pick<EmailOutboxService, 'kick'> = emailOutboxService,
   ) {}
 
   async createBooking(
@@ -112,29 +105,8 @@ export class BookingService {
           ...(auditActor ? { auditActor } : {}),
         });
 
-        // A replayed retry already sent its confirmation when it was first created.
-        if (identity.userId && !booking.idempotentReplay) {
-          trackBackgroundTask(
-            (async () => {
-              try {
-                const user = await this.userRepo.findById(identity.userId!);
-                if (user?.email) {
-                  await this.notificationService.sendBookingConfirmation({
-                    recipientEmail: user.email,
-                    customerName: user.fullName,
-                    bookingCode: booking.bookingCode,
-                    roomName: booking.room.name,
-                    startTime: booking.startTime,
-                    endTime: booking.endTime,
-                    totalAmount: booking.totalAmount,
-                  });
-                }
-              } catch (notifErr: unknown) {
-                logEmailFailure('confirmation', booking.bookingCode, notifErr);
-              }
-            })(),
-          );
-        }
+        // The email was queued in the booking transaction; a replay queued nothing new.
+        if (identity.userId && !booking.idempotentReplay) this.emailOutbox.kick();
 
         return booking;
       } catch (err) {
@@ -201,28 +173,8 @@ export class BookingService {
   ): Promise<BookingResponseDto> {
     const booking = await this.bookingRepo.cancelBooking(userId, id, clock);
 
-    if (booking.isNewlyCancelled !== false) {
-      trackBackgroundTask(
-        (async () => {
-          try {
-            const user = await this.userRepo.findById(userId);
-            if (user?.email) {
-              await this.notificationService.sendBookingCancellation({
-                recipientEmail: user.email,
-                customerName: user.fullName,
-                bookingCode: booking.bookingCode,
-                roomName: booking.room.name,
-                startTime: booking.startTime,
-                endTime: booking.endTime,
-                reason: booking.cancellationReason,
-              });
-            }
-          } catch (notifErr: unknown) {
-            logEmailFailure('cancellation', booking.bookingCode, notifErr);
-          }
-        })(),
-      );
-    }
+    // The cancellation email was queued in the cancel transaction (once per booking).
+    if (booking.isNewlyCancelled !== false) this.emailOutbox.kick();
 
     return booking;
   }

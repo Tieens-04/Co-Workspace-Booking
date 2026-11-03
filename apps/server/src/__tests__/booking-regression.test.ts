@@ -384,6 +384,7 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
           findMany: vi.fn().mockResolvedValue([]), // No conflicts found!
           create: vi.fn().mockResolvedValue(mockCreatedRecord),
         },
+        emailOutbox: { createMany: vi.fn().mockResolvedValue({ count: 1 }) },
       };
 
       vi.mocked(lockRoomRow).mockResolvedValueOnce({
@@ -410,6 +411,11 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
       expect(result.id).toBe('new-booking-uuid');
       expect(result.totalAmount).toBe('200.00');
       expect(mockTx.booking.create).toHaveBeenCalledTimes(1);
+      // CWB-68: the confirmation email is queued in the same transaction.
+      expect(mockTx.emailOutbox.createMany).toHaveBeenCalledWith({
+        data: [{ kind: 'BOOKING_CONFIRMATION', bookingId: 'new-booking-uuid' }],
+        skipDuplicates: true,
+      });
     });
   });
 });
