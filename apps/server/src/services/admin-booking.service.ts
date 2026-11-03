@@ -48,8 +48,9 @@ export class AdminBookingService {
   async createGuestBooking(
     input: CreateGuestBookingInput,
     now = new Date(),
-  ): Promise<AdminBookingResponseDto> {
-    const booking = await this.bookingService.createGuestBooking(input, now);
+    retry?: { adminId: string; idempotencyKey: string },
+  ): Promise<AdminBookingResponseDto & { idempotentReplay?: boolean }> {
+    const booking = await this.bookingService.createGuestBooking(input, now, retry);
     return {
       ...booking,
       customer: {

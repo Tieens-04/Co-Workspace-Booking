@@ -241,6 +241,7 @@ describe('AdminGuestBookingForm Component Tests', () => {
         note: 'Khách vãng lai VIP',
       },
       expect.any(AbortSignal),
+      expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/),
     );
   });
 

@@ -166,9 +166,16 @@ model Booking {
   guestName  String? @map("guest_name") @db.VarChar(191)
   guestPhone String? @map("guest_phone") @db.VarChar(191)
 
+  // CWB-66: retry identification. Scope is `user:<id>` / `admin:<id>`; hash is SHA-256 of the
+  // normalized create payload so a reused key with a different payload is rejected.
+  idempotencyScope String? @map("idempotency_scope") @db.VarChar(191)
+  idempotencyKey   String? @map("idempotency_key") @db.VarChar(64)
+  idempotencyHash  String? @map("idempotency_hash") @db.Char(64)
+
   user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
   room Room  @relation(fields: [roomId], references: [id], onDelete: Restrict)
 
+  @@unique([idempotencyScope, idempotencyKey], map: "bookings_idempotency_scope_key_key")
   // Composite index cực kỳ quan trọng cho availability query (StartA < EndB AND EndA > StartB)
   @@index([roomId, startTime, endTime, status])
   @@index([userId])

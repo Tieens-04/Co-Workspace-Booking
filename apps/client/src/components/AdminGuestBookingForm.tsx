@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, useContext } from 'react';
 import { AuthContext } from '../context/auth-context-base';
 import { useToast } from '../hooks/useToast';
+import { useIdempotencyKey } from '../hooks/useIdempotencyKey';
 import { roomApi } from '../services/room.api';
 import { adminBookingApi } from '../services/admin-booking.api';
 import { RoomListItem, RoomAvailabilitySlot } from '../types/room';
@@ -95,6 +96,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   const [currentMs, setCurrentMs] = useState<number>(() => Date.now());
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const { keyFor, reset: resetIdempotencyKey } = useIdempotencyKey();
   const roomsRequestRef = useRef<AbortController | null>(null);
 
   // Periodic clock update
@@ -419,16 +421,19 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
       }
 
       // 4. Send request
+      const payload = {
+        roomId: selectedRoomId,
+        startTime: startUtc!.toISOString(),
+        endTime: endUtc!.toISOString(),
+        guestName: trimmedName,
+        guestPhone: trimmedPhone,
+        note: note.trim() === '' ? null : note.trim(),
+      };
+      // Same intent reuses its key, so a retry after a lost response returns the same booking.
       const res = await adminBookingApi.createGuestBooking(
-        {
-          roomId: selectedRoomId,
-          startTime: startUtc!.toISOString(),
-          endTime: endUtc!.toISOString(),
-          guestName: trimmedName,
-          guestPhone: trimmedPhone,
-          note: note.trim() === '' ? null : note.trim(),
-        },
+        payload,
         controller.signal,
+        keyFor(payload),
       );
 
       if (
@@ -440,6 +445,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
       }
 
       if (res.success) {
+        resetIdempotencyKey();
         showToast('Đặt phòng cho khách vãng lai thành công!', 'success');
         setCreatedBooking(res.data);
         onBookingCreatedRef.current?.(res.data);
