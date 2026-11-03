@@ -16,7 +16,9 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p$${MYSQL_ROOT_PASSWORD}"]
+      # TCP, not the socket: on first boot the init server runs with networking disabled, and a
+      # socket ping would report healthy before the server can accept connections from `db:3306`.
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-u", "root", "-p$${MYSQL_ROOT_PASSWORD}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -79,7 +81,8 @@ services:
     ports:
       - "${CLIENT_PORT:-80}:80"
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost/"]
+      # 127.0.0.1, not localhost: in this image localhost resolves to ::1 but nginx listens on IPv4.
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1/"]
       interval: 15s
       timeout: 5s
       retries: 3

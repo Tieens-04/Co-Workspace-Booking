@@ -54,7 +54,7 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
 
    Container `server` tự chạy `npm run db:deploy` (chỉ `prisma migrate deploy`) trước khi khởi động; **không** chạy seed demo.
 
-4. **Lần triển khai đầu:** tạo admin bằng `docker compose exec server npm run admin:bootstrap --workspace=apps/server` với `ADMIN_BOOTSTRAP_*` cấp qua môi trường (xem README, CWB-59), sau đó gỡ các biến này.
+4. **Lần triển khai đầu:** export `ADMIN_BOOTSTRAP_*` trong shell rồi tạo admin bằng `docker compose exec -e ADMIN_BOOTSTRAP_EMAIL -e ADMIN_BOOTSTRAP_PASSWORD -e ADMIN_BOOTSTRAP_FULL_NAME server npm run admin:bootstrap` (thư mục làm việc của container đã là `apps/server`, thêm `--workspace` sẽ lỗi `No workspaces found`; `-e TÊN` không kèm giá trị để mật khẩu không nằm trên dòng lệnh) (xem README, CWB-59), sau đó gỡ các biến này.
 5. **Smoke test sau triển khai** (dùng tài khoản thật của môi trường, không dùng dữ liệu demo):
    - `curl -fsS https://<domain>/api/v1/health` → `status: "OK"`, `database: "connected"`.
    - Đăng ký/đăng nhập customer; đăng nhập admin.
@@ -102,4 +102,4 @@ Known issues: <...>
 ## 7. Trạng thái kiểm chứng của thay đổi CWB-61
 
 - Đã kiểm chứng tự động: readiness/liveness, graceful shutdown (HTTP server thật: request đang chạy hoàn tất, kết nối mới bị từ chối, quá hạn thì đóng cưỡng bức), chờ tác vụ email nền và ngắt Prisma (`apps/server/src/__tests__/graceful-shutdown.test.ts`); CI `docker-build` build cả hai image.
-- **Chưa kiểm chứng trong phiên phát triển:** `docker compose up` smoke và diễn tập restore, vì máy phát triển không có Docker daemon đang chạy và không có client MySQL. Cần chạy mục 3–5 trên môi trường staging và lưu bằng chứng theo mục 6 trước khi phát hành production.
+- **Đã kiểm chứng bằng `docker compose` (03/11/2026, commit `ed57d01`):** build image, khởi động lần đầu trên volume trống, smoke 28/28 (auth/RBAC, booking/hủy/409, khách vãng lai + thanh toán, check-in/hoàn tất, doanh thu, audit, upload qua Nginx, email qua Mailpit và khi SMTP mất kết nối), backup → restore vào database riêng khớp số liệu, dừng an toàn exit 0. Bằng chứng chi tiết và known issues: [release-evidence/2026-11-03-compose-smoke.md](release-evidence/2026-11-03-compose-smoke.md). Upload ảnh lên Cloudinary thật vẫn cần kiểm tra trên staging có tài khoản Cloudinary riêng.
