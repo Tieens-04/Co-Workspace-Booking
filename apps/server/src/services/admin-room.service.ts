@@ -1,3 +1,4 @@
+import type { AuditActor } from '../repositories/audit.repository.js';
 import {
   RoomRepositoryContract,
   roomRepository,
@@ -39,7 +40,7 @@ export class AdminRoomService {
     return toRoomDetailDto(created);
   }
 
-  async updateRoom(id: string, data: UpdateRoomInput): Promise<RoomDetail> {
+  async updateRoom(id: string, data: UpdateRoomInput, actor?: AuditActor): Promise<RoomDetail> {
     const { record, removedPublicIds } = await this.roomRepo.updateWithRelations(id, {
       name: data.name,
       description: data.description,
@@ -49,6 +50,7 @@ export class AdminRoomService {
       images: data.images,
       status: data.status,
       acknowledgeFutureBookings: data.acknowledgeFutureBookings,
+      ...(actor ? { auditActor: actor } : {}),
     });
 
     if (removedPublicIds && removedPublicIds.length > 0) {

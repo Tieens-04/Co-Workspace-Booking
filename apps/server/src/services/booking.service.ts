@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { AuditActor } from '../repositories/audit.repository.js';
 import {
   BookingIdentity,
   BookingRepositoryContract,
@@ -53,6 +54,7 @@ export class BookingService {
     input: CreateGuestBookingInput,
     now = new Date(),
     retry?: { adminId: string; idempotencyKey: string },
+    auditActor?: AuditActor,
   ): Promise<CreatedBookingResult> {
     const idempotency = retry
       ? {
@@ -70,6 +72,7 @@ export class BookingService {
       input,
       now,
       idempotency,
+      auditActor,
     );
   }
 
@@ -83,6 +86,7 @@ export class BookingService {
     },
     now = new Date(),
     idempotency?: BookingIdempotency,
+    auditActor?: AuditActor,
   ): Promise<CreatedBookingResult> {
     const startDate = new Date(input.startTime);
     const endDate = new Date(input.endTime);
@@ -105,6 +109,7 @@ export class BookingService {
           durationMinutes,
           note: input.note,
           idempotency,
+          ...(auditActor ? { auditActor } : {}),
         });
 
         // A replayed retry already sent its confirmation when it was first created.

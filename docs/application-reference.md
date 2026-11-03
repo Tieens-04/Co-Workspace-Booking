@@ -15,6 +15,7 @@
 | `/`                     | Trang chào công khai: hiển thị trạng thái đăng nhập, nút Đăng xuất, liên kết Quản trị (nếu là `ADMIN`), liên kết Lịch sử đặt phòng (nếu là `CUSTOMER`), và khám phá danh sách phòng làm việc.       | Truy cập công khai cho cả khách vãng lai và người dùng đã đăng nhập.                                                                                                                                                                                                                              |
 | `/admin`                | Trang quản trị phòng làm việc dành cho vai trò `ADMIN`: danh sách phòng phân trang, xem tiện ích/ảnh, form inline tạo và chỉnh sửa phòng dùng chung, quản lý danh sách URL ảnh thủ công.            | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
 | `/admin/bookings`       | Trang quản trị đặt phòng dành cho vai trò `ADMIN`: tra cứu đơn theo mã, lọc theo ngày sử dụng phòng (giờ VN), lọc theo trạng thái (kết hợp logic AND); form đặt phòng trực tiếp cho khách vãng lai. | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
+| `/admin/audit`          | Lịch sử thao tác (CWB-67) dành cho `ADMIN`: lọc theo đối tượng, thao tác, ID; phân trang 20 sự kiện/trang; hiển thị trường thay đổi trước → sau.                                                    | Như `/admin`: chưa đăng nhập → `/login`; `CUSTOMER` → giao diện 403.                                                                                                                                                                                                                              |
 | `/booking-confirmation` | Màn hình xác nhận đặt phòng thành công: hiển thị mã đặt phòng, thông tin phòng, thời gian, trạng thái, liên kết xem chi tiết/lịch sử và hướng dẫn thanh toán tại quầy.                              | Nhận dữ liệu đặt phòng qua router state sau khi tạo thành công. Truy cập trực tiếp không có state sẽ hiển thị giao diện fallback thông báo thân thiện và nút quay lại danh sách phòng.                                                                                                            |
 | `/bookings`             | Trang lịch sử đặt phòng dành cho vai trò `CUSTOMER`: danh sách đơn phân trang (10 đơn/trang), 3 bộ lọc (Tất cả, Sắp tới, Đã hoàn tất), hiển thị rõ mã đơn, ngày giờ, số tiền và trạng thái.         | Khách chưa đăng nhập → chuyển hướng sang `/login`. Vai trò `ADMIN` truy cập → chuyển về trang chủ `/`. Đổi tài khoản tự động làm mới dữ liệu, không rò rỉ đơn của phiên cũ.                                                                                                                       |
 | `/bookings/:id`         | Trang chi tiết đặt phòng dành cho vai trò `CUSTOMER`: tải trực tiếp dữ liệu từ API bằng UUID, kiểm tra quyền sở hữu IDOR phía server, hiển thị đầy đủ thông tin phòng, giờ VN, tiền và trạng thái.  | Khách chưa đăng nhập → chuyển hướng sang `/login`. Đơn không tồn tại hoặc thuộc người khác → hiển thị thông báo không tìm thấy (404), kèm liên kết quay lại lịch sử và danh sách phòng.                                                                                                           |
@@ -845,6 +846,22 @@ npm run test:integration --workspace=apps/server -- src/__tests__/booking-check-
 
 # Frontend tests (Giao diện bảng admin bookings, form đặt phòng khách vãng lai, route guard)
 npm run test --workspace=apps/client -- src/__tests__/AdminBookingsPage.test.tsx src/__tests__/AdminGuestBookingForm.test.tsx src/__tests__/AdminPage.test.tsx src/__tests__/RouteGuard.test.tsx
+```
+
+### 7. Nhật Ký Thao Tác Quản Trị (Audit Log, CWB-67)
+
+- **Ghi nhận**: bảng `audit_events` (append-only, không FK để sự kiện vẫn còn khi bản ghi gốc bị xóa). Mỗi sự kiện được ghi **trong cùng transaction** với thay đổi nghiệp vụ: rollback thì không có sự kiện.
+- **Các thao tác được ghi**: `BOOKING_GUEST_CREATED`, `BOOKING_PAYMENT_CONFIRMED`, `BOOKING_CANCELLED_BY_ADMIN`, `BOOKING_CHECKED_IN`, `BOOKING_COMPLETED`, `BOOKING_MARKED_NO_SHOW`, `ROOM_STATUS_CHANGED` (chỉ khi trạng thái phòng thực sự đổi).
+- **Người thực hiện** lấy từ JWT đã xác thực (`sub`, `role`), không bao giờ lấy từ body.
+- **Không ghi trùng**: retry idempotent (đã PAID, đã CANCELLED, đã check-in, replay `Idempotency-Key`) và request bị từ chối (`400/401/403/404/409`) không tạo sự kiện. Các xác nhận thanh toán đồng thời chỉ tạo 1 sự kiện nhờ khóa dòng.
+- **Dữ liệu**: `before`/`after` chỉ chứa trường trạng thái (mã đơn, status, paymentStatus, paymentMethod, checkedInAt, cancellationReason; với phòng là status). Sự kiện tạo đơn khách vãng lai **không** lưu tên/SĐT khách.
+- **Thứ tự**: cột `sequence` (AUTO_INCREMENT) quyết định thứ tự đọc, tránh trùng mili-giây của `created_at`.
+- **Đọc**: `GET /api/v1/admin/audit-events?page=&limit=&entityType=&entityId=&action=` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`). `limit` 1–100 (mặc định 20), `entityType` ∈ `BOOKING|ROOM`, `action` thuộc danh sách trên, trường lạ → `400`. Trả `{ items, pagination }`, mới nhất trước.
+- **Lưu trữ (retention)**: chưa có job tự xóa. Đề xuất vận hành định kỳ xóa sự kiện cũ hơn khoảng thời gian chính sách quy định (ví dụ 12 tháng) bằng `DELETE FROM audit_events WHERE created_at < ?` (có index `created_at`).
+
+```bash
+npm run test:integration --workspace=apps/server -- src/__tests__/audit-log.integration.test.ts
+npm run test --workspace=apps/client -- src/__tests__/AdminAuditPage.test.tsx
 ```
 
 ---

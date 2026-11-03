@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { auditActorOf } from '../utils/audit-actor.util.js';
 import { adminRoomService, AdminRoomService } from '../services/admin-room.service.js';
 import { roomService, RoomService } from '../services/room.service.js';
 import { sendSuccess } from '../utils/response.util.js';
@@ -35,7 +36,7 @@ export class AdminRoomController {
     try {
       const { id } = req.params;
       const body = req.body as UpdateRoomInput;
-      const result = await this.adminService.updateRoom(id, body);
+      const result = await this.adminService.updateRoom(id, body, auditActorOf(req));
       return sendSuccess(res, result, 'Cập nhật thông tin phòng thành công', 200);
     } catch (err) {
       return next(err);

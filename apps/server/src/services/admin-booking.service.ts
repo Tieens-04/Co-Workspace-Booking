@@ -1,4 +1,5 @@
 import { PaymentMethod } from '@prisma/client';
+import type { AuditActor } from '../repositories/audit.repository.js';
 import { logEmailFailure } from '../utils/email-log.util.js';
 import { trackBackgroundTask } from '../utils/background-tasks.util.js';
 import {
@@ -49,8 +50,9 @@ export class AdminBookingService {
     input: CreateGuestBookingInput,
     now = new Date(),
     retry?: { adminId: string; idempotencyKey: string },
+    actor?: AuditActor,
   ): Promise<AdminBookingResponseDto & { idempotentReplay?: boolean }> {
-    const booking = await this.bookingService.createGuestBooking(input, now, retry);
+    const booking = await this.bookingService.createGuestBooking(input, now, retry, actor);
     return {
       ...booking,
       customer: {
@@ -61,12 +63,20 @@ export class AdminBookingService {
     };
   }
 
-  async confirmPayment(id: string, paymentMethod: PaymentMethod): Promise<AdminBookingResponseDto> {
-    return this.adminBookingRepo.confirmPaymentForAdmin(id, paymentMethod);
+  async confirmPayment(
+    id: string,
+    paymentMethod: PaymentMethod,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.confirmPaymentForAdmin(id, paymentMethod, actor);
   }
 
-  async cancelBooking(id: string, reason: string): Promise<AdminBookingResponseDto> {
-    const booking = await this.adminBookingRepo.cancelBookingForAdmin(id, reason);
+  async cancelBooking(
+    id: string,
+    reason: string,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto> {
+    const booking = await this.adminBookingRepo.cancelBookingForAdmin(id, reason, actor);
 
     if (
       booking.isNewlyCancelled !== false &&
@@ -95,16 +105,16 @@ export class AdminBookingService {
     return booking;
   }
 
-  async checkInBooking(id: string): Promise<AdminBookingResponseDto> {
-    return this.adminBookingRepo.checkInBookingForAdmin(id);
+  async checkInBooking(id: string, actor?: AuditActor): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.checkInBookingForAdmin(id, undefined, actor);
   }
 
-  async completeBooking(id: string): Promise<AdminBookingResponseDto> {
-    return this.adminBookingRepo.completeBookingForAdmin(id);
+  async completeBooking(id: string, actor?: AuditActor): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.completeBookingForAdmin(id, undefined, actor);
   }
 
-  async markNoShow(id: string): Promise<AdminBookingResponseDto> {
-    return this.adminBookingRepo.markNoShowForAdmin(id);
+  async markNoShow(id: string, actor?: AuditActor): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.markNoShowForAdmin(id, undefined, actor);
   }
 
   async evaluateNoShowBookings(now = new Date()): Promise<number> {

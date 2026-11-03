@@ -132,7 +132,10 @@ describe('Request payload limits & lifecycle validation (CWB-53)', () => {
           .send({});
 
         expect(res.status).toBe(200);
-        expect(spy).toHaveBeenCalledWith(bookingId);
+        expect(spy).toHaveBeenCalledWith(bookingId, undefined, {
+          id: 'admin-uuid-1',
+          role: Role.ADMIN,
+        });
       },
     );
 

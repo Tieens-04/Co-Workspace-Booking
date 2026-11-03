@@ -7,7 +7,10 @@ import { notificationService } from '../services/notification.service.js';
 import { lockRoomRow } from '../repositories/room.repository.js';
 
 const db = vi.hoisted(() => {
-  const tx = { booking: { findMany: vi.fn(), create: vi.fn() } };
+  const tx = {
+    booking: { findMany: vi.fn(), create: vi.fn() },
+    auditEvent: { create: vi.fn() },
+  };
   return { tx, transaction: vi.fn(async (run: (tx: unknown) => Promise<unknown>) => run(tx)) };
 });
 

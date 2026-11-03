@@ -35,6 +35,8 @@ import {
   getDashboardKpiQuerySchema,
   getDashboardScheduleQuerySchema,
 } from '../validators/admin-dashboard.validator.js';
+import { adminAuditController } from '../controllers/admin-audit.controller.js';
+import { getAuditEventsQuerySchema } from '../validators/admin-audit.validator.js';
 import { uploadRoomImagesMiddleware } from '../middlewares/room-image-upload.middleware.js';
 
 const router = Router();
@@ -141,5 +143,7 @@ router.get(
   validateQuery(exportReportQuerySchema),
   adminReportController.revenue,
 );
+
+router.get('/audit-events', validateQuery(getAuditEventsQuerySchema), adminAuditController.list);
 
 export default router;

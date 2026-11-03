@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { adminBookingService, AdminBookingService } from '../services/admin-booking.service.js';
 import { sendSuccess } from '../utils/response.util.js';
+import { auditActorOf } from '../utils/audit-actor.util.js';
 import { parseIdempotencyKey } from '../utils/idempotency.util.js';
 import {
   GetAdminBookingsQueryInput,
@@ -36,6 +37,7 @@ export class AdminBookingController {
         body,
         new Date(),
         key ? { adminId: req.user!.sub, idempotencyKey: key } : undefined,
+        auditActorOf(req),
       );
       if (idempotentReplay) res.setHeader('Idempotent-Replayed', 'true');
       return sendSuccess(
@@ -53,7 +55,7 @@ export class AdminBookingController {
     try {
       const { id } = req.params as unknown as ConfirmPaymentParamsInput;
       const { paymentMethod } = req.body as ConfirmPaymentBodyInput;
-      const data = await this.service.confirmPayment(id, paymentMethod);
+      const data = await this.service.confirmPayment(id, paymentMethod, auditActorOf(req));
       return sendSuccess(res, data, 'Xác nhận thanh toán thành công', 200);
     } catch (err) {
       return next(err);
@@ -64,7 +66,7 @@ export class AdminBookingController {
     try {
       const { id } = req.params as unknown as AdminCancelBookingParamsInput;
       const { reason } = req.body as AdminCancelBookingBodyInput;
-      const data = await this.service.cancelBooking(id, reason);
+      const data = await this.service.cancelBooking(id, reason, auditActorOf(req));
       return sendSuccess(res, data, 'Hủy đơn đặt phòng thành công', 200);
     } catch (err) {
       return next(err);
@@ -74,7 +76,7 @@ export class AdminBookingController {
   checkInBooking = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params as unknown as CheckInBookingParamsInput;
-      const data = await this.service.checkInBooking(id);
+      const data = await this.service.checkInBooking(id, auditActorOf(req));
       return sendSuccess(res, data, 'Check-in thành công', 200);
     } catch (err) {
       return next(err);
@@ -84,7 +86,7 @@ export class AdminBookingController {
   completeBooking = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params as unknown as CompleteBookingParamsInput;
-      const data = await this.service.completeBooking(id);
+      const data = await this.service.completeBooking(id, auditActorOf(req));
       return sendSuccess(res, data, 'Hoàn tất đơn đặt phòng thành công', 200);
     } catch (err) {
       return next(err);
@@ -94,7 +96,7 @@ export class AdminBookingController {
   markNoShow = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params as unknown as MarkNoShowParamsInput;
-      const data = await this.service.markNoShow(id);
+      const data = await this.service.markNoShow(id, auditActorOf(req));
       return sendSuccess(res, data, 'Đánh dấu khách không đến thành công', 200);
     } catch (err) {
       return next(err);
