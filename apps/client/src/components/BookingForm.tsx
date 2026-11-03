@@ -6,6 +6,7 @@ import { formatVnd, formatCurrency } from '../utils/format';
 import { useRoomAvailability } from '../hooks/useRoomAvailability';
 import { AuthContext } from '../context/auth-context-base';
 import { useToast } from '../hooks/useToast';
+import { useIdempotencyKey } from '../hooks/useIdempotencyKey';
 import { TimeGrid } from './TimeGrid';
 import {
   getVietnamTodayString,
@@ -90,6 +91,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   const [currentMs, setCurrentMs] = useState<number>(() => Date.now());
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const { keyFor, reset: resetIdempotencyKey } = useIdempotencyKey();
 
   // Periodic clock update to re-evaluate lead time / validity
   useEffect(() => {
@@ -415,19 +417,19 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       const startIso = startUtc!.toISOString();
       const endIso = endUtc!.toISOString();
 
-      const res = await bookingApi.createBooking(
-        {
-          roomId,
-          startTime: startIso,
-          endTime: endIso,
-          note: note.trim() === '' ? null : note.trim(),
-        },
-        controller.signal,
-      );
+      const payload = {
+        roomId,
+        startTime: startIso,
+        endTime: endIso,
+        note: note.trim() === '' ? null : note.trim(),
+      };
+      // Same intent reuses its key, so a retry after a lost response returns the same booking.
+      const res = await bookingApi.createBooking(payload, controller.signal, keyFor(payload));
 
       if (controller.signal.aborted || abortControllerRef.current !== controller) return;
 
       if (res.success) {
+        resetIdempotencyKey();
         // Email is sent asynchronously after the response; only claim what was persisted.
         showToast(`Đặt phòng thành công! Mã đặt phòng: ${res.data.bookingCode}.`, 'success');
         navigate(`/booking-confirmation/${res.data.id}`, {

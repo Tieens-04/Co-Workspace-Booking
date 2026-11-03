@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { adminBookingService, AdminBookingService } from '../services/admin-booking.service.js';
 import { sendSuccess } from '../utils/response.util.js';
 import { auditActorOf } from '../utils/audit-actor.util.js';
+import { parseIdempotencyKey } from '../utils/idempotency.util.js';
 import {
   GetAdminBookingsQueryInput,
   CreateGuestBookingInput,
@@ -31,8 +32,20 @@ export class AdminBookingController {
   createGuestBooking = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const body = req.body as CreateGuestBookingInput;
-      const data = await this.service.createGuestBooking(body, undefined, auditActorOf(req));
-      return sendSuccess(res, data, 'Đặt phòng cho khách vãng lai thành công', 201);
+      const key = parseIdempotencyKey(req.get('Idempotency-Key'));
+      const { idempotentReplay, ...data } = await this.service.createGuestBooking(
+        body,
+        new Date(),
+        key ? { adminId: req.user!.sub, idempotencyKey: key } : undefined,
+        auditActorOf(req),
+      );
+      if (idempotentReplay) res.setHeader('Idempotent-Replayed', 'true');
+      return sendSuccess(
+        res,
+        data,
+        'Đặt phòng cho khách vãng lai thành công',
+        idempotentReplay ? 200 : 201,
+      );
     } catch (err) {
       return next(err);
     }

@@ -240,6 +240,33 @@ describe('CWB-67 audit log for admin mutations (real MySQL)', () => {
     expect(json).not.toContain('Khách Vãng Lai Audit');
   });
 
+  it('records one event when a guest booking retry is replayed with the same Idempotency-Key', async () => {
+    const start = new Date(Date.now() + 144 * 3_600_000);
+    start.setUTCHours(4, 0, 0, 0);
+    const send = () =>
+      request(app)
+        .post('/api/v1/admin/bookings/guest')
+        .set(auth(adminToken))
+        .set('Idempotency-Key', randomKey)
+        .send({
+          roomId,
+          startTime: start.toISOString(),
+          endTime: new Date(start.getTime() + 3_600_000).toISOString(),
+          guestName: 'Khách Thử Lại',
+          guestPhone: '0912345678',
+        });
+    const randomKey = `audit-${randomUUID()}`;
+    const first = await send();
+    const retry = await send();
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.headers['idempotent-replayed']).toBe('true');
+    expect(retry.body.data.id).toBe(first.body.data.id);
+    expect((await eventsFor(first.body.data.id)).map((e) => e.action)).toEqual([
+      'BOOKING_GUEST_CREATED',
+    ]);
+  });
+
   it('records room status changes but not unrelated room edits', async () => {
     const room = await prisma.room.create({
       data: {

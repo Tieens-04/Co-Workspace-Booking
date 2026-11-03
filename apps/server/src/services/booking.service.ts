@@ -4,7 +4,13 @@ import {
   BookingIdentity,
   BookingRepositoryContract,
   bookingRepository,
+  CreatedBookingResult,
 } from '../repositories/booking.repository.js';
+import {
+  BookingIdempotency,
+  hashBookingIntent,
+  idempotencyKeyReused,
+} from '../utils/idempotency.util.js';
 import { CreateBookingInput } from '../validators/booking.validator.js';
 import { CreateGuestBookingInput } from '../validators/admin-booking.validator.js';
 import {
@@ -36,15 +42,27 @@ export class BookingService {
     userId: string,
     input: CreateBookingInput,
     now = new Date(),
-  ): Promise<BookingResponseDto> {
-    return this.createBookingInternal({ userId }, input, now);
+    idempotencyKey?: string,
+  ): Promise<CreatedBookingResult> {
+    const idempotency = idempotencyKey
+      ? { scope: `user:${userId}`, key: idempotencyKey, hash: hashBookingIntent(input) }
+      : undefined;
+    return this.createBookingInternal({ userId }, input, now, idempotency);
   }
 
   async createGuestBooking(
     input: CreateGuestBookingInput,
     now = new Date(),
+    retry?: { adminId: string; idempotencyKey: string },
     auditActor?: AuditActor,
-  ): Promise<BookingResponseDto> {
+  ): Promise<CreatedBookingResult> {
+    const idempotency = retry
+      ? {
+          scope: `admin:${retry.adminId}`,
+          key: retry.idempotencyKey,
+          hash: hashBookingIntent(input),
+        }
+      : undefined;
     return this.createBookingInternal(
       {
         userId: null,
@@ -53,6 +71,7 @@ export class BookingService {
       },
       input,
       now,
+      idempotency,
       auditActor,
     );
   }
@@ -66,8 +85,9 @@ export class BookingService {
       note?: string | null;
     },
     now = new Date(),
+    idempotency?: BookingIdempotency,
     auditActor?: AuditActor,
-  ): Promise<BookingResponseDto> {
+  ): Promise<CreatedBookingResult> {
     const startDate = new Date(input.startTime);
     const endDate = new Date(input.endTime);
 
@@ -88,10 +108,12 @@ export class BookingService {
           endDate,
           durationMinutes,
           note: input.note,
+          idempotency,
           ...(auditActor ? { auditActor } : {}),
         });
 
-        if (identity.userId) {
+        // A replayed retry already sent its confirmation when it was first created.
+        if (identity.userId && !booking.idempotentReplay) {
           trackBackgroundTask(
             (async () => {
               try {
@@ -122,6 +144,10 @@ export class BookingService {
             : typeof err.meta?.target === 'string'
               ? err.meta.target
               : '';
+          // Same key raced with a different intent (same intents serialize on the room lock).
+          if (idempotency && targetStr.toLowerCase().includes('idempotency')) {
+            throw idempotencyKeyReused();
+          }
           // Only retry if the collision is on the unique bookingCode column
           if (
             targetStr.toLowerCase().includes('booking_code') ||

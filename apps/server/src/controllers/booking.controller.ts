@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { bookingService, BookingService } from '../services/booking.service.js';
 import { sendSuccess } from '../utils/response.util.js';
+import { parseIdempotencyKey } from '../utils/idempotency.util.js';
 import { CreateBookingInput, GetBookingsQueryInput } from '../validators/booking.validator.js';
 
 export class BookingController {
@@ -10,8 +11,16 @@ export class BookingController {
     try {
       const userId = req.user!.sub;
       const body = req.body as CreateBookingInput;
-      const result = await this.service.createBooking(userId, body);
-      return sendSuccess(res, result, 'Đặt phòng thành công', 201);
+      const key = parseIdempotencyKey(req.get('Idempotency-Key'));
+      const { idempotentReplay, ...booking } = await this.service.createBooking(
+        userId,
+        body,
+        new Date(),
+        key,
+      );
+      // A retry with the same key returns the original booking instead of a new one.
+      if (idempotentReplay) res.setHeader('Idempotent-Replayed', 'true');
+      return sendSuccess(res, booking, 'Đặt phòng thành công', idempotentReplay ? 200 : 201);
     } catch (err) {
       return next(err);
     }

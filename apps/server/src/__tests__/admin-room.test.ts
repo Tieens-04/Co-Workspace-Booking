@@ -412,6 +412,7 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(roomId1, {
         name: 'Updated Boardroom',
         capacity: 16,
+        auditActor: { id: 'admin-uuid-1', role: Role.ADMIN },
       });
     });
 
@@ -426,6 +427,7 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       expect(res.status).toBe(200);
       expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(roomId1, {
         pricePerHour: '400.00',
+        auditActor: { id: 'admin-uuid-1', role: Role.ADMIN },
       });
     });
 
@@ -446,6 +448,7 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(roomId1, {
         amenityIds: [validUuid2],
         images: newImages,
+        auditActor: { id: 'admin-uuid-1', role: Role.ADMIN },
       });
     });
 
@@ -462,6 +465,7 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(roomId1, {
         amenityIds: [],
         images: [],
+        auditActor: { id: 'admin-uuid-1', role: Role.ADMIN },
       });
     });
 

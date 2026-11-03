@@ -426,7 +426,10 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.paymentStatus).toBe('PAID');
       expect(res.body.data.paymentMethod).toBe('CASH');
-      expect(spy).toHaveBeenCalledWith(validBookingId, PaymentMethod.CASH);
+      expect(spy).toHaveBeenCalledWith(validBookingId, PaymentMethod.CASH, {
+        id: 'admin-uuid-1',
+        role: Role.ADMIN,
+      });
     });
 
     it('successfully confirms payment with QR and returns updated booking', async () => {
@@ -449,7 +452,10 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.paymentStatus).toBe('PAID');
       expect(res.body.data.paymentMethod).toBe('QR');
-      expect(spy).toHaveBeenCalledWith(validBookingId, PaymentMethod.QR);
+      expect(spy).toHaveBeenCalledWith(validBookingId, PaymentMethod.QR, {
+        id: 'admin-uuid-1',
+        role: Role.ADMIN,
+      });
     });
 
     it('propagates 404 BOOKING_NOT_FOUND when booking does not exist', async () => {
@@ -564,7 +570,10 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('CANCELLED');
       expect(res.body.data.cancellationReason).toBe('Khách yêu cầu hủy qua hotline');
-      expect(spy).toHaveBeenCalledWith(validBookingId, 'Khách yêu cầu hủy qua hotline');
+      expect(spy).toHaveBeenCalledWith(validBookingId, 'Khách yêu cầu hủy qua hotline', {
+        id: 'admin-uuid-1',
+        role: Role.ADMIN,
+      });
     });
 
     it('propagates 404 BOOKING_NOT_FOUND when booking does not exist', async () => {
@@ -620,9 +629,7 @@ describe('Admin Booking Management API Unit Tests', () => {
     const validBookingId = '22222222-2222-4222-8222-222222222222';
 
     it('returns 401 UNAUTHORIZED when no token is provided', async () => {
-      const res = await request(app).patch(
-        `/api/v1/admin/bookings/${validBookingId}/complete`,
-      );
+      const res = await request(app).patch(`/api/v1/admin/bookings/${validBookingId}/complete`);
       expect(res.status).toBe(401);
       expect(res.body.code).toBe('UNAUTHORIZED');
     });
@@ -661,7 +668,10 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('COMPLETED');
-      expect(spy).toHaveBeenCalledWith(validBookingId);
+      expect(spy).toHaveBeenCalledWith(validBookingId, undefined, {
+        id: 'admin-uuid-1',
+        role: Role.ADMIN,
+      });
     });
 
     it('returns 200 idempotently when booking is already COMPLETED', async () => {
@@ -684,11 +694,7 @@ describe('Admin Booking Management API Unit Tests', () => {
 
     it('propagates 409 BOOKING_STATE_CONFLICT when booking is CANCELLED', async () => {
       vi.spyOn(bookingRepository, 'completeBookingForAdmin').mockRejectedValue(
-        new AppError(
-          'BOOKING_STATE_CONFLICT',
-          'Không thể hoàn tất đơn đặt phòng đã hủy',
-          409,
-        ),
+        new AppError('BOOKING_STATE_CONFLICT', 'Không thể hoàn tất đơn đặt phòng đã hủy', 409),
       );
 
       const res = await request(app)
@@ -734,9 +740,7 @@ describe('Admin Booking Management API Unit Tests', () => {
     const validBookingId = '22222222-2222-4222-8222-222222222222';
 
     it('returns 401 UNAUTHORIZED when no token is provided', async () => {
-      const res = await request(app).patch(
-        `/api/v1/admin/bookings/${validBookingId}/no-show`,
-      );
+      const res = await request(app).patch(`/api/v1/admin/bookings/${validBookingId}/no-show`);
       expect(res.status).toBe(401);
       expect(res.body.code).toBe('UNAUTHORIZED');
     });
@@ -775,7 +779,10 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
       expect(res.body.data.status).toBe('NO_SHOW');
-      expect(spy).toHaveBeenCalledWith(validBookingId);
+      expect(spy).toHaveBeenCalledWith(validBookingId, undefined, {
+        id: 'admin-uuid-1',
+        role: Role.ADMIN,
+      });
     });
 
     it('returns 200 idempotently when booking is already NO_SHOW', async () => {
@@ -784,9 +791,7 @@ describe('Admin Booking Management API Unit Tests', () => {
         status: BookingStatus.NO_SHOW,
       });
 
-      vi.spyOn(bookingRepository, 'markNoShowForAdmin').mockResolvedValue(
-        alreadyNoShowFixture,
-      );
+      vi.spyOn(bookingRepository, 'markNoShowForAdmin').mockResolvedValue(alreadyNoShowFixture);
 
       const res = await request(app)
         .patch(`/api/v1/admin/bookings/${validBookingId}/no-show`)
@@ -846,9 +851,7 @@ describe('Admin Booking Management API Unit Tests', () => {
 
   describe('Lazy Evaluation of Overdue Bookings to NO_SHOW', () => {
     it('evaluates overdue CONFIRMED bookings and transitions them to NO_SHOW', async () => {
-      const spy = vi
-        .spyOn(bookingRepository, 'evaluateNoShowBookings')
-        .mockResolvedValue(3);
+      const spy = vi.spyOn(bookingRepository, 'evaluateNoShowBookings').mockResolvedValue(3);
 
       const count = await bookingRepository.evaluateNoShowBookings(new Date());
       expect(count).toBe(3);
@@ -856,14 +859,9 @@ describe('Admin Booking Management API Unit Tests', () => {
     });
 
     it('triggers lazy evaluation during getBookings query', async () => {
-      const evalSpy = vi
-        .spyOn(bookingRepository, 'evaluateNoShowBookings')
-        .mockResolvedValue(1);
+      const evalSpy = vi.spyOn(bookingRepository, 'evaluateNoShowBookings').mockResolvedValue(1);
 
-      vi.spyOn(bookingRepository, 'findManyAndCountForAdmin').mockResolvedValue([
-        0,
-        [],
-      ]);
+      vi.spyOn(bookingRepository, 'findManyAndCountForAdmin').mockResolvedValue([0, []]);
 
       const res = await request(app)
         .get('/api/v1/admin/bookings')
@@ -922,9 +920,7 @@ describe('Admin Booking Management API Unit Tests', () => {
         cancelledBookings: 1,
       };
 
-      const spy = vi
-        .spyOn(bookingRepository, 'calculateRevenue')
-        .mockResolvedValue(revenueFixture);
+      const spy = vi.spyOn(bookingRepository, 'calculateRevenue').mockResolvedValue(revenueFixture);
 
       const res = await request(app)
         .get('/api/v1/admin/revenue?startDate=2026-10-01&endDate=2026-10-31')
