@@ -66,8 +66,14 @@ export interface DashboardRoomScheduleDto {
 export interface DashboardScheduleResponseDto {
   date: string;
   rooms: DashboardRoomScheduleDto[];
+  /** Counts over all rooms, independent of the page. */
+  summary: { totalRooms: number; availableRooms: number; maintenanceRooms: number };
+  /** CWB-57: rooms are paginated; `total` counts all rooms. */
+  pagination: { page: number; limit: number; total: number; totalPages: number };
 }
 
 export interface DashboardScheduleFilter {
   date?: string;
+  page?: number;
+  limit?: number;
 }

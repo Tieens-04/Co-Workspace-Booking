@@ -207,9 +207,13 @@ describe('Admin Dashboard KPI & Schedule API Unit Tests', () => {
             bookings: [],
           },
         ],
+        summary: { totalRooms: 2, availableRooms: 1, maintenanceRooms: 1 },
+        pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
       };
 
-      vi.spyOn(adminDashboardService, 'getDashboardSchedule').mockResolvedValue(mockScheduleData);
+      const spy = vi
+        .spyOn(adminDashboardService, 'getDashboardSchedule')
+        .mockResolvedValue(mockScheduleData);
 
       const res = await request(app)
         .get('/api/v1/admin/dashboard/schedule?date=2026-10-14')
@@ -221,6 +225,20 @@ describe('Admin Dashboard KPI & Schedule API Unit Tests', () => {
       expect(res.body.data.rooms).toHaveLength(2);
       expect(res.body.data.rooms[0].name).toBe('Deluxe Creative Room');
       expect(res.body.data.rooms[1].status).toBe('MAINTENANCE');
+      expect(res.body.data.pagination).toEqual({ page: 1, limit: 20, total: 2, totalPages: 1 });
+      // CWB-57: page/limit default to 1/20 when omitted.
+      expect(spy).toHaveBeenCalledWith({ date: '2026-10-14', page: 1, limit: 20 });
     });
+
+    it.each(['limit=51', 'limit=0', 'page=0', 'page=abc'])(
+      'rejects out-of-range schedule pagination (%s) with 400',
+      async (query) => {
+        const res = await request(app)
+          .get(`/api/v1/admin/dashboard/schedule?${query}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+      },
+    );
   });
 });

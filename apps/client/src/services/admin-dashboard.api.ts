@@ -24,6 +24,8 @@ export interface GetDashboardKpiParams {
 
 export interface GetDashboardScheduleParams {
   date?: string;
+  page?: number;
+  limit?: number;
 }
 
 export const adminDashboardApi = {
@@ -31,13 +33,10 @@ export const adminDashboardApi = {
     params?: GetDashboardKpiParams,
     signal?: AbortSignal,
   ): Promise<AdminDashboardKpiApiResponse> => {
-    const response = await apiClient.get<AdminDashboardKpiApiResponse>(
-      '/admin/dashboard/kpi',
-      {
-        params,
-        signal,
-      },
-    );
+    const response = await apiClient.get<AdminDashboardKpiApiResponse>('/admin/dashboard/kpi', {
+      params,
+      signal,
+    });
     return response.data;
   },
 

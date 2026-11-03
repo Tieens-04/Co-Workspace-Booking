@@ -57,4 +57,7 @@ export interface DashboardRoomSchedule {
 export interface DashboardScheduleData {
   date: string;
   rooms: DashboardRoomSchedule[];
+  /** Counts over all rooms, independent of the page (CWB-57). */
+  summary: { totalRooms: number; availableRooms: number; maintenanceRooms: number };
+  pagination: { page: number; limit: number; total: number; totalPages: number };
 }

@@ -19,10 +19,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Pagination } from '@/components/common/Pagination';
+
+const SCHEDULE_PAGE_SIZE = 20;
 
 export const AdminDashboardPage: React.FC = () => {
   const [period, setPeriod] = useState<DashboardPeriodType>('day');
   const [selectedDate, setSelectedDate] = useState<string>(() => getVietnamTodayString());
+  // CWB-57: the room schedule is paginated server-side.
+  const [schedulePage, setSchedulePage] = useState(1);
 
   const [kpiData, setKpiData] = useState<DashboardKpiData | null>(null);
   const [scheduleData, setScheduleData] = useState<DashboardScheduleData | null>(null);
@@ -43,7 +48,10 @@ export const AdminDashboardPage: React.FC = () => {
     try {
       const [kpiRes, scheduleRes] = await Promise.all([
         adminDashboardApi.getDashboardKpi({ date: selectedDate, period }, controller.signal),
-        adminDashboardApi.getDashboardSchedule({ date: selectedDate }, controller.signal),
+        adminDashboardApi.getDashboardSchedule(
+          { date: selectedDate, page: schedulePage, limit: SCHEDULE_PAGE_SIZE },
+          controller.signal,
+        ),
       ]);
 
       if (controller.signal.aborted) return;
@@ -66,7 +74,7 @@ export const AdminDashboardPage: React.FC = () => {
         setIsLoading(false);
       }
     }
-  }, [selectedDate, period]);
+  }, [selectedDate, period, schedulePage]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -85,14 +93,14 @@ export const AdminDashboardPage: React.FC = () => {
     const val = e.target.value;
     if (val) {
       setSelectedDate(val);
+      setSchedulePage(1);
     }
   };
 
-  const totalRoomsCount = scheduleData?.rooms.length || 0;
-  const availableRoomsCount =
-    scheduleData?.rooms.filter((r) => r.status === 'AVAILABLE').length || 0;
-  const maintenanceRoomsCount =
-    scheduleData?.rooms.filter((r) => r.status === 'MAINTENANCE').length || 0;
+  // Counts cover every room, not just the current schedule page.
+  const totalRoomsCount = scheduleData?.summary.totalRooms ?? 0;
+  const availableRoomsCount = scheduleData?.summary.availableRooms ?? 0;
+  const maintenanceRoomsCount = scheduleData?.summary.maintenanceRooms ?? 0;
 
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-6 lg:gap-8">
@@ -267,6 +275,16 @@ export const AdminDashboardPage: React.FC = () => {
 
           {/* Room Time-Grid Overview Section */}
           {scheduleData && <RoomOverviewGrid rooms={scheduleData.rooms} date={scheduleData.date} />}
+          {scheduleData && scheduleData.pagination.totalPages > 1 && (
+            <Pagination
+              page={scheduleData.pagination.page}
+              totalPages={scheduleData.pagination.totalPages}
+              onPageChange={setSchedulePage}
+              disabled={isLoading}
+              ariaLabel="Phân trang lịch phòng"
+              testId="schedule-pagination"
+            />
+          )}
         </>
       )}
     </div>

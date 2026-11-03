@@ -12,9 +12,7 @@ import { getDayBounds } from '../utils/room-availability.util.js';
 import { getVietnamTodayString, getWeekBounds } from '../utils/dashboard-date.util.js';
 
 export class AdminDashboardService {
-  constructor(
-    private readonly repo: AdminDashboardRepositoryContract = defaultRepo,
-  ) {}
+  constructor(private readonly repo: AdminDashboardRepositoryContract = defaultRepo) {}
 
   async getDashboardKpi(
     filter: DashboardKpiFilter,
@@ -82,7 +80,7 @@ export class AdminDashboardService {
     const todayStr = getVietnamTodayString(now);
     const dateStr = filter.date || todayStr;
 
-    return this.repo.getScheduleData(dateStr);
+    return this.repo.getScheduleData(dateStr, filter.page ?? 1, filter.limit ?? 20);
   }
 }
 

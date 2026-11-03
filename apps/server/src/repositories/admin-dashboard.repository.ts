@@ -41,7 +41,11 @@ export interface AdminDashboardRepositoryContract {
     todayStart: Date;
     todayEnd: Date;
   }): Promise<DashboardKpiRawResult>;
-  getScheduleData(dateStr: string): Promise<DashboardScheduleResponseDto>;
+  getScheduleData(
+    dateStr: string,
+    page?: number,
+    limit?: number,
+  ): Promise<DashboardScheduleResponseDto>;
 }
 
 export class AdminDashboardRepository implements AdminDashboardRepositoryContract {
@@ -147,10 +151,21 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
     );
   }
 
-  async getScheduleData(dateStr: string): Promise<DashboardScheduleResponseDto> {
+  async getScheduleData(
+    dateStr: string,
+    page = 1,
+    limit = 20,
+  ): Promise<DashboardScheduleResponseDto> {
     const { dayStart, dayEnd } = getDayBounds(dateStr);
 
+    // Whole-catalog counts for the KPI card; the room list itself is paginated.
+    const statusCounts = await prisma.room.groupBy({ by: ['status'], _count: { _all: true } });
+    const countOf = (status: RoomStatus) =>
+      statusCounts.find((row) => row.status === status)?._count._all ?? 0;
+    const total = statusCounts.reduce((sum, row) => sum + row._count._all, 0);
     const rooms = await prisma.room.findMany({
+      skip: (page - 1) * limit,
+      take: limit,
       select: {
         id: true,
         name: true,
@@ -181,7 +196,8 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
           },
         },
       },
-      orderBy: [{ status: 'asc' }, { name: 'asc' }],
+      // id breaks name ties so pages never overlap or skip a room.
+      orderBy: [{ status: 'asc' }, { name: 'asc' }, { id: 'asc' }],
     });
 
     const roomDtos: DashboardRoomScheduleDto[] = rooms.map((room) => {
@@ -225,6 +241,17 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
     return {
       date: dateStr,
       rooms: roomDtos,
+      summary: {
+        totalRooms: total,
+        availableRooms: countOf(RoomStatus.AVAILABLE),
+        maintenanceRooms: countOf(RoomStatus.MAINTENANCE),
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: total === 0 ? 0 : Math.ceil(total / limit),
+      },
     };
   }
 }
