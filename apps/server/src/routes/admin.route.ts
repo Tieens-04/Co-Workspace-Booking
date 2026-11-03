@@ -37,6 +37,11 @@ import {
 } from '../validators/admin-dashboard.validator.js';
 import { adminAuditController } from '../controllers/admin-audit.controller.js';
 import { getAuditEventsQuerySchema } from '../validators/admin-audit.validator.js';
+import { adminEmailOutboxController } from '../controllers/admin-email-outbox.controller.js';
+import {
+  emailOutboxIdParamsSchema,
+  getEmailOutboxQuerySchema,
+} from '../validators/admin-email-outbox.validator.js';
 import { uploadRoomImagesMiddleware } from '../middlewares/room-image-upload.middleware.js';
 
 const router = Router();
@@ -145,5 +150,16 @@ router.get(
 );
 
 router.get('/audit-events', validateQuery(getAuditEventsQuerySchema), adminAuditController.list);
+
+router.get(
+  '/email-outbox',
+  validateQuery(getEmailOutboxQuerySchema),
+  adminEmailOutboxController.list,
+);
+router.post(
+  '/email-outbox/:id/retry',
+  validateParams(emailOutboxIdParamsSchema),
+  adminEmailOutboxController.retry,
+);
 
 export default router;

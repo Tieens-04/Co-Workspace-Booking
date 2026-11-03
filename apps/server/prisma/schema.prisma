@@ -34,6 +34,18 @@ enum PaymentStatus {
   PAID
 }
 
+enum EmailOutboxStatus {
+  QUEUED
+  SENT
+  FAILED
+  SKIPPED
+}
+
+enum EmailOutboxKind {
+  BOOKING_CONFIRMATION
+  BOOKING_CANCELLATION
+}
+
 enum PaymentMethod {
   CASH
   QR
@@ -172,8 +184,9 @@ model Booking {
   idempotencyKey   String? @map("idempotency_key") @db.VarChar(64)
   idempotencyHash  String? @map("idempotency_hash") @db.Char(64)
 
-  user User? @relation(fields: [userId], references: [id], onDelete: Restrict)
-  room Room  @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  user        User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
+  room        Room          @relation(fields: [roomId], references: [id], onDelete: Restrict)
+  emailOutbox EmailOutbox[]
 
   @@unique([idempotencyScope, idempotencyKey], map: "bookings_idempotency_scope_key_key")
   // Composite index cực kỳ quan trọng cho availability query (StartA < EndB AND EndA > StartB)
@@ -203,4 +216,25 @@ model AuditEvent {
   @@index([entityType, entityId, sequence])
   @@index([createdAt])
   @@map("audit_events")
+}
+
+/// CWB-68: durable email outbox written in the booking transaction. Stores no recipient or
+/// token; the email is rendered from the booking at send time. Delivery is at-least-once.
+model EmailOutbox {
+  id            String            @id @default(uuid())
+  kind          EmailOutboxKind
+  bookingId     String            @map("booking_id")
+  booking       Booking           @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  status        EmailOutboxStatus @default(QUEUED)
+  attempts      Int               @default(0)
+  nextAttemptAt DateTime          @default(now()) @map("next_attempt_at")
+  lastError     String?           @map("last_error") @db.VarChar(64)
+  sentAt        DateTime?         @map("sent_at")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  @@unique([kind, bookingId], map: "email_outbox_kind_booking_key")
+  @@index([status, nextAttemptAt])
+  @@index([bookingId])
+  @@map("email_outbox")
 }
