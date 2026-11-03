@@ -3,6 +3,7 @@ import prisma from '../utils/prisma.util.js';
 import { FindRoomsFilter } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
 import { BLOCKING_BOOKING_STATUSES } from '../types/booking.type.js';
+import { AuditActor, recordAuditEvent } from './audit.repository.js';
 
 const amenitySelect = {
   id: true,
@@ -94,6 +95,8 @@ export interface UpdateRoomRepoInput {
   images?: CreateRoomImageInput[];
   status?: RoomStatus;
   acknowledgeFutureBookings?: boolean;
+  /** Admin performing the update; a real status change is audited in the same transaction. */
+  auditActor?: AuditActor;
 }
 
 export interface LockedRoomRecord {
@@ -374,6 +377,20 @@ export class RoomRepository implements RoomRepositoryContract {
         await tx.room.update({
           where: { id },
           data: scalarUpdate,
+        });
+      }
+
+      if (data.auditActor && data.status !== undefined && data.status !== lockedRoom.status) {
+        await recordAuditEvent(tx, {
+          actor: data.auditActor,
+          action: 'ROOM_STATUS_CHANGED',
+          entityType: 'ROOM',
+          entityId: id,
+          before: { status: lockedRoom.status },
+          after: {
+            status: data.status,
+            acknowledgeFutureBookings: data.acknowledgeFutureBookings === true,
+          },
         });
       }
 

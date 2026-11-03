@@ -21,6 +21,7 @@ import {
 } from '../utils/booking-time.util.js';
 import { getDayBounds } from '../utils/room-availability.util.js';
 import { AppError } from '../utils/error.util.js';
+import { AuditAction, AuditActor, recordAuditEvent } from './audit.repository.js';
 
 export type BookingUserIdentity = {
   userId: string;
@@ -43,6 +44,8 @@ export type CreateBookingRepoInput = {
   endDate: Date;
   durationMinutes: number;
   note?: string | null;
+  /** Admin who created a walk-in booking; audited inside the create transaction. */
+  auditActor?: AuditActor;
 } & BookingIdentity;
 
 export function assertValidBookingIdentity(data: BookingIdentity): void {
@@ -145,6 +148,42 @@ export type AdminBookingReadRecord = Prisma.BookingGetPayload<{
   select: typeof adminBookingReadSelect;
 }>;
 
+// Fields captured in booking audit events (CWB-67): lifecycle/payment state only, no PII/secrets.
+const auditBookingSelect = {
+  bookingCode: true,
+  status: true,
+  paymentStatus: true,
+  paymentMethod: true,
+  checkedInAt: true,
+  cancellationReason: true,
+} satisfies Prisma.BookingSelect;
+
+async function auditBookingChange(
+  tx: Prisma.TransactionClient,
+  actor: AuditActor | undefined,
+  action: AuditAction,
+  id: string,
+  before: Prisma.BookingGetPayload<{ select: typeof auditBookingSelect }> | null,
+  after: AdminBookingReadRecord,
+): Promise<void> {
+  if (!actor) return;
+  await recordAuditEvent(tx, {
+    actor,
+    action,
+    entityType: 'BOOKING',
+    entityId: id,
+    before,
+    after: {
+      bookingCode: after.bookingCode,
+      status: after.status,
+      paymentStatus: after.paymentStatus,
+      paymentMethod: after.paymentMethod,
+      checkedInAt: after.checkedInAt,
+      cancellationReason: after.cancellationReason,
+    },
+  });
+}
+
 export function mapAdminBookingRecordToDto(
   record: AdminBookingReadRecord,
 ): AdminBookingResponseDto {
@@ -213,11 +252,28 @@ export interface AdminBookingRepositoryContract {
   confirmPaymentForAdmin(
     id: string,
     paymentMethod: PaymentMethod,
+    actor?: AuditActor,
   ): Promise<AdminBookingResponseDto>;
-  cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto>;
-  checkInBookingForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
-  completeBookingForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
-  markNoShowForAdmin(id: string, clock?: () => Date): Promise<AdminBookingResponseDto>;
+  cancelBookingForAdmin(
+    id: string,
+    reason: string,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto>;
+  checkInBookingForAdmin(
+    id: string,
+    clock?: () => Date,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto>;
+  completeBookingForAdmin(
+    id: string,
+    clock?: () => Date,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto>;
+  markNoShowForAdmin(
+    id: string,
+    clock?: () => Date,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto>;
   evaluateNoShowBookings(now?: Date, userId?: string, id?: string): Promise<number>;
   calculateRevenue(filter: RevenuePeriodFilter, now?: Date): Promise<AdminRevenueResponseDto>;
 }
@@ -289,6 +345,26 @@ export class BookingRepository
           },
         },
       });
+
+      if (data.auditActor) {
+        // Guest PII stays out of the audit trail; the booking row remains the source for it.
+        await recordAuditEvent(tx, {
+          actor: data.auditActor,
+          action: 'BOOKING_GUEST_CREATED',
+          entityType: 'BOOKING',
+          entityId: createdBooking.id,
+          before: null,
+          after: {
+            bookingCode: createdBooking.bookingCode,
+            roomId: createdBooking.roomId,
+            startTime: createdBooking.startTime,
+            endTime: createdBooking.endTime,
+            totalAmount: createdBooking.totalAmount.toFixed(2),
+            status: createdBooking.status,
+            paymentStatus: createdBooking.paymentStatus,
+          },
+        });
+      }
 
       return {
         id: createdBooking.id,
@@ -475,6 +551,7 @@ export class BookingRepository
   async confirmPaymentForAdmin(
     id: string,
     paymentMethod: PaymentMethod,
+    actor?: AuditActor,
   ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       // 1. Lock booking row in MySQL with FOR UPDATE
@@ -517,6 +594,9 @@ export class BookingRepository
       }
 
       // 4. Update payment status to PAID with the specified payment method
+      const auditBefore = actor
+        ? await tx.booking.findUnique({ where: { id }, select: auditBookingSelect })
+        : null;
       const updated = await tx.booking.update({
         where: { id },
         data: {
@@ -525,12 +605,17 @@ export class BookingRepository
         },
         select: adminBookingReadSelect,
       });
+      await auditBookingChange(tx, actor, 'BOOKING_PAYMENT_CONFIRMED', id, auditBefore, updated);
 
       return mapAdminBookingRecordToDto(updated);
     });
   }
 
-  async cancelBookingForAdmin(id: string, reason: string): Promise<AdminBookingResponseDto> {
+  async cancelBookingForAdmin(
+    id: string,
+    reason: string,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       // 1. Lock booking row in MySQL with FOR UPDATE
       const rows = await tx.$queryRaw<
@@ -570,6 +655,9 @@ export class BookingRepository
       }
 
       // 4. Update status to CANCELLED with cancellation reason
+      const auditBefore = actor
+        ? await tx.booking.findUnique({ where: { id }, select: auditBookingSelect })
+        : null;
       const updated = await tx.booking.update({
         where: { id },
         data: {
@@ -578,6 +666,7 @@ export class BookingRepository
         },
         select: adminBookingReadSelect,
       });
+      await auditBookingChange(tx, actor, 'BOOKING_CANCELLED_BY_ADMIN', id, auditBefore, updated);
 
       const dto = mapAdminBookingRecordToDto(updated);
       dto.isNewlyCancelled = true;
@@ -588,6 +677,7 @@ export class BookingRepository
   async checkInBookingForAdmin(
     id: string,
     clock: () => Date = () => new Date(),
+    actor?: AuditActor,
   ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<
@@ -626,11 +716,15 @@ export class BookingRepository
           409,
         );
       }
+      const auditBefore = actor
+        ? await tx.booking.findUnique({ where: { id }, select: auditBookingSelect })
+        : null;
       const updated = await tx.booking.update({
         where: { id },
         data: { checkedInAt: now },
         select: adminBookingReadSelect,
       });
+      await auditBookingChange(tx, actor, 'BOOKING_CHECKED_IN', id, auditBefore, updated);
       return mapAdminBookingRecordToDto(updated);
     });
   }
@@ -638,6 +732,7 @@ export class BookingRepository
   async completeBookingForAdmin(
     id: string,
     clock: () => Date = () => new Date(),
+    actor?: AuditActor,
   ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       // 1. Lock booking row in MySQL with FOR UPDATE
@@ -707,6 +802,9 @@ export class BookingRepository
       }
 
       // 5. Update status to COMPLETED
+      const auditBefore = actor
+        ? await tx.booking.findUnique({ where: { id }, select: auditBookingSelect })
+        : null;
       const updated = await tx.booking.update({
         where: { id },
         data: {
@@ -714,6 +812,7 @@ export class BookingRepository
         },
         select: adminBookingReadSelect,
       });
+      await auditBookingChange(tx, actor, 'BOOKING_COMPLETED', id, auditBefore, updated);
 
       return mapAdminBookingRecordToDto(updated);
     });
@@ -722,6 +821,7 @@ export class BookingRepository
   async markNoShowForAdmin(
     id: string,
     clock: () => Date = () => new Date(),
+    actor?: AuditActor,
   ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       // 1. Lock booking row in MySQL with FOR UPDATE
@@ -790,6 +890,9 @@ export class BookingRepository
       }
 
       // 5. Update status to NO_SHOW
+      const auditBefore = actor
+        ? await tx.booking.findUnique({ where: { id }, select: auditBookingSelect })
+        : null;
       const updated = await tx.booking.update({
         where: { id },
         data: {
@@ -797,6 +900,7 @@ export class BookingRepository
         },
         select: adminBookingReadSelect,
       });
+      await auditBookingChange(tx, actor, 'BOOKING_MARKED_NO_SHOW', id, auditBefore, updated);
 
       return mapAdminBookingRecordToDto(updated);
     });

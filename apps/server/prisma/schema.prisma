@@ -176,3 +176,24 @@ model Booking {
   @@index([status, attendanceTrackingEnabled, checkedInAt, endTime], map: "bookings_attendance_no_show_idx")
   @@map("bookings")
 }
+
+// CWB-67: append-only audit trail of important admin mutations, written in the same
+// transaction as the change. Actor comes from the verified JWT; no FK so history survives
+// account deletion. Never store passwords, tokens or secrets in before/after.
+model AuditEvent {
+  id         String   @id @default(uuid())
+  /// Insertion order; breaks createdAt ties so the trail is read in commit order.
+  sequence   Int      @unique @default(autoincrement())
+  actorId    String   @map("actor_id") @db.VarChar(191)
+  actorRole  Role     @map("actor_role")
+  action     String   @db.VarChar(64)
+  entityType String   @map("entity_type") @db.VarChar(32)
+  entityId   String   @map("entity_id") @db.VarChar(191)
+  before     Json?
+  after      Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId, sequence])
+  @@index([createdAt])
+  @@map("audit_events")
+}

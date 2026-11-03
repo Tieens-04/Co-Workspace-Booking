@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client';
+import type { AuditActor } from '../repositories/audit.repository.js';
 import {
   BookingIdentity,
   BookingRepositoryContract,
@@ -42,6 +43,7 @@ export class BookingService {
   async createGuestBooking(
     input: CreateGuestBookingInput,
     now = new Date(),
+    auditActor?: AuditActor,
   ): Promise<BookingResponseDto> {
     return this.createBookingInternal(
       {
@@ -51,6 +53,7 @@ export class BookingService {
       },
       input,
       now,
+      auditActor,
     );
   }
 
@@ -63,6 +66,7 @@ export class BookingService {
       note?: string | null;
     },
     now = new Date(),
+    auditActor?: AuditActor,
   ): Promise<BookingResponseDto> {
     const startDate = new Date(input.startTime);
     const endDate = new Date(input.endTime);
@@ -84,6 +88,7 @@ export class BookingService {
           endDate,
           durationMinutes,
           note: input.note,
+          ...(auditActor ? { auditActor } : {}),
         });
 
         if (identity.userId) {
