@@ -4,6 +4,7 @@ import { m } from 'motion/react';
 import {
   CalendarCheck,
   DoorOpen,
+  History,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -50,6 +51,13 @@ const NAV_ITEMS = [
     label: 'Tiện ích',
     icon: Sparkles,
     testId: 'admin-nav-amenities',
+    end: false,
+  },
+  {
+    to: '/admin/audit',
+    label: 'Lịch sử thao tác',
+    icon: History,
+    testId: 'admin-nav-audit',
     end: false,
   },
 ];
