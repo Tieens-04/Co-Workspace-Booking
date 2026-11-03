@@ -37,3 +37,18 @@ groupBy: -> Table scan on <temporary>
   `(start_time, id)`), việc này đổi contract API nên cần thống nhất trước.
 - Việc còn lại của CWB-57: giới hạn kỳ, phân trang schedule, thu hẹp phạm vi lazy evaluation và load test đồng
   thời trên môi trường gần production.
+
+## Cập nhật 03/11/2026: giới hạn kỳ mặc định và phân trang schedule
+
+Cùng script `npm run bench:reports` (20.000 booking rải đều 365 ngày, 30 lần lặp, máy dev một tiến trình). Đã thêm phép đo đường đi mặc định mới:
+
+| Query                                                  | p50 ms | p95 ms | Heap growth MB |
+| ------------------------------------------------------ | -----: | -----: | -------------: |
+| Repository calculateRevenue({}) — toàn bộ lịch sử (cũ) |   60.0 |   86.4 |            0.9 |
+| Repository calculateRevenue(kỳ mặc định 90 ngày) — mới |   47.3 |   58.7 |            1.6 |
+
+- `GET /admin/revenue` giờ luôn có kỳ (mặc định 90 ngày gần nhất, tối đa 366 ngày). Chi phí tỉ lệ với số booking **trong kỳ**, không còn tăng theo toàn bộ lịch sử.
+- Mức giảm trên bộ dữ liệu này nhỏ (khoảng 32% p95) vì dữ liệu chỉ trải một năm. Bảng càng có nhiều năm lịch sử thì khoảng cách càng lớn.
+- Chưa đo EXPLAIN cho truy vấn có kỳ nên không khẳng định MySQL dùng index `(start_time, id)`; chưa thêm index mới.
+- `GET /admin/dashboard/schedule` phân trang theo phòng (mặc định 20, tối đa 50), nên số dòng slot/booking mỗi request bị chặn theo `limit`.
+- Chưa làm: thu hẹp phạm vi lazy no-show evaluation trên các GET (đo được `calculateRevenue({})` gồm cả bước này ở mức p95 86.4 ms) và load test đồng thời trên môi trường gần production. Đây vẫn là số đo local, không phải load test.

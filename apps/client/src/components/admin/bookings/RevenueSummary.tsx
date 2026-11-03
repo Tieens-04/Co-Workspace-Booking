@@ -5,6 +5,9 @@ import { AdminRevenueData } from '../../../types/admin-booking';
 import { formatCurrency } from '../../../utils/format';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 
+/** YYYY-MM-DD → DD/MM/YYYY (period strings are already Vietnam dates). */
+const formatVnDay = (date: string) => date.split('-').reverse().join('/');
+
 interface RevenueFigureProps {
   icon: LucideIcon;
   label: React.ReactNode;
@@ -48,6 +51,13 @@ export function RevenueSummary({ data, error }: RevenueSummaryProps) {
           <CircleAlert aria-hidden="true" />
           <AlertDescription>{error}</AlertDescription>
         </Alert>
+      )}
+      {data?.period.startDate && data.period.endDate && (
+        <p className="text-sm text-muted-foreground" data-testid="revenue-period">
+          {data.period.startDate === data.period.endDate
+            ? `Doanh thu ngày ${formatVnDay(data.period.startDate)}`
+            : `Doanh thu từ ${formatVnDay(data.period.startDate)} đến ${formatVnDay(data.period.endDate)}`}
+        </p>
       )}
       {data && (
         <section

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import { AdminDashboardPage } from '../pages/AdminDashboardPage';
 import { adminDashboardApi } from '../services/admin-dashboard.api';
@@ -106,6 +106,8 @@ const mockScheduleData = {
       bookings: [],
     },
   ],
+  summary: { totalRooms: 2, availableRooms: 1, maintenanceRooms: 1 },
+  pagination: { page: 1, limit: 20, total: 2, totalPages: 1 },
 };
 
 const renderWithContext = () => {
@@ -163,6 +165,34 @@ describe('AdminDashboardPage Component Tests (CWB-32)', () => {
     expect(screen.getByText('Deluxe Creative Room')).toBeInTheDocument();
     expect(screen.getByText('Conference Room B')).toBeInTheDocument();
     expect(screen.getAllByText(/Đang bảo trì/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('uses whole-catalog room counts and pages the schedule (CWB-57)', async () => {
+    vi.mocked(adminDashboardApi.getDashboardSchedule).mockResolvedValue({
+      success: true,
+      message: 'OK',
+      data: {
+        ...mockScheduleData,
+        summary: { totalRooms: 45, availableRooms: 40, maintenanceRooms: 5 },
+        pagination: { page: 1, limit: 20, total: 45, totalPages: 3 },
+      },
+    });
+    renderWithContext();
+
+    await screen.findByText('45 phòng');
+    expect(adminDashboardApi.getDashboardSchedule).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 1, limit: 20 }),
+      expect.anything(),
+    );
+    const pager = screen.getByTestId('schedule-pagination');
+    expect(pager).toHaveTextContent('Trang 1 / 3');
+    fireEvent.click(within(pager).getByRole('button', { name: /Trang sau/i }));
+    await waitFor(() =>
+      expect(adminDashboardApi.getDashboardSchedule).toHaveBeenLastCalledWith(
+        expect.objectContaining({ page: 2, limit: 20 }),
+        expect.anything(),
+      ),
+    );
   });
 
   it('switches between Day and Week period filters and fetches updated KPI metrics', async () => {

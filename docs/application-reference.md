@@ -691,6 +691,17 @@ Revenue API (`GET /api/v1/admin/revenue`, alias `/admin/bookings/revenue`) và K
   `SUM(total_amount)`/`COUNT(*)`, nên chỉ tối đa 8 dòng được trả về Node dù dữ liệu lớn đến đâu
   (CWB-57). KPI chỉ tải khoảng thời gian của booking `CONFIRMED`/`COMPLETED` để tính lấp đầy.
   Cả hai báo cáo dùng chung một hàm quy tắc (`summarizeRevenueGroups`).
+- **Kỳ báo cáo luôn có giới hạn (CWB-57)**: `GET /admin/revenue` không bao giờ quét toàn bảng. Ngày tính theo giờ Việt Nam, lọc theo `startTime`:
+  - không gửi `startDate`/`endDate` → **90 ngày gần nhất** đến hôm nay;
+  - chỉ gửi `startDate` → đến hôm nay (hoặc đúng ngày đó nếu là ngày tương lai);
+  - chỉ gửi `endDate` → 90 ngày kết thúc tại `endDate`;
+  - kỳ dài hơn **366 ngày** (tính cả hai đầu) → `400 VALIDATION_ERROR`.
+  - Response `period.startDate`/`period.endDate` luôn là kỳ đã áp dụng (không còn `null`). Màn quản trị đặt phòng hiển thị dòng "Doanh thu từ … đến …".
+- **Lịch phòng phân trang (CWB-57)**: `GET /admin/dashboard/schedule?date=&page=&limit=`:
+  - `page` ≥ 1 (mặc định 1), `limit` 1–50 (mặc định 20); sai → `400`.
+  - Phòng sắp theo `status, name, id` nên các trang không trùng hoặc sót phòng.
+  - Response thêm `pagination { page, limit, total, totalPages }` và `summary { totalRooms, availableRooms, maintenanceRooms }` (đếm trên toàn bộ phòng, dùng cho thẻ KPI số phòng).
+  - Dashboard có thanh phân trang dưới lưới lịch phòng.
 
 **Xuất CSV (CWB-69):** `GET /api/v1/admin/reports/bookings.csv` và `GET /api/v1/admin/reports/revenue.csv` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`).
 

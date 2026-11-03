@@ -53,6 +53,7 @@ async function main() {
   const { summarizeBookingRevenue, summarizeRevenueGroups, toRevenueGroups } =
     await import('../src/utils/booking-revenue.util.js');
   const { BookingRepository } = await import('../src/repositories/booking.repository.js');
+  const { resolveRevenuePeriod } = await import('../src/utils/revenue-period.util.js');
   const { AdminDashboardRepository } =
     await import('../src/repositories/admin-dashboard.repository.js');
   const { prisma: appPrisma } = await import('../src/utils/prisma.util.js');
@@ -132,6 +133,12 @@ async function main() {
     const repo = new BookingRepository();
     await measure('Repository calculateRevenue({}) incl. lazy no-show check', async () => {
       await repo.calculateRevenue({});
+      return 0;
+    });
+    // CWB-57: what GET /admin/revenue now runs when no period is sent (last 90 days).
+    const defaultPeriod = resolveRevenuePeriod({}, new Date(base + 200 * 86_400_000));
+    await measure('Repository calculateRevenue(default 90-day period)', async () => {
+      await repo.calculateRevenue(defaultPeriod);
       return 0;
     });
     const dashboard = new AdminDashboardRepository();

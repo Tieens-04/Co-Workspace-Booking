@@ -14,6 +14,7 @@ import {
 } from '../types/admin-booking.type.js';
 import { CreateGuestBookingInput } from '../validators/admin-booking.validator.js';
 import { emailOutboxService, EmailOutboxService } from './email-outbox.service.js';
+import { resolveRevenuePeriod } from '../utils/revenue-period.util.js';
 
 export class AdminBookingService {
   constructor(
@@ -101,7 +102,9 @@ export class AdminBookingService {
     filter: RevenuePeriodFilter,
     now = new Date(),
   ): Promise<AdminRevenueResponseDto> {
-    return this.adminBookingRepo.calculateRevenue(filter, now);
+    // CWB-57: always aggregate a bounded period (default last 90 days, max 366).
+    const period = resolveRevenuePeriod(filter, now);
+    return this.adminBookingRepo.calculateRevenue({ ...filter, ...period }, now);
   }
 }
 
