@@ -153,6 +153,62 @@ async function main() {
       return 0;
     });
 
+    // CWB-57: lazy no-show evaluation with a real backlog, global vs scoped to the 90-day period.
+    // Seeded CONFIRMED rows have tracking off; turn it on (tagged) so they become candidates and
+    // reset them before every timed run so each run sees the same backlog.
+    const backlogTag = { bookingCode: { startsWith: prefix }, note: 'bench-backlog' };
+    await db.booking.updateMany({
+      where: { bookingCode: { startsWith: prefix }, status: BookingStatus.CONFIRMED },
+      data: { attendanceTrackingEnabled: true, note: 'bench-backlog' },
+    });
+    const backlog = await db.booking.count({ where: backlogTag });
+    const resetBacklog = () =>
+      db.booking.updateMany({ where: backlogTag, data: { status: BookingStatus.CONFIRMED } });
+    const periodFrom = new Date(`${defaultPeriod.startDate}T00:00:00+07:00`);
+    const periodTo = new Date(
+      new Date(`${defaultPeriod.endDate}T00:00:00+07:00`).getTime() + 86_400_000,
+    );
+    const evaluationRuns = Math.min(ITERATIONS, 5);
+    for (const [label, scope] of [
+      ['global (before)', undefined],
+      ['scoped to 90-day period (after)', { from: periodFrom, to: periodTo }],
+    ] as const) {
+      const times: number[] = [];
+      let updated = 0;
+      for (let i = 0; i < evaluationRuns; i++) {
+        await resetBacklog();
+        const start = performance.now();
+        updated = await repo.evaluateNoShowBookings(new Date(), undefined, undefined, scope);
+        times.push(performance.now() - start);
+      }
+      console.log(
+        `| evaluateNoShowBookings ${label}, backlog=${backlog} | ${updated} updated | ${percentile(times, 50).toFixed(1)} | ${percentile(times, 95).toFixed(1)} | - |`,
+      );
+    }
+    await db.booking.updateMany({
+      where: backlogTag,
+      data: { status: BookingStatus.CONFIRMED, attendanceTrackingEnabled: false, note: null },
+    });
+
+    // Concurrent load: CONCURRENCY parallel revenue calls (default period) per round.
+    const CONCURRENCY = 10;
+    const ROUNDS = 10;
+    const latencies: number[] = [];
+    const loadStart = performance.now();
+    for (let round = 0; round < ROUNDS; round++) {
+      await Promise.all(
+        Array.from({ length: CONCURRENCY }, async () => {
+          const start = performance.now();
+          await repo.calculateRevenue(defaultPeriod);
+          latencies.push(performance.now() - start);
+        }),
+      );
+    }
+    const loadSeconds = (performance.now() - loadStart) / 1000;
+    console.log(
+      `\nConcurrent load: ${CONCURRENCY} parallel x ${ROUNDS} rounds = ${latencies.length} calculateRevenue(default period) calls; p50=${percentile(latencies, 50).toFixed(1)} ms p95=${percentile(latencies, 95).toFixed(1)} ms throughput=${(latencies.length / loadSeconds).toFixed(1)} calls/s`,
+    );
+
     queries.length = 0;
     await db.booking.findMany({ select: { status: true, paymentStatus: true, totalAmount: true } });
     const previousQueries = queries.length;
@@ -166,11 +222,22 @@ async function main() {
       `\nSQL queries per call: previous=${previousQueries} (returns ${total} rows), groupBy=${queries.length} (returns at most 8 rows)`,
     );
 
+    // Literals below are timestamps computed by this script, never request input.
+    const sqlFrom = periodFrom.toISOString().slice(0, 23).replace('T', ' ');
+    const sqlTo = periodTo.toISOString().slice(0, 23).replace('T', ' ');
     for (const [label, sql] of [
       ['previous', 'SELECT status, payment_status, total_amount FROM bookings'],
       [
         'groupBy',
         'SELECT status, payment_status, COUNT(*), SUM(total_amount) FROM bookings GROUP BY status, payment_status',
+      ],
+      [
+        'groupBy, default 90-day period (CWB-57)',
+        `SELECT status, payment_status, COUNT(*), SUM(total_amount) FROM bookings WHERE start_time >= '${sqlFrom}' AND start_time < '${sqlTo}' GROUP BY status, payment_status`,
+      ],
+      [
+        'no-show candidates, scoped (CWB-57)',
+        `SELECT id FROM bookings WHERE status = 'CONFIRMED' AND checked_in_at IS NULL AND attendance_tracking_enabled = 1 AND end_time <= NOW(3) AND end_time > '${sqlFrom}' AND start_time < '${sqlTo}' ORDER BY id LIMIT 100`,
       ],
     ] as const) {
       // Static SQL with no user input; EXPLAIN only reads the plan.
