@@ -1,7 +1,7 @@
 import { BookingStatus, Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { summarizeRevenueGroups, toRevenueGroups } from '../utils/booking-revenue.util.js';
-import { bookingRepository } from './booking.repository.js';
+import { bookingRepository, NoShowScope } from './booking.repository.js';
 import { calculateDashboardOccupancy } from '../utils/dashboard-occupancy.util.js';
 import {
   getDayBounds,
@@ -34,7 +34,7 @@ export interface DashboardKpiRawResult {
 }
 
 export interface AdminDashboardRepositoryContract {
-  evaluateNoShowBookings(now?: Date): Promise<number>;
+  evaluateNoShowBookings(now?: Date, scope?: NoShowScope): Promise<number>;
   getKpiData(bounds: {
     startDate: Date;
     endDate: Date;
@@ -49,8 +49,8 @@ export interface AdminDashboardRepositoryContract {
 }
 
 export class AdminDashboardRepository implements AdminDashboardRepositoryContract {
-  async evaluateNoShowBookings(now: Date = new Date()): Promise<number> {
-    return bookingRepository.evaluateNoShowBookings(now);
+  async evaluateNoShowBookings(now: Date = new Date(), scope?: NoShowScope): Promise<number> {
+    return bookingRepository.evaluateNoShowBookings(now, undefined, undefined, scope);
   }
 
   async getKpiData(bounds: {

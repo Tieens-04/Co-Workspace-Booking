@@ -39,6 +39,16 @@ export type BookingGuestIdentity = {
 
 export type BookingIdentity = BookingUserIdentity | BookingGuestIdentity;
 
+/**
+ * Limits lazy no-show evaluation to bookings overlapping [from, to) (and a room) — the rows a
+ * bounded report actually reads. Bookings outside the window are evaluated when they are read.
+ */
+export interface NoShowScope {
+  from?: Date;
+  to?: Date;
+  roomId?: string;
+}
+
 export type CreateBookingRepoInput = {
   roomId: string;
   bookingCode: string;
@@ -301,7 +311,12 @@ export interface AdminBookingRepositoryContract {
     clock?: () => Date,
     actor?: AuditActor,
   ): Promise<AdminBookingResponseDto>;
-  evaluateNoShowBookings(now?: Date, userId?: string, id?: string): Promise<number>;
+  evaluateNoShowBookings(
+    now?: Date,
+    userId?: string,
+    id?: string,
+    scope?: NoShowScope,
+  ): Promise<number>;
   calculateRevenue(filter: RevenuePeriodFilter, now?: Date): Promise<AdminRevenueResponseDto>;
 }
 
@@ -948,12 +963,20 @@ export class BookingRepository
     });
   }
 
-  async evaluateNoShowBookings(now?: Date, userId?: string, id?: string): Promise<number> {
+  async evaluateNoShowBookings(
+    now?: Date,
+    userId?: string,
+    id?: string,
+    scope?: NoShowScope,
+  ): Promise<number> {
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.CONFIRMED,
       checkedInAt: null,
       attendanceTrackingEnabled: true,
-      endTime: { lte: now ?? new Date() },
+      // CWB-57: a scoped read only evaluates bookings overlapping the window it returns.
+      endTime: { lte: now ?? new Date(), ...(scope?.from ? { gt: scope.from } : {}) },
+      ...(scope?.to ? { startTime: { lt: scope.to } } : {}),
+      ...(scope?.roomId ? { roomId: scope.roomId } : {}),
       ...(userId ? { userId } : {}),
       ...(id ? { id } : {}),
     };
@@ -990,8 +1013,6 @@ export class BookingRepository
     filter: RevenuePeriodFilter,
     now: Date = new Date(),
   ): Promise<AdminRevenueResponseDto> {
-    await this.evaluateNoShowBookings(now);
-
     const where: Prisma.BookingWhereInput = {};
     if (filter.roomId) {
       where.roomId = filter.roomId;
@@ -1007,6 +1028,13 @@ export class BookingRepository
         where.startTime.lt = dayEnd;
       }
     }
+
+    const startRange = where.startTime as Prisma.DateTimeFilter | undefined;
+    await this.evaluateNoShowBookings(now, undefined, undefined, {
+      from: startRange?.gte as Date | undefined,
+      to: startRange?.lt as Date | undefined,
+      roomId: filter.roomId,
+    });
 
     // Aggregate in MySQL: at most 8 (status x payment) rows reach Node regardless of volume.
     const groupRows = await prisma.booking.groupBy({

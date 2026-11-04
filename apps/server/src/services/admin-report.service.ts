@@ -18,12 +18,16 @@ const vnDate = (date: Date) => vnDateTime(date).slice(0, 10);
 export class AdminReportService {
   private async loadBookings(query: ExportReportQueryInput) {
     // Same lazy no-show evaluation as the admin list so exported statuses match the UI.
-    await bookingRepository.evaluateNoShowBookings(new Date());
+    const from = getDayBounds(query.startDate).dayStart;
+    const to = getDayBounds(query.endDate).dayEnd;
+    // CWB-57: scoped to the exported period/room, like every other bounded report.
+    await bookingRepository.evaluateNoShowBookings(new Date(), undefined, undefined, {
+      from,
+      to,
+      roomId: query.roomId,
+    });
     const where: Prisma.BookingWhereInput = {
-      startTime: {
-        gte: getDayBounds(query.startDate).dayStart,
-        lt: getDayBounds(query.endDate).dayEnd,
-      },
+      startTime: { gte: from, lt: to },
       ...(query.roomId ? { roomId: query.roomId } : {}),
       ...(query.paymentStatus ? { paymentStatus: query.paymentStatus as PaymentStatus } : {}),
     };

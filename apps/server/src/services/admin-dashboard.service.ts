@@ -18,8 +18,6 @@ export class AdminDashboardService {
     filter: DashboardKpiFilter,
     now: Date = new Date(),
   ): Promise<DashboardKpiResponseDto> {
-    await this.repo.evaluateNoShowBookings(now);
-
     const todayStr = getVietnamTodayString(now);
     const dateStr = filter.date || todayStr;
     const periodType = filter.period || 'day';
@@ -37,6 +35,12 @@ export class AdminDashboardService {
       const { dayStart, dayEnd } = getDayBounds(dateStr);
       startDate = dayStart;
       endDate = dayEnd;
+    }
+
+    // CWB-57: evaluate only the windows this KPI reads (the period and today), not the table.
+    await this.repo.evaluateNoShowBookings(now, { from: startDate, to: endDate });
+    if (todayStart < startDate || todayEnd > endDate) {
+      await this.repo.evaluateNoShowBookings(now, { from: todayStart, to: todayEnd });
     }
 
     const raw = await this.repo.getKpiData({
@@ -76,9 +80,10 @@ export class AdminDashboardService {
     filter: DashboardScheduleFilter,
     now: Date = new Date(),
   ): Promise<DashboardScheduleResponseDto> {
-    await this.repo.evaluateNoShowBookings(now);
     const todayStr = getVietnamTodayString(now);
     const dateStr = filter.date || todayStr;
+    const { dayStart, dayEnd } = getDayBounds(dateStr);
+    await this.repo.evaluateNoShowBookings(now, { from: dayStart, to: dayEnd });
 
     return this.repo.getScheduleData(dateStr, filter.page ?? 1, filter.limit ?? 20);
   }

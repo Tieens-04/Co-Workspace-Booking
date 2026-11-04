@@ -708,7 +708,7 @@ Revenue API (`GET /api/v1/admin/revenue`, alias `/admin/bookings/revenue`) và K
 - Query bắt buộc `startDate`, `endDate` (`YYYY-MM-DD`, theo ngày bắt đầu giờ Việt Nam, kỳ tối đa 92 ngày); tùy chọn `roomId`, `paymentStatus` (`PAID`/`UNPAID`). Query khác hoặc kỳ sai trả `400 VALIDATION_ERROR`. Hơn 10.000 đơn trả `400 EXPORT_TOO_LARGE` (cần thu hẹp kỳ).
 - File UTF-8 có BOM (Excel đọc đúng tiếng Việt), dòng CRLF, `Content-Disposition: attachment`, `Cache-Control: no-store`. Thời gian theo giờ Việt Nam. Ô bắt đầu bằng `=`, `+`, `-`, `@` hoặc tab được thêm `'` để chống CSV/formula injection; giá trị có dấu phẩy/ngoặc kép/xuống dòng được bọc ngoặc kép theo RFC 4180.
 - `bookings.csv`: mã đơn, phòng, tên khách, loại khách (tài khoản/vãng lai), bắt đầu/kết thúc, trạng thái, thanh toán, phương thức, số tiền. Không xuất email, mật khẩu, token hay dữ liệu ngoài quyền ADMIN.
-- `revenue.csv`: theo ngày và dòng `Tổng`, dùng cùng quy tắc doanh thu với API (`actual` chỉ tính PAID; CANCELLED + UNPAID không đóng góp). Trước khi xuất chạy lazy no-show evaluation như danh sách admin.
+- `revenue.csv`: theo ngày và dòng `Tổng`, dùng cùng quy tắc doanh thu với API (`actual` chỉ tính PAID; CANCELLED + UNPAID không đóng góp). Trước khi xuất chạy lazy no-show evaluation trong phạm vi kỳ/phòng được xuất (CWB-57).
 - Client: khối "Xuất báo cáo CSV" trên trang quản lý đặt phòng (chọn kỳ và trạng thái thanh toán, hiển thị lỗi từ server).
 
 Booking đã hủy không đóng góp thời gian sử dụng phòng dù đã PAID. Ví dụ PAID `100.00`
@@ -820,6 +820,7 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
   - Tạo booking vẫn khóa phòng, kiểm tra overlap `existing.start < requested.end AND existing.end > requested.start` với `CONFIRMED`; yêu cầu đặt trùng trả `409 BOOKING_CONFLICT`.
   - Đơn bật theo dõi check-in phải có `checkedInAt` mới được hoàn tất. Không cho đánh dấu `NO_SHOW` đối với đơn đã check-in. Đơn lịch sử không bật theo dõi vẫn được ADMIN giải quyết thủ công sau `endTime`.
   - Customer detail/list, admin list, dashboard KPI/lịch và revenue dùng chung lazy evaluator: chỉ tự chuyển `CONFIRMED` có `attendanceTrackingEnabled = true`, `checkedInAt = null`, `endTime <= now` sang `NO_SHOW`, không phụ thuộc `PAID/UNPAID`. Evaluator xử lý theo batch, khóa và kiểm tra lại dòng booking; chạy lặp không đổi lịch sử. Detail chỉ đánh giá booking thuộc người gọi.
+  - **Phạm vi theo cửa sổ đọc (CWB-57):** các báo cáo có kỳ chỉ đánh giá booking **giao** với khoảng thời gian chúng trả về (`startTime < cuối kỳ` và `endTime > đầu kỳ`, kèm `roomId` nếu lọc), không quét cả bảng. Cụ thể: revenue theo kỳ đã áp dụng, KPI theo kỳ ngày/tuần và ngày hôm nay, lịch phòng theo ngày được chọn, CSV theo kỳ xuất. Danh sách admin và lịch sử customer vẫn đánh giá không giới hạn kỳ vì hiển thị mọi ngày. Booking ngoài cửa sổ giữ trạng thái đã lưu cho tới khi một lần đọc bao phủ nó đánh giá.
 - **Giao diện Quản trị Đặt phòng Phía Client (`/admin/bookings`)**:
   - Tích hợp điều hướng từ menu Quản trị (`/admin`).
   - Thanh tìm kiếm và bộ lọc nhanh: Ô nhập mã đơn, bộ chọn ngày (Việt Nam UTC+7), dropdown trạng thái, nút Tìm kiếm, Xóa bộ lọc và Làm mới dữ liệu. Đồng bộ trạng thái URL search params.
