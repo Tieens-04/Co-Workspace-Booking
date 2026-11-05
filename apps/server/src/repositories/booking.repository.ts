@@ -295,6 +295,7 @@ export interface AdminBookingRepositoryContract {
     id: string,
     reason: string,
     actor?: AuditActor,
+    clock?: () => Date,
   ): Promise<AdminBookingResponseDto>;
   checkInBookingForAdmin(
     id: string,
@@ -668,6 +669,7 @@ export class BookingRepository
     id: string,
     reason: string,
     actor?: AuditActor,
+    clock: () => Date = () => new Date(),
   ): Promise<AdminBookingResponseDto> {
     return prisma.$transaction(async (tx) => {
       // 1. Lock booking row in MySQL with FOR UPDATE
@@ -675,8 +677,13 @@ export class BookingRepository
         Array<{
           id: string;
           status: BookingStatus;
+          end_time: Date | string;
+          checked_in_at: Date | string | null;
+          attendance_tracking_enabled: boolean | number;
         }>
-      >(Prisma.sql`SELECT id, status FROM bookings WHERE id = ${id} FOR UPDATE`);
+      >(
+        Prisma.sql`SELECT id, status, end_time, checked_in_at, attendance_tracking_enabled FROM bookings WHERE id = ${id} FOR UPDATE`,
+      );
 
       if (!rows || rows.length === 0) {
         throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
@@ -698,7 +705,8 @@ export class BookingRepository
         return dto;
       }
 
-      // 3. Reject if booking is already COMPLETED
+      // 3. Only CONFIRMED bookings can be cancelled (CWB-71): COMPLETED and NO_SHOW are historical
+      //    outcomes that reports rely on and must never be overwritten.
       if (lockedBooking.status === BookingStatus.COMPLETED) {
         throw new AppError(
           'BOOKING_STATE_CONFLICT',
@@ -706,8 +714,30 @@ export class BookingRepository
           409,
         );
       }
+      if (lockedBooking.status !== BookingStatus.CONFIRMED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hủy đơn đặt phòng đã đánh dấu không đến',
+          409,
+        );
+      }
 
-      // 4. Update status to CANCELLED with cancellation reason
+      // 4. An ended, unattended booking is already a NO_SHOW that lazy evaluation has not persisted
+      //    yet. Evaluated after acquiring the lock so the outcome does not depend on whether a read
+      //    happened to persist NO_SHOW first.
+      const isLazyNoShow =
+        Boolean(lockedBooking.attendance_tracking_enabled) &&
+        !lockedBooking.checked_in_at &&
+        new Date(lockedBooking.end_time).getTime() <= clock().getTime();
+      if (isLazyNoShow) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hủy đơn đặt phòng đã đánh dấu không đến',
+          409,
+        );
+      }
+
+      // 5. Update status to CANCELLED with cancellation reason
       const auditBefore = actor
         ? await tx.booking.findUnique({ where: { id }, select: auditBookingSelect })
         : null;

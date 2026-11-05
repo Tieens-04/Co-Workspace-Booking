@@ -12,6 +12,7 @@ import {
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { bookingRepository } from '../repositories/booking.repository.js';
 
 describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL & Transactions)', () => {
   const testPrefix = `test_admin_booking_${randomUUID().slice(0, 8)}`;
@@ -877,6 +878,93 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       expect(res.status).toBe(409);
       expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    describe('historical outcomes cannot be cancelled (CWB-71)', () => {
+      const HOUR = 60 * 60 * 1000;
+      const pastBooking = (data: Partial<Prisma.BookingUncheckedCreateInput>) => {
+        const start = new Date(Date.now() - 6 * HOUR);
+        return prisma.booking.create({
+          data: {
+            bookingCode: `CS-20261104-${randomUUID().slice(0, 4).toUpperCase()}`,
+            roomId: availableRoomId,
+            userId: testUserId,
+            startTime: start,
+            endTime: new Date(start.getTime() + 2 * HOUR),
+            totalAmount: new Prisma.Decimal('400.00'),
+            ...data,
+          },
+        });
+      };
+      const cancel = (id: string) =>
+        request(app)
+          .patch(`/api/v1/admin/bookings/${id}/cancel`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ reason: 'probe' });
+      const sideEffects = async (id: string) => ({
+        audit: await prisma.auditEvent.count({ where: { entityId: id } }),
+        outbox: await prisma.emailOutbox.count({ where: { bookingId: id } }),
+      });
+
+      it.each([
+        [BookingStatus.NO_SHOW, PaymentStatus.UNPAID, null],
+        [BookingStatus.COMPLETED, PaymentStatus.PAID, PaymentMethod.CASH],
+      ])(
+        'rejects cancelling a %s booking with 409 and changes nothing',
+        async (status, paymentStatus, paymentMethod) => {
+          const booking = await pastBooking({ status, paymentStatus, paymentMethod });
+
+          const res = await cancel(booking.id);
+
+          expect(res.status).toBe(409);
+          expect(res.body).toMatchObject({ success: false, code: 'BOOKING_STATE_CONFLICT' });
+          const persisted = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+          expect(persisted).toMatchObject({
+            status,
+            cancellationReason: null,
+            paymentStatus,
+            paymentMethod,
+            updatedAt: booking.updatedAt,
+          });
+          expect(await sideEffects(booking.id)).toEqual({ audit: 0, outbox: 0 });
+
+          // Lazy no-show evaluation running again keeps the historical outcome.
+          await bookingRepository.evaluateNoShowBookings(new Date());
+          expect(
+            (await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).status,
+          ).toBe(status);
+        },
+      );
+
+      it('rejects an ended unattended CONFIRMED booking that lazy evaluation has not marked yet', async () => {
+        const booking = await pastBooking({ status: BookingStatus.CONFIRMED });
+
+        const res = await cancel(booking.id);
+
+        expect(res.status).toBe(409);
+        expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+        expect(await sideEffects(booking.id)).toEqual({ audit: 0, outbox: 0 });
+        await bookingRepository.evaluateNoShowBookings(new Date(), undefined, booking.id);
+        const persisted = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+        expect(persisted.status).toBe(BookingStatus.NO_SHOW);
+        expect(persisted.cancellationReason).toBeNull();
+      });
+
+      it('still cancels an ended CONFIRMED booking that was checked in or not attendance-tracked', async () => {
+        const checkedIn = await pastBooking({
+          status: BookingStatus.CONFIRMED,
+          checkedInAt: new Date(Date.now() - 5 * HOUR),
+        });
+        const untracked = await pastBooking({
+          status: BookingStatus.CONFIRMED,
+          attendanceTrackingEnabled: false,
+        });
+        for (const booking of [checkedIn, untracked]) {
+          const res = await cancel(booking.id);
+          expect(res.status).toBe(200);
+          expect(res.body.data.status).toBe('CANCELLED');
+        }
+      });
     });
 
     it('is idempotent when cancelling already CANCELLED booking', async () => {
