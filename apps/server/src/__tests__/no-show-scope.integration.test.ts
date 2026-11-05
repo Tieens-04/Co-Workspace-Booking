@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { BookingStatus, PaymentStatus, Prisma, Role, RoomStatus } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
-import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 import { getVietnamTodayString } from '../utils/dashboard-date.util.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
 
@@ -14,9 +14,13 @@ import { bookingRepository } from '../repositories/booking.repository.js';
  * that covers it (or the unscoped admin list) evaluates it.
  */
 describe('CWB-57 scoped lazy no-show evaluation (real MySQL)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const prefix = `test_noshow_scope_${randomUUID().slice(0, 8)}`;
   const auth = {
-    Authorization: `Bearer ${generateToken({ sub: randomUUID(), role: Role.ADMIN })}`,
+    Authorization: `Bearer ${accounts.token(Role.ADMIN)}`,
   };
   let roomId: string;
   let otherRoomId: string;

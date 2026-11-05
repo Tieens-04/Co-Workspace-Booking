@@ -5,17 +5,22 @@ import { Prisma, Role, RoomStatus } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 import { hashPassword } from '../utils/password.util.js';
 import { drainBackgroundTasks } from '../utils/background-tasks.util.js';
 
 describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const tag = randomUUID().slice(0, 8);
   let roomId: string;
   let otherRoomId: string;
   const userIds: string[] = [];
   const tokens: string[] = [];
-  const adminToken = generateToken({ sub: `admin-${tag}`, role: Role.ADMIN });
-  const otherAdminToken = generateToken({ sub: `admin2-${tag}`, role: Role.ADMIN });
+  const adminToken = accounts.token(Role.ADMIN, `admin-${tag}`);
+  const otherAdminToken = accounts.token(Role.ADMIN, `admin2-${tag}`);
   let dayOffset = 2;
 
   // Each test books its own future day at 09:00-11:00 Vietnam time.

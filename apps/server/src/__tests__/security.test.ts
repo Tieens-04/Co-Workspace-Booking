@@ -120,6 +120,7 @@ describe('Security Regressions (CWB-33, CWB-37)', () => {
           phoneNumber: null,
           role: Role.CUSTOMER,
           passwordHash,
+          tokenVersion: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
         });

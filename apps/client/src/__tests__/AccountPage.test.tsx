@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { AccountPage } from '../pages/AccountPage';
 import { AuthProvider } from '../context/AuthContext';
 import { useAuth } from '../hooks/useAuth';
@@ -11,7 +11,7 @@ import { createMockJwt } from './test-utils';
 import type { SafeUser } from '../types/auth';
 
 vi.mock('../services/me.api', () => ({
-  meApi: { getMe: vi.fn(), updateMe: vi.fn(), changePassword: vi.fn() },
+  meApi: { getMe: vi.fn(), updateMe: vi.fn(), changePassword: vi.fn(), logoutAll: vi.fn() },
 }));
 
 const user: SafeUser = {
@@ -30,10 +30,13 @@ function Greeting() {
 
 const renderPage = () =>
   render(
-    <MemoryRouter>
+    <MemoryRouter initialEntries={['/account']}>
       <AuthProvider>
         <Greeting />
-        <AccountPage />
+        <Routes>
+          <Route path="/account" element={<AccountPage />} />
+          <Route path="/login" element={<p data-testid="login-screen">Đăng nhập</p>} />
+        </Routes>
       </AuthProvider>
     </MemoryRouter>,
   );
@@ -159,5 +162,61 @@ describe('AccountPage and profile hydration (CWB-63)', () => {
 
     expect(screen.getByTestId('account-password-error')).toHaveTextContent('không khớp');
     expect(meApi.changePassword).not.toHaveBeenCalled();
+  });
+  describe('log out everywhere (CWB-77)', () => {
+    const openDialog = async (user$: ReturnType<typeof userEvent.setup>) => {
+      await user$.click(await screen.findByTestId('account-logout-all-btn'));
+      return screen.findByTestId('account-logout-all-dialog');
+    };
+
+    it('asks for confirmation, revokes all sessions and ends this one', async () => {
+      const user$ = userEvent.setup();
+      vi.mocked(meApi.logoutAll).mockResolvedValue(ok(null));
+      renderPage();
+
+      const dialog = await openDialog(user$);
+      expect(dialog).toHaveTextContent('kể cả phiên hiện tại');
+      expect(meApi.logoutAll).not.toHaveBeenCalled();
+      await user$.click(screen.getByTestId('account-logout-all-confirm'));
+
+      expect(await screen.findByTestId('login-screen')).toBeInTheDocument();
+      expect(meApi.logoutAll).toHaveBeenCalledTimes(1);
+      expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+      expect(screen.getByTestId('greeting')).toHaveTextContent('(chưa có tên)');
+    });
+
+    it('does nothing when the confirmation is cancelled', async () => {
+      const user$ = userEvent.setup();
+      const original = localStorage.getItem(TOKEN_STORAGE_KEY);
+      renderPage();
+
+      await openDialog(user$);
+      await user$.click(screen.getByRole('button', { name: 'Hủy' }));
+
+      await waitFor(() =>
+        expect(screen.queryByTestId('account-logout-all-dialog')).not.toBeInTheDocument(),
+      );
+      expect(meApi.logoutAll).not.toHaveBeenCalled();
+      expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe(original);
+    });
+
+    it('keeps the session and shows the server error inside the dialog on failure', async () => {
+      const user$ = userEvent.setup();
+      const original = localStorage.getItem(TOKEN_STORAGE_KEY);
+      vi.mocked(meApi.logoutAll).mockRejectedValue({
+        response: { status: 500, data: { message: 'Máy chủ lỗi' } },
+      });
+      renderPage();
+
+      await openDialog(user$);
+      await user$.click(screen.getByTestId('account-logout-all-confirm'));
+
+      expect(await screen.findByTestId('account-logout-all-error')).toHaveTextContent(
+        'Máy chủ lỗi',
+      );
+      expect(screen.getByTestId('account-logout-all-confirm')).toBeEnabled();
+      expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe(original);
+      expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
+    });
   });
 });

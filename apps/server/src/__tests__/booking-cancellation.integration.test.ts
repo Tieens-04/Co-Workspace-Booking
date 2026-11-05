@@ -5,9 +5,14 @@ import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
 
 describe('Customer Cancellation API Integration Tests (Real MySQL Database & Locking)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const testPrefix = `test_cancel_${randomUUID()}`;
 
   let testUser1Id: string;
@@ -44,7 +49,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
     customer2Token = generateToken({ sub: testUser2Id, role: Role.CUSTOMER });
 
     // Admin token
-    adminToken = generateToken({ sub: `admin_${randomUUID()}`, role: Role.ADMIN });
+    adminToken = await accounts.create(Role.ADMIN);
 
     // Create an AVAILABLE room
     const room = await prisma.room.create({

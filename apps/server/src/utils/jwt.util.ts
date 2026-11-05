@@ -5,15 +5,17 @@ import { ENV } from '../config/env.config.js';
 export interface JwtCustomPayload {
   sub: string;
   role: Role;
+  /** Token version (CWB-77); absent on tokens issued before revocation existed, read as 0. */
+  tv?: number;
   iat?: number;
   exp?: number;
 }
 
 export const generateToken = (
-  payload: { sub: string; role: Role },
+  payload: { sub: string; role: Role; tv?: number },
   options?: jwt.SignOptions,
 ): string => {
-  return jwt.sign(payload, ENV.JWT_SECRET, {
+  return jwt.sign({ sub: payload.sub, role: payload.role, tv: payload.tv ?? 0 }, ENV.JWT_SECRET, {
     ...options,
     algorithm: 'HS256',
     expiresIn: options?.expiresIn ?? ENV.JWT_EXPIRES_IN_SECONDS,

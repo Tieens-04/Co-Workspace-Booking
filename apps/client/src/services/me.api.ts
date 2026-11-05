@@ -23,4 +23,10 @@ export const meApi = {
     const response = await apiClient.post<ApiSuccessResponse<LoginData>>('/me/password', payload);
     return response.data;
   },
+
+  /** Revokes every token of this account, the current one included (CWB-77). */
+  async logoutAll(): Promise<ApiSuccessResponse<null>> {
+    const response = await apiClient.post<ApiSuccessResponse<null>>('/me/logout-all');
+    return response.data;
+  },
 };

@@ -4,12 +4,16 @@ import { randomUUID } from 'node:crypto';
 import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
-import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 import { roomRepository } from '../repositories/room.repository.js';
 
 describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const testPrefix = `test_admin_${randomUUID()}`;
-  const adminToken = generateToken({ sub: `admin_${randomUUID()}`, role: Role.ADMIN });
+  const adminToken = accounts.token(Role.ADMIN, `admin_${randomUUID()}`);
 
   let amenity1Id: string;
   let amenity2Id: string;
@@ -254,7 +258,7 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       });
       roomId = room.id;
       vi.useFakeTimers({ toFake: ['Date'], now });
-      timedAdminToken = generateToken({ sub: `admin_${randomUUID()}`, role: Role.ADMIN });
+      timedAdminToken = await accounts.create(Role.ADMIN);
     });
 
     afterEach(async () => {

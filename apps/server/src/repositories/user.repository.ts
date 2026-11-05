@@ -29,8 +29,27 @@ export class UserRepository {
     return prisma.user.update({ where: { id }, data });
   }
 
-  async updatePasswordHash(id: string, passwordHash: string): Promise<User> {
-    return prisma.user.update({ where: { id }, data: { passwordHash } });
+  /** Current token version, or null when the account no longer exists (CWB-77). */
+  async findTokenVersion(id: string): Promise<number | null> {
+    const user = await prisma.user.findUnique({ where: { id }, select: { tokenVersion: true } });
+    return user ? user.tokenVersion : null;
+  }
+
+  /** Stores a new password hash and revokes every token issued before it in one statement. */
+  async updatePasswordHashAndRevokeSessions(id: string, passwordHash: string): Promise<User> {
+    return prisma.user.update({
+      where: { id },
+      data: { passwordHash, tokenVersion: { increment: 1 } },
+    });
+  }
+
+  /** Revokes every token issued so far; returns false when the account no longer exists. */
+  async revokeSessions(id: string): Promise<boolean> {
+    const result = await prisma.user.updateMany({
+      where: { id },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    return result.count === 1;
   }
 
   async create(data: CreateUserData): Promise<User> {

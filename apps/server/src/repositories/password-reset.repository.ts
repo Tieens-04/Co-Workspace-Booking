@@ -33,7 +33,11 @@ export class PasswordResetRepository {
         where: { tokenHash },
         select: { userId: true },
       });
-      await tx.user.update({ where: { id: token.userId }, data: { passwordHash } });
+      // Bumping the token version revokes every JWT issued before the reset (CWB-77).
+      await tx.user.update({
+        where: { id: token.userId },
+        data: { passwordHash, tokenVersion: { increment: 1 } },
+      });
       // Any other outstanding link for this account stops working too.
       await tx.passwordResetToken.deleteMany({
         where: { userId: token.userId, usedAt: null },

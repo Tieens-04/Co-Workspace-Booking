@@ -4,6 +4,7 @@ import { validateBody, validateQuery } from '../middlewares/validate.middleware.
 import { changePasswordRateLimiter } from '../middlewares/rate-limit.middleware.js';
 import {
   changePasswordBodySchema,
+  logoutAllBodySchema,
   meQuerySchema,
   updateMeBodySchema,
 } from '../validators/me.validator.js';
@@ -24,6 +25,13 @@ router.post(
   validateBody(changePasswordBodySchema),
   changePasswordRateLimiter,
   meController.changePassword,
+);
+// CWB-77: revokes every token of the account (this device included).
+router.post(
+  '/logout-all',
+  validateQuery(meQuerySchema),
+  validateBody(logoutAllBodySchema),
+  meController.logoutAll,
 );
 
 export default router;
