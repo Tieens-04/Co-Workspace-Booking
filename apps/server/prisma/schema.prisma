@@ -62,6 +62,8 @@ model User {
   fullName     String   @map("full_name")
   phoneNumber  String?  @map("phone_number")
   role         Role     @default(CUSTOMER)
+  // CWB-77: bumped on password change/reset and "log out everywhere"; JWTs carry it as `tv`.
+  tokenVersion Int      @default(0) @map("token_version")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

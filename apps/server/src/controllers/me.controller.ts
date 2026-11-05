@@ -31,6 +31,15 @@ export class MeController {
       return next(err);
     }
   };
+
+  logoutAll = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await this.service.logoutAll(req.user!.sub);
+      return sendSuccess(res, null, 'Đã đăng xuất khỏi mọi thiết bị');
+    } catch (err) {
+      return next(err);
+    }
+  };
 }
 
 export const meController = new MeController();

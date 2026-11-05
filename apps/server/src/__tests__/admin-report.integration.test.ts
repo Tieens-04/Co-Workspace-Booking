@@ -11,14 +11,18 @@ import {
 } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
-import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 
 const BOM = String.fromCharCode(0xfeff);
 
 describe('Admin CSV exports (CWB-69, real MySQL)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const tag = randomUUID().slice(0, 8);
-  const adminToken = generateToken({ sub: `admin-${tag}`, role: Role.ADMIN });
-  const customerToken = generateToken({ sub: `customer-${tag}`, role: Role.CUSTOMER });
+  const adminToken = accounts.token(Role.ADMIN, `admin-${tag}`);
+  const customerToken = accounts.token(Role.CUSTOMER, `customer-${tag}`);
   let roomId: string;
   let otherRoomId: string;
   // 2031-03-10 in Vietnam; 23:30 VN on the 9th is 16:30Z and must belong to the 9th.

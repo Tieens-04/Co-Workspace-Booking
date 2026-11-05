@@ -12,12 +12,17 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vites
 import app from '../app.js';
 import { notificationService } from '../services/notification.service.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 import prisma from '../utils/prisma.util.js';
 import { getDayBounds } from '../utils/room-availability.util.js';
 
 describe('Cancellation revenue integration (real MySQL)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const prefix = `test_revenue_cancel_${randomUUID()}`;
-  const adminToken = generateToken({ sub: randomUUID(), role: Role.ADMIN });
+  const adminToken = accounts.token(Role.ADMIN);
   let userId: string | undefined;
   let roomId: string | undefined;
   let customerToken: string;

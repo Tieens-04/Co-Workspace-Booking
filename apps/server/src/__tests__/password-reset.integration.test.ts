@@ -112,6 +112,32 @@ describe('Password reset (CWB-64, real MySQL)', () => {
     expect(replay.body.code).toBe('INVALID_RESET_TOKEN');
   });
 
+  it('revokes every JWT issued before the reset (CWB-77)', async () => {
+    const user = await createUser();
+    const login = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: user.email, password });
+    expect(login.status).toBe(200);
+    const stolen = login.body.data.accessToken as string;
+    const me = (token: string) =>
+      request(app).get('/api/v1/me').set('Authorization', `Bearer ${token}`);
+    expect((await me(stolen)).status).toBe(200);
+
+    await passwordResetService.issueAndSend(user.email);
+    const reset = await request(app)
+      .post('/api/v1/auth/reset-password')
+      .send({ token: tokenFromLastEmail(), newPassword });
+    expect(reset.status).toBe(200);
+
+    const denied = await me(stolen);
+    expect(denied.status).toBe(401);
+    expect(denied.body.code).toBe('UNAUTHORIZED');
+    const fresh = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: user.email, password: newPassword });
+    expect((await me(fresh.body.data.accessToken)).status).toBe(200);
+  });
+
   it('rejects an expired token', async () => {
     const user = await createUser();
     await passwordResetService.issueAndSend(user.email, new Date(Date.now() - 31 * 60_000));

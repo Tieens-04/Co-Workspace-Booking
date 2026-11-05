@@ -3,9 +3,10 @@ import jwt from 'jsonwebtoken';
 import { Role } from '@prisma/client';
 import { verifyToken as verifyJwtToken, JwtCustomPayload } from '../utils/jwt.util.js';
 import { AppError } from '../utils/error.util.js';
+import { sessionService } from '../services/session.service.js';
 import '../types/auth.type.js';
 
-export const verifyToken = (req: Request, _res: Response, next: NextFunction) => {
+export const verifyToken = async (req: Request, _res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
     if (!authHeader || typeof authHeader !== 'string') {
@@ -42,7 +43,16 @@ export const verifyToken = (req: Request, _res: Response, next: NextFunction) =>
       typeof payload.role === 'string' && Object.values(Role).includes(payload.role as Role);
     const isValidExp = typeof payload.exp === 'number' && Number.isFinite(payload.exp);
 
-    if (!isValidSub || !isValidRole || !isValidExp) {
+    // Tokens issued before CWB-77 carry no `tv`; they match the default version 0 until revoked.
+    const tokenVersion = payload.tv === undefined ? 0 : payload.tv;
+    const isValidTv = Number.isSafeInteger(tokenVersion) && tokenVersion >= 0;
+
+    if (!isValidSub || !isValidRole || !isValidExp || !isValidTv) {
+      return next(new AppError('UNAUTHORIZED', 'Token không hợp lệ hoặc đã hết hạn', 401));
+    }
+
+    // Revoked (password changed/reset, logged out everywhere) or deleted account: same generic 401.
+    if (!(await sessionService.isTokenCurrent(payload.sub, tokenVersion))) {
       return next(new AppError('UNAUTHORIZED', 'Token không hợp lệ hoặc đã hết hạn', 401));
     }
 

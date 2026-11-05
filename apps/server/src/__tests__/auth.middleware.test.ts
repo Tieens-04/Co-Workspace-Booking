@@ -9,6 +9,7 @@ import { ENV } from '../config/env.config.js';
 import { errorHandler } from '../middlewares/error.middleware.js';
 import { verifyToken, checkRole } from '../middlewares/auth.middleware.js';
 import { userRepository } from '../repositories/user.repository.js';
+import { sessionService } from '../services/session.service.js';
 
 // Prevent any unexpected DB access in unit tests
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
@@ -70,6 +71,7 @@ describe('Auth & RBAC Middleware', () => {
           fullName: 'Người dùng',
           phoneNumber: null,
           role,
+          tokenVersion: 0,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
@@ -436,6 +438,87 @@ describe('Auth & RBAC Middleware', () => {
       expect(res.body.details).toBeUndefined();
       expect(res.body.stack).toBeUndefined();
       expect(JSON.stringify(res.body)).not.toContain('invalid.token.payload');
+    });
+  });
+  describe('Server-side revocation via token version (CWB-77)', () => {
+    const testApp = express();
+    testApp.get('/protected', verifyToken, (req: Request, res: Response) => {
+      res.status(200).json({ success: true, user: req.user });
+    });
+    testApp.use(errorHandler);
+    const isTokenCurrent = vi.mocked(sessionService.isTokenCurrent);
+
+    it('checks the token subject and its tv claim against the stored version', async () => {
+      isTokenCurrent.mockClear();
+      const token = generateToken({ sub: 'customer-uuid-1', role: Role.CUSTOMER, tv: 4 });
+      const res = await request(testApp).get('/protected').set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(200);
+      expect(isTokenCurrent).toHaveBeenCalledWith('customer-uuid-1', 4);
+      expect(res.body.user).toEqual({ sub: 'customer-uuid-1', role: 'CUSTOMER' });
+    });
+
+    it('reads a token without tv (issued before CWB-77) as version 0 so deploys keep sessions', async () => {
+      isTokenCurrent.mockClear();
+      const legacy = jwt.sign({ sub: 'customer-uuid-1', role: Role.CUSTOMER }, ENV.JWT_SECRET, {
+        algorithm: 'HS256',
+        expiresIn: '1h',
+      });
+      const res = await request(testApp).get('/protected').set('Authorization', `Bearer ${legacy}`);
+      expect(res.status).toBe(200);
+      expect(isTokenCurrent).toHaveBeenCalledWith('customer-uuid-1', 0);
+    });
+
+    it('returns the generic 401 for a revoked token without revealing why', async () => {
+      isTokenCurrent.mockResolvedValueOnce(false);
+      const res = await request(testApp)
+        .get('/protected')
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(res.status).toBe(401);
+      expect(res.body).toEqual({
+        success: false,
+        code: 'UNAUTHORIZED',
+        message: 'Token không hợp lệ hoặc đã hết hạn',
+      });
+    });
+
+    it('revoked admin tokens get 401 (not 403) on the real admin routes', async () => {
+      isTokenCurrent.mockResolvedValueOnce(false);
+      const res = await request(app)
+        .get('/api/v1/admin')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it.each([
+      ['negative', -1],
+      ['fractional', 1.5],
+      ['string', '1'],
+      ['null', null],
+    ])('rejects a signed token with a %s tv claim before any lookup', async (_label, tv) => {
+      isTokenCurrent.mockClear();
+      const token = jwt.sign({ sub: 'user-1', role: Role.CUSTOMER, tv }, ENV.JWT_SECRET, {
+        algorithm: 'HS256',
+        expiresIn: '1h',
+      });
+      const res = await request(testApp).get('/protected').set('Authorization', `Bearer ${token}`);
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+      expect(isTokenCurrent).not.toHaveBeenCalled();
+    });
+
+    it('surfaces a failing session lookup as 500, never as a successful request', async () => {
+      isTokenCurrent.mockRejectedValueOnce(new Error('db down'));
+      const logSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const res = await request(testApp)
+          .get('/protected')
+          .set('Authorization', `Bearer ${customerToken}`);
+        expect(res.status).toBe(500);
+        expect(res.body.code).toBe('INTERNAL_SERVER_ERROR');
+      } finally {
+        logSpy.mockRestore();
+      }
     });
   });
 });

@@ -1,15 +1,19 @@
-import { describe, it, expect, afterAll } from 'vitest';
+import { describe, it, expect, afterAll, beforeAll } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { Prisma, Role, RoomStatus } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
-import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 
 describe('Admin amenity catalog (CWB-65, real MySQL)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const tag = randomUUID().slice(0, 8);
-  const adminToken = generateToken({ sub: `admin-${tag}`, role: Role.ADMIN });
-  const customerToken = generateToken({ sub: `customer-${tag}`, role: Role.CUSTOMER });
+  const adminToken = accounts.token(Role.ADMIN, `admin-${tag}`);
+  const customerToken = accounts.token(Role.CUSTOMER, `customer-${tag}`);
   const amenityIds: string[] = [];
   const roomIds: string[] = [];
   const name = (label: string) => `Bench ${tag} ${label}`;

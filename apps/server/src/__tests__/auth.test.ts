@@ -24,6 +24,7 @@ const fixture = (passwordHash: string, role: Role = Role.CUSTOMER): User => ({
   phoneNumber: null,
   role,
   passwordHash,
+  tokenVersion: 3,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -83,7 +84,9 @@ describe('Register/Login HTTP regressions (mocked repository, real bcrypt/JWT)',
       expect(claims.sub).toBe('user-id');
       expect(claims.role).toBe(role);
       expect(claims.exp! - claims.iat!).toBe(res.body.data.expiresIn);
-      expect(Object.keys(claims).sort()).toEqual(['exp', 'iat', 'role', 'sub']);
+      // CWB-77: the token carries the account's current token version and nothing else new.
+      expect(claims.tv).toBe(3);
+      expect(Object.keys(claims).sort()).toEqual(['exp', 'iat', 'role', 'sub', 'tv']);
       expect(res.body.data.user.passwordHash).toBeUndefined();
     },
   );

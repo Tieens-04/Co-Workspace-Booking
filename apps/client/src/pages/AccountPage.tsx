@@ -1,9 +1,19 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CircleAlert, CircleCheck, Loader2 } from 'lucide-react';
+import { CircleAlert, CircleCheck, Loader2, LogOut } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Field } from '@/components/common/Field';
 import { ErrorState } from '@/components/common/EmptyState';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -23,7 +33,7 @@ const errorMessage = (err: unknown, fallback: string) =>
 
 /** Personal profile (name, phone) and password change for any signed-in role. */
 export const AccountPage: React.FC = () => {
-  const { principal, login, applyProfile } = useAuth();
+  const { principal, login, logout, applyProfile } = useAuth();
   const { showToast } = useToast();
   const principalId = principal?.id;
   const activePrincipalRef = useRef(principalId);
@@ -46,6 +56,10 @@ export const AccountPage: React.FC = () => {
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [isSavingPassword, setIsSavingPassword] = useState(false);
+
+  const [isLogoutAllOpen, setIsLogoutAllOpen] = useState(false);
+  const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
+  const [logoutAllError, setLogoutAllError] = useState<string | null>(null);
 
   const loadProfile = useCallback(() => {
     const controller = new AbortController();
@@ -139,6 +153,29 @@ export const AccountPage: React.FC = () => {
     }
   };
 
+  const handleLogoutAllOpenChange = (open: boolean) => {
+    // Keep the dialog open while the request is in flight.
+    if (!open && isLoggingOutAll) return;
+    if (open) setLogoutAllError(null);
+    setIsLogoutAllOpen(open);
+  };
+
+  const handleLogoutAll = async () => {
+    if (isLoggingOutAll) return;
+    setLogoutAllError(null);
+    setIsLoggingOutAll(true);
+    try {
+      await meApi.logoutAll();
+      // The server revoked this token too, so end the local session as well.
+      showToast('Đã đăng xuất khỏi mọi thiết bị', 'success');
+      logout('userAction');
+    } catch (err) {
+      // A 401 is handled by the interceptor (session already ended); show anything else here.
+      setLogoutAllError(errorMessage(err, 'Không thể đăng xuất mọi thiết bị. Vui lòng thử lại.'));
+      setIsLoggingOutAll(false);
+    }
+  };
+
   return (
     <div className="container-page py-10 md:py-14">
       <PageHeader
@@ -218,8 +255,7 @@ export const AccountPage: React.FC = () => {
             <form noValidate onSubmit={handlePasswordSubmit} data-testid="account-password-form">
               <h2 className="text-lg font-semibold">Đổi mật khẩu</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Phiên hiện tại tiếp tục với mật khẩu mới. Phiên đăng nhập trên thiết bị khác hết hạn
-                theo thời hạn token hiện có.
+                Phiên hiện tại tiếp tục với mật khẩu mới. Mọi thiết bị khác sẽ bị đăng xuất.
               </p>
               <div className="mt-5 grid gap-4">
                 <Field id="account-current-password" label="Mật khẩu hiện tại">
@@ -276,6 +312,59 @@ export const AccountPage: React.FC = () => {
                 </Button>
               </div>
             </form>
+          </Card>
+
+          <Card className="p-5 sm:p-6 lg:col-span-2" data-testid="account-sessions">
+            <h2 className="text-lg font-semibold">Phiên đăng nhập</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Đăng xuất tài khoản khỏi mọi thiết bị và trình duyệt, kể cả thiết bị này. Bạn sẽ cần
+              đăng nhập lại.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              className="mt-4"
+              onClick={() => handleLogoutAllOpenChange(true)}
+              data-testid="account-logout-all-btn"
+            >
+              <LogOut aria-hidden="true" />
+              Đăng xuất mọi thiết bị
+            </Button>
+            <AlertDialog open={isLogoutAllOpen} onOpenChange={handleLogoutAllOpenChange}>
+              <AlertDialogContent data-testid="account-logout-all-dialog">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Đăng xuất khỏi mọi thiết bị?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Mọi phiên đăng nhập của tài khoản này, kể cả phiên hiện tại, sẽ kết thúc ngay.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                {logoutAllError && (
+                  <Alert variant="destructive" data-testid="account-logout-all-error">
+                    <CircleAlert aria-hidden="true" />
+                    <AlertDescription>{logoutAllError}</AlertDescription>
+                  </Alert>
+                )}
+                <AlertDialogFooter>
+                  <AlertDialogCancel variant="ghost" disabled={isLoggingOutAll}>
+                    Hủy
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    variant="destructive"
+                    disabled={isLoggingOutAll}
+                    aria-busy={isLoggingOutAll || undefined}
+                    onClick={(e) => {
+                      // Stay open until the request settles; errors render inside the dialog.
+                      e.preventDefault();
+                      void handleLogoutAll();
+                    }}
+                    data-testid="account-logout-all-confirm"
+                  >
+                    {isLoggingOutAll && <Loader2 aria-hidden="true" className="animate-spin" />}
+                    {isLoggingOutAll ? 'Đang đăng xuất…' : 'Đăng xuất mọi thiết bị'}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </Card>
         </div>
       )}

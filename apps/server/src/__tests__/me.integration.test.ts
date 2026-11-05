@@ -1,11 +1,13 @@
 import { describe, it, expect, afterAll } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
+import jwt from 'jsonwebtoken';
 import { Role } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { comparePassword, hashPassword } from '../utils/password.util.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { ENV } from '../config/env.config.js';
 import { changePasswordRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 describe('Account self-service /api/v1/me (CWB-63, real MySQL)', () => {
@@ -37,6 +39,7 @@ describe('Account self-service /api/v1/me (CWB-63, real MySQL)', () => {
       request(app).get('/api/v1/me'),
       request(app).patch('/api/v1/me').send({ fullName: 'X' }),
       request(app).post('/api/v1/me/password').send({ currentPassword: 'a', newPassword: 'b' }),
+      request(app).post('/api/v1/me/logout-all'),
     ]) {
       const res = await call;
       expect(res.status).toBe(401);
@@ -198,5 +201,110 @@ describe('Account self-service /api/v1/me (CWB-63, real MySQL)', () => {
     } finally {
       await changePasswordRateLimiter.resetKey(`user:${user.id}`);
     }
+  });
+  describe('server-side token revocation (CWB-77)', () => {
+    const me = (token: string) =>
+      request(app).get('/api/v1/me').set('Authorization', `Bearer ${token}`);
+    const storedVersion = async (id: string) =>
+      (await prisma.user.findUniqueOrThrow({ where: { id } })).tokenVersion;
+
+    it('starts accounts at token version 0 and accepts tokens issued before the tv claim', async () => {
+      const { user } = await createUser();
+      expect(await storedVersion(user.id)).toBe(0);
+      const legacy = jwt.sign({ sub: user.id, role: user.role }, ENV.JWT_SECRET, {
+        algorithm: 'HS256',
+        expiresIn: '1h',
+      });
+      expect((await me(legacy)).status).toBe(200);
+    });
+
+    it('password change keeps this session on the new token and revokes every other one', async () => {
+      const { user, token: thisDevice } = await createUser();
+      const otherDevice = generateToken({ sub: user.id, role: user.role, tv: 0 });
+
+      const res = await request(app)
+        .post('/api/v1/me/password')
+        .set('Authorization', `Bearer ${thisDevice}`)
+        .send({ currentPassword: password, newPassword: 'NewPassword456!' });
+
+      expect(res.status).toBe(200);
+      expect(await storedVersion(user.id)).toBe(1);
+      expect((await me(res.body.data.accessToken)).status).toBe(200);
+      for (const revoked of [thisDevice, otherDevice]) {
+        const denied = await me(revoked);
+        expect(denied.status).toBe(401);
+        expect(denied.body).toEqual({
+          success: false,
+          code: 'UNAUTHORIZED',
+          message: 'Token không hợp lệ hoặc đã hết hạn',
+        });
+      }
+
+      // A fresh login carries the new version and works.
+      const login = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: user.email, password: 'NewPassword456!' });
+      expect(login.status).toBe(200);
+      expect((await me(login.body.data.accessToken)).status).toBe(200);
+    });
+
+    it('a wrong current password revokes nothing', async () => {
+      const { user, token } = await createUser();
+      const res = await request(app)
+        .post('/api/v1/me/password')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ currentPassword: 'WrongPassword!', newPassword: 'NewPassword456!' });
+      expect(res.status).toBe(400);
+      expect(await storedVersion(user.id)).toBe(0);
+      expect((await me(token)).status).toBe(200);
+      await changePasswordRateLimiter.resetKey(`user:${user.id}`);
+    });
+
+    it('POST /me/logout-all revokes every token of the account, this one included', async () => {
+      const { user, token } = await createUser(Role.ADMIN);
+      const otherDevice = generateToken({ sub: user.id, role: user.role, tv: 0 });
+      const { token: otherAccount } = await createUser();
+
+      const res = await request(app)
+        .post('/api/v1/me/logout-all')
+        .set('Authorization', `Bearer ${token}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body).toMatchObject({ success: true, data: null });
+      expect(await storedVersion(user.id)).toBe(1);
+      expect((await me(token)).status).toBe(401);
+      expect((await me(otherDevice)).status).toBe(401);
+      // Admin capabilities are revoked too (401, not 403), and other accounts are unaffected.
+      expect(
+        (await request(app).get('/api/v1/admin/rooms').set('Authorization', `Bearer ${token}`))
+          .status,
+      ).toBe(401);
+      expect((await me(otherAccount)).status).toBe(200);
+      // A revoked token cannot be used to call logout-all again.
+      expect(
+        (await request(app).post('/api/v1/me/logout-all').set('Authorization', `Bearer ${token}`))
+          .status,
+      ).toBe(401);
+
+      const login = await request(app)
+        .post('/api/v1/auth/login')
+        .send({ email: user.email, password });
+      expect(login.status).toBe(200);
+      expect((await me(login.body.data.accessToken)).status).toBe(200);
+    });
+
+    it('rejects input on logout-all without revoking', async () => {
+      const { user, token } = await createUser();
+      const withBody = await request(app)
+        .post('/api/v1/me/logout-all')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ userId: randomUUID() });
+      const withQuery = await request(app)
+        .post('/api/v1/me/logout-all?userId=x')
+        .set('Authorization', `Bearer ${token}`);
+      expect(withBody.status).toBe(400);
+      expect(withQuery.status).toBe(400);
+      expect(await storedVersion(user.id)).toBe(0);
+    });
   });
 });

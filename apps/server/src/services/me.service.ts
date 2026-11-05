@@ -43,8 +43,9 @@ export class MeService {
   }
 
   /**
-   * Verifies the current password, stores a new bcrypt hash and returns a fresh token for this
-   * session. JWTs stay stateless: tokens issued earlier remain valid until they expire.
+   * Verifies the current password, stores a new bcrypt hash and bumps the token version (CWB-77):
+   * every token issued earlier (other devices) gets 401, this session continues with the fresh
+   * token returned here.
    */
   async changePassword(userId: string, input: ChangePasswordInput): Promise<LoginResult> {
     const user = await this.userRepo.findById(userId);
@@ -56,16 +57,22 @@ export class MeService {
       throw new AppError('INVALID_CURRENT_PASSWORD', 'Mật khẩu hiện tại không chính xác', 400);
     }
 
-    const updated = await this.userRepo.updatePasswordHash(
+    const updated = await this.userRepo.updatePasswordHashAndRevokeSessions(
       userId,
       await hashPassword(input.newPassword),
     );
     return {
-      accessToken: generateToken({ sub: updated.id, role: updated.role }),
+      accessToken: generateToken({ sub: updated.id, role: updated.role, tv: updated.tokenVersion }),
       tokenType: 'Bearer',
       expiresIn: ENV.JWT_EXPIRES_IN_SECONDS,
       user: toSafeUser(updated),
     };
+  }
+
+  /** "Log out everywhere": revokes every token of the account, including the caller's (CWB-77). */
+  async logoutAll(userId: string): Promise<void> {
+    const revoked = await this.userRepo.revokeSessions(userId);
+    if (!revoked) throw sessionGone();
   }
 }
 

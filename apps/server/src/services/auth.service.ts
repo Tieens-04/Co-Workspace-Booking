@@ -82,6 +82,7 @@ export class AuthService {
     const accessToken = generateToken({
       sub: user.id,
       role: user.role,
+      tv: user.tokenVersion,
     });
 
     return {

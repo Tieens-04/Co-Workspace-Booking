@@ -32,5 +32,8 @@ export const changePasswordBodySchema = z
 
 export const meQuerySchema = z.object({}).strict();
 
+/** `POST /me/logout-all` takes no input; the account always comes from the verified JWT. */
+export const logoutAllBodySchema = z.object({}).strict();
+
 export type UpdateMeInput = z.infer<typeof updateMeBodySchema>;
 export type ChangePasswordInput = z.infer<typeof changePasswordBodySchema>;

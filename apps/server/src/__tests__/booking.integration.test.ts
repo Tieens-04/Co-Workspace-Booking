@@ -5,9 +5,14 @@ import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { TestAccounts } from './support/test-accounts.js';
 import * as bookingCodeUtil from '../utils/booking-code.util.js';
 
 describe('Booking API Integration Tests (Real MySQL Database & Transactions)', () => {
+  const accounts = new TestAccounts();
+  beforeAll(() => accounts.persist());
+  afterAll(() => accounts.cleanup());
+
   const testPrefix = `test_booking_${randomUUID()}`;
 
   let testUserId: string;
@@ -45,7 +50,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
     customer2Token = generateToken({ sub: testUser2Id, role: Role.CUSTOMER });
 
     // Admin token
-    adminToken = generateToken({ sub: `admin_${randomUUID()}`, role: Role.ADMIN });
+    adminToken = await accounts.create(Role.ADMIN);
 
     // Create an AVAILABLE room
     const room1 = await prisma.room.create({
