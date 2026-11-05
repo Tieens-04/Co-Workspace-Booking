@@ -818,6 +818,25 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
   });
 
+  it('applies the same booking horizon to admin guest bookings (CWB-75)', async () => {
+    const start = new Date(Date.now() + 61 * 24 * 60 * 60 * 1000);
+    start.setUTCHours(2, 0, 0, 0);
+    const guestName = `Horizon ${randomUUID().slice(0, 8)}`;
+    const res = await request(app)
+      .post('/api/v1/admin/bookings/guest')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({
+        roomId: availableRoomId,
+        startTime: start.toISOString(),
+        endTime: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+        guestName,
+        guestPhone: '0907654321',
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.code).toBe('BOOKING_HORIZON');
+    expect(await prisma.booking.count({ where: { guestName } })).toBe(0);
+  });
+
   describe('PATCH /api/v1/admin/bookings/:id/cancel (Real DB Transactions & Locking)', () => {
     it('cancels confirmed booking and stores cancellation reason', async () => {
       const start = new Date(Date.now() + 170 * 60 * 60 * 1000);

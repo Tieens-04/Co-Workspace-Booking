@@ -139,6 +139,77 @@ describe('BookingForm', () => {
     });
   });
 
+  describe('booking horizon (CWB-75)', () => {
+    const withHorizon = (date: string) => {
+      const res = mockAvailabilityResponse(date);
+      return {
+        ...res,
+        data: { ...res.data, maxAdvanceDays: 30, bookableUntil: '2026-10-31T00:00:00.000Z' },
+      };
+    };
+
+    it('limits the date picker to today … today + N and shows the reason', async () => {
+      vi.mocked(roomApi.getAvailability).mockImplementation(async (_id, date) => withHorizon(date));
+      renderComponent();
+
+      const dateInput = screen.getByTestId('booking-view-date-input');
+      expect(await screen.findByTestId('booking-horizon-hint')).toHaveTextContent(
+        'Có thể đặt trước tối đa 30 ngày (đến 31/10/2026).',
+      );
+      expect(dateInput).toHaveAttribute('min', '2026-10-01');
+      expect(dateInput).toHaveAttribute('max', '2026-10-31');
+      expect(dateInput).toHaveAttribute('aria-describedby', 'booking-view-date-hint');
+    });
+
+    it('blocks review for a start beyond the horizon before calling the API', async () => {
+      const user = userEvent.setup();
+      vi.mocked(roomApi.getAvailability).mockImplementation(async (_id, date) => withHorizon(date));
+      renderComponent();
+      await screen.findByTestId('booking-horizon-hint');
+
+      // 07:30 VN on 31/10 is 00:30Z, 30 minutes past the horizon (now 2026-10-01T00:00Z + 30 days).
+      fireEvent.change(screen.getByLabelText(/Thời gian bắt đầu/i), {
+        target: { value: '2026-10-31T07:30' },
+      });
+      fireEvent.change(screen.getByLabelText(/Thời gian kết thúc/i), {
+        target: { value: '2026-10-31T08:30' },
+      });
+      await user.click(screen.getByTestId('booking-submit-btn'));
+
+      expect(await screen.findByTestId('error-booking-start')).toHaveTextContent(
+        'Chỉ được đặt phòng trước tối đa 30 ngày',
+      );
+      expect(bookingApi.createBooking).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('booking-review-section')).not.toBeInTheDocument();
+    });
+
+    it('shows the server reason when a date beyond the horizon is requested', async () => {
+      vi.mocked(roomApi.getAvailability).mockImplementation(async (_id, date) => {
+        if (date === '2027-03-01') {
+          throw {
+            response: {
+              status: 400,
+              data: { code: 'BOOKING_HORIZON', message: 'Chỉ được đặt phòng trước tối đa 30 ngày' },
+            },
+          };
+        }
+        return withHorizon(date);
+      });
+      renderComponent();
+      await screen.findByTestId('booking-horizon-hint');
+
+      fireEvent.change(screen.getByTestId('booking-view-date-input'), {
+        target: { value: '2027-03-01' },
+      });
+
+      expect(
+        await screen.findByText('Chỉ được đặt phòng trước tối đa 30 ngày'),
+      ).toBeInTheDocument();
+      // The last known horizon keeps constraining the picker.
+      expect(screen.getByTestId('booking-view-date-input')).toHaveAttribute('max', '2026-10-31');
+    });
+  });
+
   describe('Form Validation & Price Preview', () => {
     it('validates required fields on submit', async () => {
       const user = userEvent.setup();

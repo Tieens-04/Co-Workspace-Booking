@@ -5,7 +5,9 @@ import {
   calculateBookingTotal,
   validateCustomerCancellationTime,
   CANCELLATION_MIN_LEAD_MINUTES,
+  getBookingHorizonEnd,
 } from '../utils/booking-time.util.js';
+import { ENV } from '../config/env.config.js';
 import {
   generateBookingCode,
   getBookingDateSegment,
@@ -198,6 +200,53 @@ describe('Booking Time & Pricing Utilities', () => {
           message: 'Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút',
         }),
       );
+    });
+  });
+
+  describe('booking horizon (CWB-75)', () => {
+    const DAY = 24 * 60 * 60 * 1000;
+    const HALF_HOUR = 30 * 60 * 1000;
+    // 09:00 Vietnam (02:00Z) so every candidate below stays inside opening hours.
+    const now = new Date('2026-11-04T02:00:00.000Z');
+    const slot = (start: Date) => [start, new Date(start.getTime() + 60 * 60 * 1000)] as const;
+
+    it('defaults to 60 days from the environment', () => {
+      expect(ENV.BOOKING_MAX_ADVANCE_DAYS).toBe(60);
+      expect(getBookingHorizonEnd(now).toISOString()).toBe('2027-01-03T02:00:00.000Z');
+    });
+
+    it('accepts a booking starting exactly N days ahead', () => {
+      const start = new Date(now.getTime() + 60 * DAY);
+      expect(() => validateBookingTime(...slot(start), now)).not.toThrow();
+    });
+
+    it('rejects a booking starting N days and 30 minutes ahead with 400 BOOKING_HORIZON', () => {
+      const start = new Date(now.getTime() + 60 * DAY + HALF_HOUR);
+      expect(() => validateBookingTime(...slot(start), now)).toThrowError(
+        expect.objectContaining({
+          code: 'BOOKING_HORIZON',
+          statusCode: 400,
+          message: 'Chỉ được đặt phòng trước tối đa 60 ngày',
+        }),
+      );
+    });
+
+    it('rejects a booking three years ahead', () => {
+      const start = new Date('2029-11-04T03:00:00.000Z');
+      expect(() => validateBookingTime(...slot(start), now)).toThrowError(
+        expect.objectContaining({ code: 'BOOKING_HORIZON' }),
+      );
+    });
+
+    it('honours a configured horizon', () => {
+      const start = new Date(now.getTime() + 7 * DAY + HALF_HOUR);
+      expect(() => validateBookingTime(...slot(start), now, 7)).toThrowError(
+        expect.objectContaining({
+          code: 'BOOKING_HORIZON',
+          message: 'Chỉ được đặt phòng trước tối đa 7 ngày',
+        }),
+      );
+      expect(() => validateBookingTime(...slot(start), now, 8)).not.toThrow();
     });
   });
 

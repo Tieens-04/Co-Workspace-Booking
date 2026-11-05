@@ -7,17 +7,18 @@ cùng lúc. Backend luôn là nơi quyết định; FE chỉ kiểm tra trước
 
 ## 1. Policy thời gian (hiệu lực)
 
-| Quy tắc              | Giá trị                                                                                     | Biên hợp lệ                                      | Lỗi khi vi phạm                     |
-| -------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------- |
-| Mốc slot             | 30 phút, giây/ms = 0                                                                        | `09:00`, `09:30`                                 | `400 INVALID_SLOT`                  |
-| Kết thúc sau bắt đầu | `endTime > startTime`                                                                       | —                                                | `400 INVALID_SLOT`                  |
-| Thời lượng tối thiểu | 1 giờ (60 phút)                                                                             | đúng 60 phút hợp lệ                              | `400 MIN_DURATION`                  |
-| Thời lượng tối đa    | **8 giờ (480 phút)**                                                                        | đúng 480 phút hợp lệ                             | `400 MAX_DURATION`                  |
-| Không đặt quá khứ    | `startTime > now`                                                                           | —                                                | `400 PAST_TIME`                     |
-| Đặt trước tối thiểu  | 30 phút trước giờ bắt đầu                                                                   | đúng 30 phút hợp lệ                              | `400 ADVANCE_NOTICE`                |
-| Giờ hoạt động        | 07:00–22:00 cùng một ngày, giờ Việt Nam (`Asia/Ho_Chi_Minh`, UTC+7)                         | `07:00–08:00`, `21:00–22:00` hợp lệ              | `400 OUTSIDE_OPERATING_HOURS`       |
-| Customer tự hủy      | **còn ít nhất 1 giờ** trước giờ bắt đầu                                                     | đúng 60 phút hợp lệ; 59 phút bị từ chối          | `400 CANCELLATION_POLICY_VIOLATION` |
-| Trùng lịch           | `existing.start < requested.end AND existing.end > requested.start` với booking `CONFIRMED` | chạm biên (kết thúc 10:00, bắt đầu 10:00) hợp lệ | `409 BOOKING_CONFLICT`              |
+| Quy tắc                   | Giá trị                                                                                                                           | Biên hợp lệ                                      | Lỗi khi vi phạm                     |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ | ----------------------------------- |
+| Mốc slot                  | 30 phút, giây/ms = 0                                                                                                              | `09:00`, `09:30`                                 | `400 INVALID_SLOT`                  |
+| Kết thúc sau bắt đầu      | `endTime > startTime`                                                                                                             | —                                                | `400 INVALID_SLOT`                  |
+| Thời lượng tối thiểu      | 1 giờ (60 phút)                                                                                                                   | đúng 60 phút hợp lệ                              | `400 MIN_DURATION`                  |
+| Thời lượng tối đa         | **8 giờ (480 phút)**                                                                                                              | đúng 480 phút hợp lệ                             | `400 MAX_DURATION`                  |
+| Không đặt quá khứ         | `startTime > now`                                                                                                                 | —                                                | `400 PAST_TIME`                     |
+| Đặt trước tối thiểu       | 30 phút trước giờ bắt đầu                                                                                                         | đúng 30 phút hợp lệ                              | `400 ADVANCE_NOTICE`                |
+| Đặt trước tối đa (CWB-75) | `startTime ≤ now + BOOKING_MAX_ADVANCE_DAYS` ngày (mặc định **60**, env 1–365); áp dụng chung customer và guest booking của admin | đúng N ngày hợp lệ; N ngày + 30 phút bị từ chối  | `400 BOOKING_HORIZON`               |
+| Giờ hoạt động             | 07:00–22:00 cùng một ngày, giờ Việt Nam (`Asia/Ho_Chi_Minh`, UTC+7)                                                               | `07:00–08:00`, `21:00–22:00` hợp lệ              | `400 OUTSIDE_OPERATING_HOURS`       |
+| Customer tự hủy           | **còn ít nhất 1 giờ** trước giờ bắt đầu                                                                                           | đúng 60 phút hợp lệ; 59 phút bị từ chối          | `400 CANCELLATION_POLICY_VIOLATION` |
+| Trùng lịch                | `existing.start < requested.end AND existing.end > requested.start` với booking `CONFIRMED`                                       | chạm biên (kết thúc 10:00, bắt đầu 10:00) hợp lệ | `409 BOOKING_CONFLICT`              |
 
 Server kiểm tra lại lead time bằng giờ server ngay trước khi insert, sau khi lấy khóa phòng (`SELECT ... FOR UPDATE`,
 CWB-51). Giá tiền = `price_per_hour × thời lượng`, Decimal làm tròn `ROUND_HALF_UP` 2 chữ số; tổng tiền từ client
@@ -71,6 +72,7 @@ Kiểm trên giao diện và API với giờ Việt Nam; ghi lại kết quả v
 - [ ] 30 phút bị từ chối (`MIN_DURATION`); đúng 1 giờ được chấp nhận.
 - [ ] Đúng 8 giờ được chấp nhận; 8 giờ 30 phút bị từ chối (`MAX_DURATION`).
 - [ ] Bắt đầu sau 29 phút bị từ chối (`ADVANCE_NOTICE`); đúng 30 phút được chấp nhận.
+- [ ] Bắt đầu đúng N ngày sau được chấp nhận; N ngày + 30 phút hoặc 3 năm sau bị từ chối (`BOOKING_HORIZON`). Ô ngày trên form có `min` = hôm nay, `max` = hôm nay + N và dòng giải thích; ngày ngoài horizon trả lỗi availability `400 BOOKING_HORIZON`.
 - [ ] 06:30–08:00 hoặc 21:00–22:30 bị từ chối (`OUTSIDE_OPERATING_HOURS`); 07:00–08:00 và 21:00–22:00 hợp lệ.
 - [ ] Hủy khi còn đúng 60 phút thành công; còn 59 phút bị từ chối (`CANCELLATION_POLICY_VIOLATION`).
 - [ ] Booking kết thúc 10:00 và booking mới bắt đầu 10:00 cùng phòng đều thành công.

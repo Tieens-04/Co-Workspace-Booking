@@ -8,6 +8,8 @@ export interface UseRoomAvailabilityResult {
   loading: boolean;
   error: string | null;
   errorCode: string | null;
+  /** Last horizon reported by the server (CWB-75); kept across errors such as BOOKING_HORIZON. */
+  maxAdvanceDays: number | null;
   refresh: () => Promise<{
     success: boolean;
     data?: Record<string, RoomAvailabilitySlot[]>;
@@ -25,6 +27,7 @@ export function useRoomAvailability(
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [errorCode, setErrorCode] = useState<string | null>(null);
+  const [maxAdvanceDays, setMaxAdvanceDays] = useState<number | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef<number>(0);
@@ -83,6 +86,11 @@ export function useRoomAvailability(
             throw new Error('Dữ liệu lịch trống không đầy đủ (yêu cầu 48 khung giờ trong ngày).');
           }
         }
+
+        const horizon = responses.find(
+          (res) => Number.isInteger(res.data.maxAdvanceDays) && res.data.maxAdvanceDays! > 0,
+        )?.data.maxAdvanceDays;
+        if (horizon) setMaxAdvanceDays(horizon);
 
         setSlotsByDate(newSlotsByDate);
         setLoading(false);
@@ -150,6 +158,7 @@ export function useRoomAvailability(
     loading,
     error,
     errorCode,
+    maxAdvanceDays,
     refresh,
   };
 }

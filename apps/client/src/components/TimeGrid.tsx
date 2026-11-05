@@ -3,6 +3,8 @@ import { MapPin } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RoomAvailabilitySlot } from '../types/room';
 import {
+  bookingHorizonMessage,
+  DAY_MS,
   formatVnTime,
   MIN_LEAD_TIME_MS,
   checkRangeAvailability,
@@ -20,6 +22,8 @@ export interface TimeGridProps {
   onSelectRange: (startIso: string, endIso: string) => void;
   disabled?: boolean;
   now?: Date;
+  /** CWB-75: slots starting after now + this many days are not bookable. */
+  maxAdvanceDays?: number | null;
 }
 
 type SlotState = 'available' | 'booked' | 'past' | 'selected';
@@ -55,6 +59,7 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
   onSelectRange,
   disabled = false,
   now,
+  maxAdvanceDays,
 }) => {
   const slots = useMemo(
     () =>
@@ -170,6 +175,10 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
 
     // If not currently selecting an end slot (or starting fresh)
     if (!selectingStartTime || !selectingStartMs) {
+      if (maxAdvanceDays && slotStartMs > clickMs + maxAdvanceDays * DAY_MS) {
+        setGridError(bookingHorizonMessage(maxAdvanceDays));
+        return;
+      }
       onSelectStart(slot.startTime);
       return;
     }
@@ -318,6 +327,11 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
           const isBooked = slot.status === 'BOOKED';
           // Past or under 30m lead time
           const isPast = slotStartMs - currentMs < MIN_LEAD_TIME_MS;
+          // A slot past the horizon cannot start a booking, but may still end one started earlier.
+          const isBeyondHorizon =
+            Boolean(maxAdvanceDays) &&
+            !selectingStartMs &&
+            slotStartMs > currentMs + maxAdvanceDays! * DAY_MS;
 
           // Selecting start slot
           const isSelecting = selectingStartMs === slotStartMs;
@@ -342,12 +356,15 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
           } else if (isPast) {
             statusText = 'Đã qua giờ';
             slotState = 'past';
+          } else if (isBeyondHorizon) {
+            statusText = 'Ngoài thời hạn đặt trước';
+            slotState = 'past';
           } else if (isSelecting || isInSelectedRange) {
             statusText = isSelecting ? 'Đang chọn bắt đầu' : 'Đã chọn';
             slotState = 'selected';
           }
 
-          const isBtnDisabled = disabled || isBooked || isPast;
+          const isBtnDisabled = disabled || isBooked || isPast || isBeyondHorizon;
           // AC1 / F2: BOOKED slot must never be aria-pressed
           const isBtnPressed = !isBooked && (isSelecting || isInSelectedRange);
 

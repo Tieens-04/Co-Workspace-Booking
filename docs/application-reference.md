@@ -284,9 +284,11 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
     $$\text{existing.startTime} < \text{slot.endTime} \quad\land\quad \text{existing.endTime} > \text{slot.startTime}$$
   - **Quy tắc chạm biên (Boundary Touching)**: Không bị tính là trùng lặp. Ví dụ booking kết thúc lúc `10:00` và slot bắt đầu lúc `10:00` thì slot đó vẫn là `AVAILABLE`.
   - Các booking có trạng thái khác (`CANCELLED`, `COMPLETED`, `NO_SHOW`) hoặc booking của phòng khác không làm ảnh hưởng trạng thái slot.
+  - **Booking horizon (CWB-75)**: response có thêm `maxAdvanceDays` (giá trị `BOOKING_MAX_ADVANCE_DAYS`) và `bookableUntil` (ISO UTC, `now + maxAdvanceDays` ngày, mốc bắt đầu muộn nhất được đặt). Ngày mà slot đầu tiên (`00:00` giờ Việt Nam) đã sau `bookableUntil` trả `400 BOOKING_HORIZON` thay vì danh sách slot. Ngày cuối còn một phần trong horizon vẫn trả 48 slot; client vô hiệu hóa các slot bắt đầu sau `bookableUntil` (vẫn cho chọn làm điểm kết thúc của khoảng bắt đầu trước đó), còn API tạo booking là nơi quyết định.
   - **Bảo mật dữ liệu**: API chỉ trả về mảng slot với mốc thời gian ISO 8601 UTC và trạng thái, không làm lộ bất kỳ thông tin cá nhân, mã đặt chỗ hay định danh booking nào.
 - **Xử lý lỗi**:
   - `400 VALIDATION_ERROR`: Thiếu `date`, sai định dạng `YYYY-MM-DD`, ngày không hợp lệ trên lịch (ví dụ `2026-02-29`, `2026-04-31`), ID phòng không phải UUID, hoặc truyền tham số truy vấn ngoài danh sách.
+  - `400 BOOKING_HORIZON`: Ngày nằm ngoài khoảng đặt trước tối đa (kiểm tra trước khi tra phòng).
   - `404 ROOM_NOT_FOUND`: Phòng không tồn tại trong hệ thống.
   - `409 ROOM_NOT_AVAILABLE`: Phòng đang ở trạng thái bảo trì (`MAINTENANCE`).
 
@@ -311,7 +313,9 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
         "endTime": "2026-09-20T18:00:00.000Z",
         "status": "AVAILABLE"
       }
-    ]
+    ],
+    "maxAdvanceDays": 60,
+    "bookableUntil": "2026-11-20T02:00:00.000Z"
   }
 }
 ```

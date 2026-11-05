@@ -40,6 +40,17 @@ if (
   throw new Error('SHUTDOWN_TIMEOUT_MS must be an integer between 1000 and 120000.');
 }
 
+// CWB-75: how far ahead a booking may start (customer and admin guest bookings alike).
+const rawMaxAdvanceDays = process.env.BOOKING_MAX_ADVANCE_DAYS?.trim();
+const bookingMaxAdvanceDays = rawMaxAdvanceDays ? Number(rawMaxAdvanceDays) : 60;
+if (
+  !Number.isInteger(bookingMaxAdvanceDays) ||
+  bookingMaxAdvanceDays < 1 ||
+  bookingMaxAdvanceDays > 365
+) {
+  throw new Error('BOOKING_MAX_ADVANCE_DAYS must be an integer between 1 and 365.');
+}
+
 const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
 if (!cloudinaryCloudName) {
   throw new Error('CLOUDINARY_CLOUD_NAME is required.');
@@ -65,6 +76,7 @@ export const ENV = {
   JWT_EXPIRES_IN_SECONDS: jwtExpiresInSeconds,
   BCRYPT_SALT_ROUNDS: saltRounds,
   SHUTDOWN_TIMEOUT_MS: shutdownTimeoutMs,
+  BOOKING_MAX_ADVANCE_DAYS: bookingMaxAdvanceDays,
   CLOUDINARY_CLOUD_NAME: cloudinaryCloudName,
   CLOUDINARY_API_KEY: cloudinaryApiKey,
   CLOUDINARY_API_SECRET: cloudinaryApiSecret,

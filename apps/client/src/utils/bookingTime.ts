@@ -8,6 +8,16 @@ export const SLOT_DURATION_MS = SLOT_DURATION_MINUTES * 60 * 1000;
 export const MIN_DURATION_MINUTES = 60;
 export const MAX_DURATION_MINUTES = 480;
 export const MIN_LEAD_TIME_MS = 30 * 60 * 1000;
+export const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Latest allowed start for a server horizon of `maxAdvanceDays` (CWB-75), mirroring the backend. */
+export function getBookingHorizonEnd(maxAdvanceDays: number, now: Date = new Date()): Date {
+  return new Date(now.getTime() + maxAdvanceDays * DAY_MS);
+}
+
+export function bookingHorizonMessage(maxAdvanceDays: number): string {
+  return `Chỉ được đặt phòng trước tối đa ${maxAdvanceDays} ngày`;
+}
 
 export interface BookingTimeErrors {
   startTime?: string;
@@ -185,6 +195,7 @@ export function validateBookingSelection(
   endUtc: Date | null,
   now: Date = new Date(),
   note?: string,
+  maxAdvanceDays?: number | null,
 ): BookingValidationResult {
   const errors: BookingTimeErrors = {};
 
@@ -231,6 +242,8 @@ export function validateBookingSelection(
         errors.startTime = 'Thời gian bắt đầu không được ở trong quá khứ';
       } else if (startUtc.getTime() - now.getTime() < MIN_LEAD_TIME_MS) {
         errors.startTime = 'Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút';
+      } else if (maxAdvanceDays && startUtc > getBookingHorizonEnd(maxAdvanceDays, now)) {
+        errors.startTime = bookingHorizonMessage(maxAdvanceDays);
       }
     }
   }

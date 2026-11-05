@@ -10,6 +10,7 @@ import { useIdempotencyKey } from '../hooks/useIdempotencyKey';
 import { TimeGrid } from './TimeGrid';
 import {
   getVietnamTodayString,
+  getBookingHorizonEnd,
   formatVnDateTimeLocal,
   parseVnDateTimeLocalToUtc,
   formatVnDate,
@@ -124,6 +125,15 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
   const availability = useRoomAvailability(roomId, datesToLoad, isAvailabilityEnabled);
 
+  // CWB-75: the server reports its booking horizon with each availability response.
+  const todayVn = getVietnamTodayString(new Date(currentMs));
+  const horizonMaxDate = availability.maxAdvanceDays
+    ? formatVnDate(getBookingHorizonEnd(availability.maxAdvanceDays, new Date(currentMs)))
+    : undefined;
+  const horizonHint = availability.maxAdvanceDays
+    ? `Có thể đặt trước tối đa ${availability.maxAdvanceDays} ngày (đến ${horizonMaxDate!.split('-').reverse().join('/')}).`
+    : null;
+
   // Combine all loaded slots across covered dates. If any covered date is not loaded yet, return null.
   const allLoadedCoveredSlots = useMemo(() => {
     const slots: RoomAvailabilitySlot[] = [];
@@ -143,7 +153,13 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     if (!startUtc || !endUtc || endUtc <= startUtc) return false;
     if (hasBookingConflict) return false;
     if (availability.loading || Boolean(availability.error)) return false;
-    const timeValidation = validateBookingSelection(startUtc, endUtc, new Date(currentMs));
+    const timeValidation = validateBookingSelection(
+      startUtc,
+      endUtc,
+      new Date(currentMs),
+      undefined,
+      availability.maxAdvanceDays,
+    );
     if (!timeValidation.isValid) return false;
     if (!allLoadedCoveredSlots) return false;
     const rangeCheck = checkRangeAvailability(startUtc, endUtc, allLoadedCoveredSlots);
@@ -156,6 +172,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     hasBookingConflict,
     availability.loading,
     availability.error,
+    availability.maxAdvanceDays,
   ]);
 
   useEffect(() => {
@@ -323,7 +340,13 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       return;
     }
 
-    const validation = validateBookingSelection(startUtc, endUtc, new Date(currentMs), note);
+    const validation = validateBookingSelection(
+      startUtc,
+      endUtc,
+      new Date(currentMs),
+      note,
+      availability.maxAdvanceDays,
+    );
     if (!validation.isValid) {
       setErrors(validation.errors);
       return;
@@ -394,7 +417,13 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       }
 
       // F1 FIX: Re-validate time rules with fresh timestamp after preflight GET and before POST
-      const postValidation = validateBookingSelection(startUtc, endUtc, new Date(), note);
+      const postValidation = validateBookingSelection(
+        startUtc,
+        endUtc,
+        new Date(),
+        note,
+        availability.maxAdvanceDays,
+      );
       if (!postValidation.isValid) {
         setErrors(postValidation.errors);
         return;
@@ -699,11 +728,23 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           id="booking-view-date"
           type="date"
           className="tabular-nums"
+          min={todayVn}
+          max={horizonMaxDate}
+          aria-describedby={horizonHint ? 'booking-view-date-hint' : undefined}
           value={viewDate}
           onChange={handleViewDateChange}
           disabled={isSubmitting}
           data-testid="booking-view-date-input"
         />
+        {horizonHint && (
+          <p
+            id="booking-view-date-hint"
+            className="text-xs text-muted-foreground"
+            data-testid="booking-horizon-hint"
+          >
+            {horizonHint}
+          </p>
+        )}
       </div>
 
       {/* Availability TimeGrid Component */}
@@ -759,6 +800,7 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           onSelectStart={handleSelectStart}
           onSelectRange={handleSelectRange}
           disabled={isSubmitting}
+          maxAdvanceDays={availability.maxAdvanceDays}
         />
       )}
 
