@@ -29,10 +29,14 @@ export class UserRepository {
     return prisma.user.update({ where: { id }, data });
   }
 
-  /** Current token version, or null when the account no longer exists (CWB-77). */
-  async findTokenVersion(id: string): Promise<number | null> {
-    const user = await prisma.user.findUnique({ where: { id }, select: { tokenVersion: true } });
-    return user ? user.tokenVersion : null;
+  /** Token version and lock state for the per-request session check (CWB-77, CWB-79). */
+  async findSessionState(
+    id: string,
+  ): Promise<{ tokenVersion: number; lockedAt: Date | null } | null> {
+    return prisma.user.findUnique({
+      where: { id },
+      select: { tokenVersion: true, lockedAt: true },
+    });
   }
 
   /** Stores a new password hash and revokes every token issued before it in one statement. */

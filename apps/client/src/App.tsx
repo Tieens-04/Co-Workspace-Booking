@@ -46,6 +46,9 @@ const AdminAuditPage = lazy(() =>
 const AdminEmailsPage = lazy(() =>
   import('./pages/AdminEmailsPage').then((m) => ({ default: m.AdminEmailsPage })),
 );
+const AdminUsersPage = lazy(() =>
+  import('./pages/AdminUsersPage').then((m) => ({ default: m.AdminUsersPage })),
+);
 const AdminDashboardPage = lazy(() =>
   import('./pages/AdminDashboardPage').then((m) => ({ default: m.AdminDashboardPage })),
 );
@@ -142,6 +145,7 @@ export default function App() {
                       <Route path="amenities" element={<AdminAmenitiesPage />} />
                       <Route path="audit" element={<AdminAuditPage />} />
                       <Route path="emails" element={<AdminEmailsPage />} />
+                      <Route path="users" element={<AdminUsersPage />} />
                     </Route>
                   </Routes>
                 </ToastProvider>

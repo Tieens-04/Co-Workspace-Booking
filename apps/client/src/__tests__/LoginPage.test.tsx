@@ -227,6 +227,35 @@ describe('LoginPage', () => {
     expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
   });
 
+  it('shows the locked-account message on 403 ACCOUNT_LOCKED without storing a session (CWB-79)', async () => {
+    const headers = new AxiosHeaders();
+    const message = 'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.';
+    vi.mocked(authApi.login).mockRejectedValueOnce(
+      new AxiosError(
+        'Request failed with status code 403',
+        '403',
+        { headers } as never,
+        {},
+        {
+          status: 403,
+          statusText: 'Forbidden',
+          headers: {},
+          config: { headers } as never,
+          data: { success: false, code: 'ACCOUNT_LOCKED', message },
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/^Email/i), 'locked@example.com');
+    await user.type(screen.getByLabelText(/^Mật khẩu/i), 'Password123');
+    await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+  });
+
   it('handles network failure with general error message', async () => {
     const axiosError = new AxiosError('Network Error');
     vi.mocked(authApi.login).mockRejectedValueOnce(axiosError);

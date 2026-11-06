@@ -64,6 +64,9 @@ model User {
   role         Role     @default(CUSTOMER)
   // CWB-77: bumped on password change/reset and "log out everywhere"; JWTs carry it as `tv`.
   tokenVersion Int      @default(0) @map("token_version")
+  // CWB-79: set while an admin has locked the account (null = active); reason shown to admins.
+  lockedAt     DateTime? @map("locked_at")
+  lockReason   String?   @map("lock_reason") @db.VarChar(500)
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

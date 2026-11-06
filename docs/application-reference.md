@@ -92,6 +92,7 @@ Vì ứng dụng sử dụng React Router với HTML5 History API (`BrowserRoute
   - Body: `{ email, password }`
   - Password không rỗng và tối đa 72 UTF-8 bytes; vượt giới hạn trả `400 VALIDATION_ERROR`.
   - Trả về JWT Access Token (HS256), mặc định 1 giờ, chứa `{ sub, role, iat, exp }`; `data.expiresIn` luôn khớp thời hạn token (giây).
+  - Tài khoản bị admin khóa (CWB-79) trả `403 ACCOUNT_LOCKED`, không có token. Trạng thái khóa chỉ lộ ra khi mật khẩu đúng; sai mật khẩu vẫn là `401 INVALID_CREDENTIALS`.
 
 Email, `fullName` và `phoneNumber` giới hạn 191 ký tự theo schema MySQL. Email trùng trả `409 EMAIL_ALREADY_EXISTS`; unique constraint khác trả `409 RESOURCE_CONFLICT`.
 
@@ -798,6 +799,7 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - `bookingCode` (tùy chọn): Khớp chính xác (exact match), không phân biệt hoa thường (case-insensitive), tự động loại bỏ mọi khoảng trắng (`\s+`).
     - `date` (tùy chọn): Ngày bắt đầu sử dụng phòng (`YYYY-MM-DD`) theo múi giờ Việt Nam `Asia/Ho_Chi_Minh` (`+07:00`), tính trọn vẹn trong khoảng `[dayStart, dayEnd)`.
     - `status` (tùy chọn): Enum trạng thái (`CONFIRMED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`).
+    - `customer` (tùy chọn, CWB-79, tối đa 191 ký tự, tự trim): chuỗi con không phân biệt hoa thường của email/họ tên/SĐT tài khoản **hoặc** tên/SĐT khách vãng lai (`guestName`, `guestPhone`).
     - Nghiêm cấm tham số truy vấn ngoài allowlist (`400 VALIDATION_ERROR`).
   - **Dữ liệu trả về (Data Projection)**:
     - Danh sách `items` kèm đối tượng `customer`, dùng chung cho phản hồi các thao tác quản trị booking:
@@ -880,12 +882,12 @@ npm run test --workspace=apps/client -- src/__tests__/AdminBookingsPage.test.tsx
 ### 7. Nhật Ký Thao Tác Quản Trị (Audit Log, CWB-67)
 
 - **Ghi nhận**: bảng `audit_events` (append-only, không FK để sự kiện vẫn còn khi bản ghi gốc bị xóa). Mỗi sự kiện được ghi **trong cùng transaction** với thay đổi nghiệp vụ: rollback thì không có sự kiện.
-- **Các thao tác được ghi**: `BOOKING_GUEST_CREATED`, `BOOKING_PAYMENT_CONFIRMED`, `BOOKING_CANCELLED_BY_ADMIN`, `BOOKING_CHECKED_IN`, `BOOKING_COMPLETED`, `BOOKING_MARKED_NO_SHOW`, `ROOM_STATUS_CHANGED` (chỉ khi trạng thái phòng thực sự đổi).
+- **Các thao tác được ghi**: `BOOKING_GUEST_CREATED`, `BOOKING_PAYMENT_CONFIRMED`, `BOOKING_CANCELLED_BY_ADMIN`, `BOOKING_CHECKED_IN`, `BOOKING_COMPLETED`, `BOOKING_MARKED_NO_SHOW`, `ROOM_STATUS_CHANGED` (chỉ khi trạng thái phòng thực sự đổi), `USER_LOCKED`, `USER_UNLOCKED` (CWB-79, `entityType = USER`, `after` chứa trạng thái mới và lý do).
 - **Người thực hiện** lấy từ JWT đã xác thực (`sub`, `role`), không bao giờ lấy từ body.
 - **Không ghi trùng**: retry idempotent (đã PAID, đã CANCELLED, đã check-in, replay `Idempotency-Key`) và request bị từ chối (`400/401/403/404/409`) không tạo sự kiện. Các xác nhận thanh toán đồng thời chỉ tạo 1 sự kiện nhờ khóa dòng.
 - **Dữ liệu**: `before`/`after` chỉ chứa trường trạng thái (mã đơn, status, paymentStatus, paymentMethod, checkedInAt, cancellationReason; với phòng là status). Sự kiện tạo đơn khách vãng lai **không** lưu tên/SĐT khách.
 - **Thứ tự**: cột `sequence` (AUTO_INCREMENT) quyết định thứ tự đọc, tránh trùng mili-giây của `created_at`.
-- **Đọc**: `GET /api/v1/admin/audit-events?page=&limit=&entityType=&entityId=&action=` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`). `limit` 1–100 (mặc định 20), `entityType` ∈ `BOOKING|ROOM`, `action` thuộc danh sách trên, trường lạ → `400`. Trả `{ items, pagination }`, mới nhất trước.
+- **Đọc**: `GET /api/v1/admin/audit-events?page=&limit=&entityType=&entityId=&action=` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`). `limit` 1–100 (mặc định 20), `entityType` ∈ `BOOKING|ROOM|USER`, `action` thuộc danh sách trên, trường lạ → `400`. Trả `{ items, pagination }`, mới nhất trước.
 - **Lưu trữ (retention)**: chưa có job tự xóa. Đề xuất vận hành định kỳ xóa sự kiện cũ hơn khoảng thời gian chính sách quy định (ví dụ 12 tháng) bằng `DELETE FROM audit_events WHERE created_at < ?` (có index `created_at`).
 
 ```bash
@@ -910,6 +912,21 @@ npm run test --workspace=apps/client -- src/__tests__/AdminAuditPage.test.tsx
 ```bash
 npm run test:integration --workspace=apps/server -- src/__tests__/email-outbox.integration.test.ts
 npm run test --workspace=apps/client -- src/__tests__/AdminEmailsPage.test.tsx
+```
+
+### 9. Quản Lý Khách Hàng (CWB-79)
+
+- **Dữ liệu**: `users.locked_at` (`NULL` = đang hoạt động) và `users.lock_reason` (tối đa 500 ký tự), migration `20261106100000_cwb79_user_lock` chỉ thêm cột nullable nên tài khoản hiện có vẫn hoạt động.
+- **API ADMIN** (thiếu token `401`, CUSTOMER `403`):
+  - `GET /api/v1/admin/users?page=&limit=&q=&role=&status=`: `limit` 1–100 (mặc định 20), `q` tìm chuỗi con (không phân biệt hoa thường) trong email/họ tên/SĐT, `role` ∈ `CUSTOMER|ADMIN`, `status` ∈ `ACTIVE|LOCKED`, trường lạ → `400`. Mỗi tài khoản gồm `id, email, fullName, phoneNumber, role, status, lockedAt, lockReason, createdAt` và `bookingCount` (mọi trạng thái), `noShowCount` (booking đã ghi nhận `NO_SHOW`), `upcomingBookingCount` (`CONFIRMED`, bắt đầu ≥ hiện tại), `lastBookingAt` (thời điểm tạo booking gần nhất). Không bao giờ trả `passwordHash` hay `tokenVersion`. Sắp xếp mới tạo trước.
+  - `PATCH /api/v1/admin/users/:id/status` với body `{ status: "LOCKED" | "ACTIVE", reason }` (`reason` bắt buộc, trim, 1–500 ký tự). Chỉ áp dụng cho tài khoản `CUSTOMER`: khóa/mở khóa chính mình hoặc ADMIN khác → `403 ADMIN_ACCOUNT_PROTECTED`; không tồn tại → `404 USER_NOT_FOUND`; đã ở trạng thái yêu cầu → `409 USER_STATUS_UNCHANGED`. Thao tác khóa dòng `users` (`FOR UPDATE`), ghi audit event trong cùng transaction và trả `{ user, affectedBookings }`.
+- **Hiệu lực khi khóa**: tăng `token_version` nên mọi JWT đã cấp bị từ chối ngay (`401`, CWB-77); kiểm tra phiên cũng từ chối tài khoản đang khóa; đăng nhập trả `403 ACCOUNT_LOCKED`. Transaction tạo booking (đã khóa dòng `users` từ CWB-78) kiểm tra lại và trả `403 ACCOUNT_LOCKED`, nên request đã qua xác thực ngay trước lúc khóa cũng không tạo được booking.
+- **Booking tương lai không tự hủy**: `affectedBookings` liệt kê các booking `CONFIRMED` sắp tới (mã, phòng, giờ) để admin liên hệ khách hoặc hủy thủ công qua luồng hủy của admin. Mở khóa không khôi phục token cũ; khách đăng nhập lại.
+- **Giao diện**: `/admin/users` ("Khách hàng") tìm kiếm, lọc vai trò/trạng thái, phân trang, có trạng thái loading/empty/error; hộp thoại khóa/mở khóa bắt buộc lý do, cảnh báo số booking sắp tới và hiển thị danh sách booking bị ảnh hưởng sau khi khóa. Trang quản lý đặt phòng có thêm ô lọc "Khách hàng".
+
+```bash
+npm run test:integration --workspace=apps/server -- src/__tests__/admin-users.integration.test.ts
+npm run test --workspace=apps/client -- src/__tests__/AdminUsersPage.test.tsx
 ```
 
 ---

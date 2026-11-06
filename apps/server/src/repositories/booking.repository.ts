@@ -40,6 +40,13 @@ export type BookingGuestIdentity = {
 
 export type BookingIdentity = BookingUserIdentity | BookingGuestIdentity;
 
+export const accountLockedError = (): AppError =>
+  new AppError(
+    'ACCOUNT_LOCKED',
+    'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.',
+    403,
+  );
+
 export const activeBookingLimitError = (limit: number): AppError =>
   new AppError(
     'ACTIVE_BOOKING_LIMIT',
@@ -356,7 +363,12 @@ export class BookingRepository
       // 0. CWB-78: lock the customer's row first (always user -> room, no path locks the reverse)
       // so one customer's concurrent requests for different rooms serialize on the booking cap.
       if (data.userId) {
-        await tx.$queryRaw(Prisma.sql`SELECT id FROM users WHERE id = ${data.userId} FOR UPDATE`);
+        const [account] = await tx.$queryRaw<Array<{ locked_at: Date | null }>>(
+          Prisma.sql`SELECT locked_at FROM users WHERE id = ${data.userId} FOR UPDATE`,
+        );
+        // CWB-79: the session check runs before this transaction; re-check under the row lock so
+        // a request that passed authentication just before an admin lock cannot still book.
+        if (account?.locked_at) throw accountLockedError();
       }
 
       // 1. Lock room row in MySQL with FOR UPDATE
@@ -621,6 +633,18 @@ export class BookingRepository
         gte: dayStart,
         lt: dayEnd,
       };
+    }
+
+    if (filter.customer) {
+      // CWB-79: registered customers and walk-in guests; *_ci collation = case-insensitive.
+      const q = filter.customer;
+      where.OR = [
+        { user: { email: { contains: q } } },
+        { user: { fullName: { contains: q } } },
+        { user: { phoneNumber: { contains: q } } },
+        { guestName: { contains: q } },
+        { guestPhone: { contains: q } },
+      ];
     }
 
     const orderBy: Prisma.BookingOrderByWithRelationInput[] = [

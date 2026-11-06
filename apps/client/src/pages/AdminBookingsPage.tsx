@@ -46,6 +46,7 @@ export const AdminBookingsPage: React.FC = () => {
   // Parse and normalize URL search parameters
   const {
     appliedCode,
+    appliedCustomer,
     appliedDate,
     appliedStatus,
     currentPage,
@@ -53,6 +54,7 @@ export const AdminBookingsPage: React.FC = () => {
     hasParamDiscrepancy,
   } = useMemo(() => {
     const rawCode = searchParams.get('bookingCode');
+    const rawCustomer = searchParams.get('customer');
     const rawDate = searchParams.get('date');
     const rawStatus = searchParams.get('status');
     const rawPage = searchParams.get('page');
@@ -61,6 +63,12 @@ export const AdminBookingsPage: React.FC = () => {
     if (rawCode) {
       const cleaned = rawCode.replace(/\s+/g, '').toUpperCase();
       if (cleaned.length > 0) code = cleaned;
+    }
+
+    let customer: string | undefined = undefined;
+    if (rawCustomer) {
+      const cleaned = rawCustomer.trim().slice(0, 191);
+      if (cleaned.length > 0) customer = cleaned;
     }
 
     let date: string | undefined = undefined;
@@ -83,6 +91,7 @@ export const AdminBookingsPage: React.FC = () => {
 
     const nextParams = new URLSearchParams();
     if (code) nextParams.set('bookingCode', code);
+    if (customer) nextParams.set('customer', customer);
     if (date) nextParams.set('date', date);
     if (status) nextParams.set('status', status);
     if (page > 1) nextParams.set('page', page.toString());
@@ -91,6 +100,7 @@ export const AdminBookingsPage: React.FC = () => {
 
     return {
       appliedCode: code,
+      appliedCustomer: customer,
       appliedDate: date,
       appliedStatus: status,
       currentPage: page,
@@ -107,15 +117,17 @@ export const AdminBookingsPage: React.FC = () => {
 
   // Draft search form inputs
   const [draftCode, setDraftCode] = useState<string>(appliedCode || '');
+  const [draftCustomer, setDraftCustomer] = useState<string>(appliedCustomer || '');
   const [draftDate, setDraftDate] = useState<string>(appliedDate || '');
   const [draftStatus, setDraftStatus] = useState<string>(appliedStatus || '');
 
   // Keep draft in sync when URL changes (e.g. back/forward navigation)
   useEffect(() => {
     setDraftCode(appliedCode || '');
+    setDraftCustomer(appliedCustomer || '');
     setDraftDate(appliedDate || '');
     setDraftStatus(appliedStatus || '');
-  }, [appliedCode, appliedDate, appliedStatus]);
+  }, [appliedCode, appliedCustomer, appliedDate, appliedStatus]);
 
   // Request & list state
   const [bookings, setBookings] = useState<AdminBookingItem[] | null>(null);
@@ -358,7 +370,7 @@ export const AdminBookingsPage: React.FC = () => {
     (preserveList = false) => {
       const currentRequestId = ++requestIdRef.current;
       const requestingUser = principal?.id;
-      const requestFilterKey = `${appliedCode}|${appliedDate}|${appliedStatus}|${currentPage}|${requestingUser}`;
+      const requestFilterKey = `${appliedCode}|${appliedCustomer}|${appliedDate}|${appliedStatus}|${currentPage}|${requestingUser}`;
       activeFilterKeyRef.current = requestFilterKey;
 
       abortControllerRef.current?.abort();
@@ -401,6 +413,7 @@ export const AdminBookingsPage: React.FC = () => {
             page: currentPage,
             limit: PAGE_LIMIT,
             bookingCode: appliedCode,
+            customer: appliedCustomer,
             date: appliedDate,
             status: appliedStatus,
           },
@@ -445,7 +458,7 @@ export const AdminBookingsPage: React.FC = () => {
           setIsLoading(false);
         });
     },
-    [currentPage, appliedCode, appliedDate, appliedStatus, principal?.id],
+    [currentPage, appliedCode, appliedCustomer, appliedDate, appliedStatus, principal?.id],
   );
 
   useEffect(() => {
@@ -462,6 +475,8 @@ export const AdminBookingsPage: React.FC = () => {
     const nextParams = new URLSearchParams();
     const cleanedCode = draftCode.replace(/\s+/g, '').toUpperCase();
     if (cleanedCode) nextParams.set('bookingCode', cleanedCode);
+    const cleanedCustomer = draftCustomer.trim();
+    if (cleanedCustomer) nextParams.set('customer', cleanedCustomer);
     if (draftDate) nextParams.set('date', draftDate);
     if (draftStatus) nextParams.set('status', draftStatus);
     // Reset to page 1 on filter submit
@@ -471,6 +486,7 @@ export const AdminBookingsPage: React.FC = () => {
   // Handle clearing all filters
   const handleClearFilters = () => {
     setDraftCode('');
+    setDraftCustomer('');
     setDraftDate('');
     setDraftStatus('');
     setSearchParams(new URLSearchParams());
@@ -540,9 +556,11 @@ export const AdminBookingsPage: React.FC = () => {
       {/* Filter and Search Section */}
       <BookingFilters
         code={draftCode}
+        customer={draftCustomer}
         date={draftDate}
         status={draftStatus}
         onCodeChange={setDraftCode}
+        onCustomerChange={setDraftCustomer}
         onDateChange={setDraftDate}
         onStatusChange={setDraftStatus}
         onSubmit={handleSearchSubmit}

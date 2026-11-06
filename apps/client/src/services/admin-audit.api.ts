@@ -9,10 +9,12 @@ export const AUDIT_ACTION_LABELS = {
   BOOKING_COMPLETED: 'Hoàn tất đặt phòng',
   BOOKING_MARKED_NO_SHOW: 'Đánh dấu không đến',
   ROOM_STATUS_CHANGED: 'Đổi trạng thái phòng',
+  USER_LOCKED: 'Khóa tài khoản',
+  USER_UNLOCKED: 'Mở khóa tài khoản',
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;
-export type AuditEntityType = 'BOOKING' | 'ROOM';
+export type AuditEntityType = 'BOOKING' | 'ROOM' | 'USER';
 
 export interface AuditEvent {
   id: string;

@@ -36,6 +36,8 @@ export interface GetAdminBookingsParams {
   bookingCode?: string;
   date?: string;
   status?: string;
+  /** CWB-79: account email/name/phone or walk-in guest name/phone. */
+  customer?: string;
 }
 
 export interface AdminBookingListResponseData {

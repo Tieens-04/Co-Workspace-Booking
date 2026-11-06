@@ -6,17 +6,19 @@ const { SessionService } = await vi.importActual<typeof import('../services/sess
   '../services/session.service.js',
 );
 
-const serviceWith = (stored: number | null) => {
-  const findTokenVersion = vi.fn(async () => stored);
-  const service = new SessionService({ findTokenVersion } as unknown as UserRepository);
-  return { service, findTokenVersion };
+const serviceWith = (stored: number | null, lockedAt: Date | null = null) => {
+  const findSessionState = vi.fn(async () =>
+    stored === null ? null : { tokenVersion: stored, lockedAt },
+  );
+  const service = new SessionService({ findSessionState } as unknown as UserRepository);
+  return { service, findSessionState };
 };
 
 describe('SessionService.isTokenCurrent (CWB-77)', () => {
   it('accepts a token whose version equals the stored version', async () => {
-    const { service, findTokenVersion } = serviceWith(2);
+    const { service, findSessionState } = serviceWith(2);
     await expect(service.isTokenCurrent('user-1', 2)).resolves.toBe(true);
-    expect(findTokenVersion).toHaveBeenCalledWith('user-1');
+    expect(findSessionState).toHaveBeenCalledWith('user-1');
   });
 
   it.each([
@@ -30,5 +32,10 @@ describe('SessionService.isTokenCurrent (CWB-77)', () => {
   it('rejects a token for an account that no longer exists', async () => {
     const { service } = serviceWith(null);
     await expect(service.isTokenCurrent('user-1', 0)).resolves.toBe(false);
+  });
+
+  it('rejects a current-version token of a locked account (CWB-79)', async () => {
+    const { service } = serviceWith(2, new Date('2026-11-06T03:00:00Z'));
+    await expect(service.isTokenCurrent('user-1', 2)).resolves.toBe(false);
   });
 });

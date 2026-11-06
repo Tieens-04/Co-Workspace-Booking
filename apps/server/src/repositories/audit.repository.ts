@@ -15,9 +15,11 @@ export const AUDIT_ACTIONS = [
   'BOOKING_COMPLETED',
   'BOOKING_MARKED_NO_SHOW',
   'ROOM_STATUS_CHANGED',
+  'USER_LOCKED',
+  'USER_UNLOCKED',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
-export const AUDIT_ENTITY_TYPES = ['BOOKING', 'ROOM'] as const;
+export const AUDIT_ENTITY_TYPES = ['BOOKING', 'ROOM', 'USER'] as const;
 export type AuditEntityType = (typeof AUDIT_ENTITY_TYPES)[number];
 
 export interface AuditEventInput {

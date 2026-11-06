@@ -11,6 +11,7 @@ import {
   Menu,
   Sparkles,
   Store,
+  Users,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -45,6 +46,13 @@ const NAV_ITEMS = [
     label: 'Quản lý đặt phòng',
     icon: CalendarCheck,
     testId: 'admin-nav-bookings',
+    end: false,
+  },
+  {
+    to: '/admin/users',
+    label: 'Khách hàng',
+    icon: Users,
+    testId: 'admin-nav-users',
     end: false,
   },
   {
