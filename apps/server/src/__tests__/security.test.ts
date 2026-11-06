@@ -121,6 +121,8 @@ describe('Security Regressions (CWB-33, CWB-37)', () => {
           role: Role.CUSTOMER,
           passwordHash,
           tokenVersion: 0,
+          lockedAt: null,
+          lockReason: null,
           createdAt: new Date(),
           updatedAt: new Date(),
         });

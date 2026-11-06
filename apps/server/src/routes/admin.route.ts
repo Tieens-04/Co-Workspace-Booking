@@ -43,6 +43,12 @@ import {
   getEmailOutboxQuerySchema,
 } from '../validators/admin-email-outbox.validator.js';
 import { uploadRoomImagesMiddleware } from '../middlewares/room-image-upload.middleware.js';
+import { adminUserController } from '../controllers/admin-user.controller.js';
+import {
+  adminUserIdParamsSchema,
+  getAdminUsersQuerySchema,
+  updateUserStatusBodySchema,
+} from '../validators/admin-user.validator.js';
 
 const router = Router();
 
@@ -150,6 +156,15 @@ router.get(
 );
 
 router.get('/audit-events', validateQuery(getAuditEventsQuerySchema), adminAuditController.list);
+
+// CWB-79: customer management.
+router.get('/users', validateQuery(getAdminUsersQuerySchema), adminUserController.list);
+router.patch(
+  '/users/:id/status',
+  validateParams(adminUserIdParamsSchema),
+  validateBody(updateUserStatusBodySchema),
+  adminUserController.updateStatus,
+);
 
 router.get(
   '/email-outbox',

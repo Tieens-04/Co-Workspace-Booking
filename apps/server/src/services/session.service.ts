@@ -11,8 +11,9 @@ export class SessionService {
   constructor(private readonly userRepo: UserRepository = userRepository) {}
 
   async isTokenCurrent(userId: string, tokenVersion: number): Promise<boolean> {
-    const current = await this.userRepo.findTokenVersion(userId);
-    return current !== null && current === tokenVersion;
+    const state = await this.userRepo.findSessionState(userId);
+    // CWB-79: a locked account has no valid session even if a token slipped past the version bump.
+    return state !== null && state.lockedAt === null && state.tokenVersion === tokenVersion;
   }
 }
 

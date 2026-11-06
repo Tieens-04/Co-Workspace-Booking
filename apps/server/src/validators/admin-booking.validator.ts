@@ -31,6 +31,15 @@ export const getAdminBookingsQuerySchema = z
       .refine(isValidCalendarDate, 'date phải là ngày thực tế hợp lệ')
       .optional(),
     status: z.nativeEnum(BookingStatus).optional(),
+    // CWB-79: account email/name/phone or walk-in guest name/phone.
+    customer: z
+      .string()
+      .max(191, 'Thông tin khách hàng không được vượt quá 191 ký tự')
+      .transform((val) => {
+        const normalized = val.trim();
+        return normalized.length === 0 ? undefined : normalized;
+      })
+      .optional(),
   })
   .strict()
   .refine((data) => (data.page - 1) * data.limit <= MYSQL_INT_MAX, {

@@ -7,9 +7,11 @@ import { Input } from '@/components/ui/input';
 
 interface BookingFiltersProps {
   code: string;
+  customer: string;
   date: string;
   status: string;
   onCodeChange: (value: string) => void;
+  onCustomerChange: (value: string) => void;
   onDateChange: (value: string) => void;
   onStatusChange: (value: string) => void;
   onSubmit: (e: React.FormEvent) => void;
@@ -19,9 +21,11 @@ interface BookingFiltersProps {
 /** Search bar for the admin bookings list. Draft values and submit logic live in the page. */
 export function BookingFilters({
   code,
+  customer,
   date,
   status,
   onCodeChange,
+  onCustomerChange,
   onDateChange,
   onStatusChange,
   onSubmit,
@@ -31,7 +35,7 @@ export function BookingFilters({
     <section aria-label="Bộ lọc đặt phòng" className="rounded-xl border bg-card p-5">
       <form
         onSubmit={onSubmit}
-        className="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
+        className="grid items-end gap-4 sm:grid-cols-2 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]"
       >
         <Field id="filterBookingCode" label="Mã đặt phòng">
           <Input
@@ -41,6 +45,17 @@ export function BookingFilters({
             onChange={(e) => onCodeChange(e.target.value)}
             placeholder="VD: CS-20261003-ABCD"
             data-testid="filter-booking-code-input"
+          />
+        </Field>
+
+        <Field id="filterCustomer" label="Khách hàng (email, tên, SĐT)">
+          <Input
+            type="search"
+            value={customer}
+            maxLength={191}
+            onChange={(e) => onCustomerChange(e.target.value)}
+            placeholder="Kể cả khách vãng lai"
+            data-testid="filter-customer-input"
           />
         </Field>
 
@@ -68,7 +83,7 @@ export function BookingFilters({
           </NativeSelect>
         </Field>
 
-        <div className="flex gap-2 sm:col-span-2 xl:col-span-1">
+        <div className="flex gap-2 sm:col-span-2 xl:col-span-1 xl:flex-col 2xl:flex-row">
           <Button type="submit" className="flex-1 xl:flex-none" data-testid="apply-filters-btn">
             <Search aria-hidden="true" />
             Tìm kiếm

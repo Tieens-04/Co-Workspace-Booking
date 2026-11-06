@@ -39,6 +39,12 @@ phóng một lượt. Kiểm tra giới hạn nằm trong transaction tạo book
 (`SELECT ... FOR UPDATE`, khóa trước dòng phòng), nên hai request đồng thời cho hai phòng khác nhau không thể cùng
 vượt giới hạn. Retry cùng `Idempotency-Key` của booking đã tạo vẫn trả lại booking gốc.
 
+### Khóa tài khoản khách (CWB-79)
+
+Admin có thể khóa tài khoản `CUSTOMER` lạm dụng (bắt buộc lý do, có audit). Tài khoản bị khóa bị đăng xuất ngay,
+không đăng nhập được (`403 ACCOUNT_LOCKED`) và không tạo được booking. Booking tương lai **không** tự hủy: admin
+được cảnh báo danh sách để xử lý thủ công. Không khóa được tài khoản `ADMIN`, kể cả chính mình.
+
 ### Thay đổi đã thay thế (superseded)
 
 | Quy tắc           | Mô tả cũ (Jira CWB-19, CWB-26) | Hiệu lực hiện tại                   |
@@ -92,6 +98,7 @@ Kiểm trên giao diện và API với giờ Việt Nam; ghi lại kết quả v
 - [ ] Hủy khi còn đúng 60 phút thành công; còn 59 phút bị từ chối (`CANCELLATION_POLICY_VIOLATION`).
 - [ ] Booking kết thúc 10:00 và booking mới bắt đầu 10:00 cùng phòng đều thành công.
 - [ ] Customer có đủ 5 booking sắp tới: lượt thứ 6 bị từ chối (`409 ACTIVE_BOOKING_LIMIT`) với thông báo rõ trên form; hủy một booking thì đặt lại được. Admin đặt hộ khách vãng lai không bị giới hạn.
+- [ ] Admin khóa một khách có booking sắp tới: khách bị đăng xuất, đăng nhập trả "Tài khoản của bạn đã bị khóa", booking vẫn `CONFIRMED` và được liệt kê trong cảnh báo; mở khóa thì đăng nhập lại được. Không có nút khóa cho tài khoản ADMIN.
 - [ ] Request thứ 21 tạo booking trong 15 phút của cùng tài khoản và request đăng ký thứ 11 trong 1 giờ cùng IP trả `429 TOO_MANY_REQUESTS`.
 - [ ] Trình duyệt đặt múi giờ khác (ví dụ UTC) vẫn hiển thị và gửi đúng giờ Việt Nam.
 - [ ] Tổng tiền hiển thị ở FE bằng `totalAmount` do server trả về.

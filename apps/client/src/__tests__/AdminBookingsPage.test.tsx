@@ -267,6 +267,28 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
     });
   });
 
+  it('submits a trimmed customer filter that also covers walk-in guests (CWB-79)', async () => {
+    const user = userEvent.setup();
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText('CS-20261003-USER')).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByTestId('filter-customer-input'), '  an@example.com ');
+    await user.click(screen.getByTestId('apply-filters-btn'));
+
+    await waitFor(() => {
+      expect(adminBookingApi.getBookings).toHaveBeenCalledWith(
+        expect.objectContaining({ customer: 'an@example.com', page: 1 }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    await user.click(screen.getByTestId('clear-filters-btn'));
+    expect(screen.getByTestId('filter-customer-input')).toHaveValue('');
+  });
+
   it('submits search filter by date and status', async () => {
     const user = userEvent.setup();
     renderComponent();

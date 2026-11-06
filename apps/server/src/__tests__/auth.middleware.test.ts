@@ -72,6 +72,8 @@ describe('Auth & RBAC Middleware', () => {
           phoneNumber: null,
           role,
           tokenVersion: 0,
+          lockedAt: null,
+          lockReason: null,
           createdAt: new Date(),
           updatedAt: new Date(),
         });

@@ -9,7 +9,7 @@ import { generateToken, verifyToken } from '../utils/jwt.util.js';
 import { ENV } from '../config/env.config.js';
 import { errorHandler } from '../middlewares/error.middleware.js';
 import { ipKeyGenerator } from 'express-rate-limit';
-import { registerRateLimiter } from '../middlewares/rate-limit.middleware.js';
+import { loginRateLimiter, registerRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 // Any accidental persistence access fails: these tests cannot connect to a real DB.
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
@@ -27,6 +27,8 @@ const fixture = (passwordHash: string, role: Role = Role.CUSTOMER): User => ({
   role,
   passwordHash,
   tokenVersion: 3,
+  lockedAt: null,
+  lockReason: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -41,6 +43,7 @@ beforeEach(async () => {
   // Every register request from 127.0.0.1 counts toward the CWB-78 limiter; start each test fresh.
   for (const address of ['127.0.0.1', '::ffff:127.0.0.1', '::1']) {
     await registerRateLimiter.resetKey(ipKeyGenerator(address, 56));
+    await loginRateLimiter.resetKey(ipKeyGenerator(address, 56));
   }
   vi.spyOn(userRepository, 'findByEmail').mockResolvedValue(null);
   vi.spyOn(userRepository, 'create').mockImplementation(async (data) => ({
@@ -112,6 +115,29 @@ describe('Register/Login HTTP regressions (mocked repository, real bcrypt/JWT)',
     expect(wrong.body).toEqual(missing.body);
     expect(wrong.body.code).toBe('INVALID_CREDENTIALS');
     expect(wrong.body.data).toBeUndefined();
+  });
+
+  it('answers 403 ACCOUNT_LOCKED without a token only after the correct password (CWB-79)', async () => {
+    vi.mocked(userRepository.findByEmail).mockResolvedValue({
+      ...fixture(await hashPassword(registration.password)),
+      lockedAt: new Date('2026-11-06T03:00:00Z'),
+      lockReason: 'Spam giữ chỗ',
+    });
+
+    const wrong = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: registration.email, password: 'WrongPassword!' });
+    expect(wrong.status).toBe(401);
+    expect(wrong.body.code).toBe('INVALID_CREDENTIALS');
+
+    const locked = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: registration.email, password: registration.password });
+    expect(locked.status).toBe(403);
+    expect(locked.body.code).toBe('ACCOUNT_LOCKED');
+    expect(locked.body.data).toBeUndefined();
+    // The admin's reason stays internal.
+    expect(JSON.stringify(locked.body)).not.toContain('Spam');
   });
 
   it.each(['a'.repeat(72), 'é'.repeat(36)])(

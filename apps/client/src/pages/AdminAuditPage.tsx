@@ -26,6 +26,11 @@ const errorMessage = (err: unknown, fallback: string) =>
   (err as { response?: { data?: { message?: string } } }).response?.data?.message || fallback;
 
 const emptyFilters = { entityType: '', action: '', entityId: '' };
+const ENTITY_LABELS: Record<string, string> = {
+  BOOKING: 'Đặt phòng',
+  ROOM: 'Phòng',
+  USER: 'Tài khoản',
+};
 
 /** ADMIN read-only trail of admin booking and room status changes (CWB-67). */
 export const AdminAuditPage: React.FC = () => {
@@ -106,6 +111,7 @@ export const AdminAuditPage: React.FC = () => {
               <option value="">Tất cả</option>
               <option value="BOOKING">Đặt phòng</option>
               <option value="ROOM">Phòng</option>
+              <option value="USER">Tài khoản</option>
             </NativeSelect>
           </Field>
           <Field id="audit-action" label="Thao tác">
@@ -174,7 +180,7 @@ export const AdminAuditPage: React.FC = () => {
                     {AUDIT_ACTION_LABELS[event.action] ?? event.action}
                   </span>
                   <Badge variant="outline">
-                    {event.entityType === 'ROOM' ? 'Phòng' : 'Đặt phòng'}
+                    {ENTITY_LABELS[event.entityType] ?? event.entityType}
                   </Badge>
                   <time
                     dateTime={event.createdAt}

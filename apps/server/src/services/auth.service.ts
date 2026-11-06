@@ -79,6 +79,15 @@ export class AuthService {
       throw new AppError('INVALID_CREDENTIALS', 'Email hoặc mật khẩu không chính xác', 401);
     }
 
+    // CWB-79: only revealed after the correct password, so the lock state does not leak.
+    if (user.lockedAt) {
+      throw new AppError(
+        'ACCOUNT_LOCKED',
+        'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.',
+        403,
+      );
+    }
+
     const accessToken = generateToken({
       sub: user.id,
       role: user.role,

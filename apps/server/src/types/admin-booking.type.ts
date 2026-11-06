@@ -36,6 +36,8 @@ export interface FindAdminBookingsFilter {
   bookingCode?: string;
   date?: string;
   status?: BookingStatus;
+  /** CWB-79: substring of the account email/name/phone or the guest name/phone. */
+  customer?: string;
 }
 
 export interface AdminBookingListResponseData {
