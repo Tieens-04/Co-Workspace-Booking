@@ -97,3 +97,32 @@ export const resetPasswordRateLimiter = rateLimit({
     'Quá nhiều lần đặt lại mật khẩu không thành công. Vui lòng thử lại sau.',
   ),
 });
+
+/**
+ * CWB-78: account creation is free, so every POST /auth/register request counts:
+ * 10 per IP per hour. Placed before validation so malformed scripted requests count too.
+ */
+export const registerRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientRateLimitKey(req),
+  handler: tooManyAttempts(
+    'Quá nhiều yêu cầu đăng ký từ mạng của bạn. Vui lòng thử lại sau 1 giờ.',
+  ),
+});
+
+/**
+ * CWB-78: bookings are UNPAID until the counter, so POST /bookings is throttled per verified
+ * account (not IP, so customers behind one NAT do not block each other): every request counts,
+ * 20 per user per 15 minutes. Mounted after verifyToken, before validation.
+ */
+export const createBookingRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `user:${req.user?.sub ?? getClientRateLimitKey(req)}`,
+  handler: tooManyAttempts('Bạn gửi quá nhiều yêu cầu đặt phòng. Vui lòng thử lại sau 15 phút.'),
+});

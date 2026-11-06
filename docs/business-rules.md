@@ -24,6 +24,21 @@ Server kiểm tra lại lead time bằng giờ server ngay trước khi insert, 
 CWB-51). Giá tiền = `price_per_hour × thời lượng`, Decimal làm tròn `ROUND_HALF_UP` 2 chữ số; tổng tiền từ client
 chỉ để hiển thị.
 
+### Chống giữ chỗ hàng loạt (CWB-78)
+
+Booking mặc định `UNPAID` (trả tại quầy), nên server giới hạn việc giữ chỗ không tốn chi phí:
+
+| Giới hạn                     | Giá trị                                                                                                   | Phạm vi                                             | Lỗi khi vượt               |
+| ---------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------- |
+| Booking sắp tới mỗi customer | tối đa `BOOKING_MAX_ACTIVE_PER_CUSTOMER` (mặc định **5**, env 1–100) booking `CONFIRMED` có `start ≥ now` | customer; guest booking của admin không bị giới hạn | `409 ACTIVE_BOOKING_LIMIT` |
+| `POST /api/v1/bookings`      | 20 request / 15 phút, tính mọi request                                                                    | theo tài khoản đã xác thực (không theo IP)          | `429 TOO_MANY_REQUESTS`    |
+| `POST /api/v1/auth/register` | 10 request / 1 giờ, tính mọi request                                                                      | theo IP (qua `TRUST_PROXY`, IPv6 gom theo /56)      | `429 TOO_MANY_REQUESTS`    |
+
+Booking đã hủy, hoàn tất, no-show hoặc đã qua giờ bắt đầu không tính vào giới hạn; hủy một booking sắp tới giải
+phóng một lượt. Kiểm tra giới hạn nằm trong transaction tạo booking, sau khi khóa dòng `users` của customer
+(`SELECT ... FOR UPDATE`, khóa trước dòng phòng), nên hai request đồng thời cho hai phòng khác nhau không thể cùng
+vượt giới hạn. Retry cùng `Idempotency-Key` của booking đã tạo vẫn trả lại booking gốc.
+
 ### Thay đổi đã thay thế (superseded)
 
 | Quy tắc           | Mô tả cũ (Jira CWB-19, CWB-26) | Hiệu lực hiện tại                   |
@@ -76,5 +91,7 @@ Kiểm trên giao diện và API với giờ Việt Nam; ghi lại kết quả v
 - [ ] 06:30–08:00 hoặc 21:00–22:30 bị từ chối (`OUTSIDE_OPERATING_HOURS`); 07:00–08:00 và 21:00–22:00 hợp lệ.
 - [ ] Hủy khi còn đúng 60 phút thành công; còn 59 phút bị từ chối (`CANCELLATION_POLICY_VIOLATION`).
 - [ ] Booking kết thúc 10:00 và booking mới bắt đầu 10:00 cùng phòng đều thành công.
+- [ ] Customer có đủ 5 booking sắp tới: lượt thứ 6 bị từ chối (`409 ACTIVE_BOOKING_LIMIT`) với thông báo rõ trên form; hủy một booking thì đặt lại được. Admin đặt hộ khách vãng lai không bị giới hạn.
+- [ ] Request thứ 21 tạo booking trong 15 phút của cùng tài khoản và request đăng ký thứ 11 trong 1 giờ cùng IP trả `429 TOO_MANY_REQUESTS`.
 - [ ] Trình duyệt đặt múi giờ khác (ví dụ UTC) vẫn hiển thị và gửi đúng giờ Việt Nam.
 - [ ] Tổng tiền hiển thị ở FE bằng `totalAmount` do server trả về.

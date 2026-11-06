@@ -24,6 +24,7 @@ import { AppError } from '../utils/error.util.js';
 import { AuditAction, AuditActor, recordAuditEvent } from './audit.repository.js';
 import { enqueueBookingEmail } from './email-outbox.repository.js';
 import { BookingIdempotency, idempotencyKeyReused } from '../utils/idempotency.util.js';
+import { ENV } from '../config/env.config.js';
 
 export type BookingUserIdentity = {
   userId: string;
@@ -38,6 +39,31 @@ export type BookingGuestIdentity = {
 };
 
 export type BookingIdentity = BookingUserIdentity | BookingGuestIdentity;
+
+export const activeBookingLimitError = (limit: number): AppError =>
+  new AppError(
+    'ACTIVE_BOOKING_LIMIT',
+    `Bạn đã đạt giới hạn ${limit} lượt đặt phòng sắp tới. Vui lòng sử dụng hoặc hủy bớt một lượt trước khi đặt thêm.`,
+    409,
+    { limit },
+  );
+
+/**
+ * CWB-78: a customer may hold at most `limit` upcoming CONFIRMED bookings (the "Sắp tới" view:
+ * CONFIRMED and start >= now). Must run inside the booking transaction after the customer's
+ * `users` row is locked, so concurrent requests of the same customer (any room) serialize here.
+ */
+async function assertActiveBookingCapacity(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  now: Date,
+  limit: number,
+): Promise<void> {
+  const active = await tx.booking.count({
+    where: { userId, status: BookingStatus.CONFIRMED, startTime: { gte: now } },
+  });
+  if (active >= limit) throw activeBookingLimitError(limit);
+}
 
 /**
  * Limits lazy no-show evaluation to bookings overlapping [from, to) (and a room) — the rows a
@@ -327,6 +353,12 @@ export class BookingRepository
   async createBooking(data: CreateBookingRepoInput): Promise<CreatedBookingResult> {
     assertValidBookingIdentity(data);
     return prisma.$transaction(async (tx) => {
+      // 0. CWB-78: lock the customer's row first (always user -> room, no path locks the reverse)
+      // so one customer's concurrent requests for different rooms serialize on the booking cap.
+      if (data.userId) {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM users WHERE id = ${data.userId} FOR UPDATE`);
+      }
+
       // 1. Lock room row in MySQL with FOR UPDATE
       const lockedRoom = await lockRoomRow(tx, data.roomId);
 
@@ -358,6 +390,17 @@ export class BookingRepository
           'ROOM_NOT_AVAILABLE',
           'Phòng đang trong trạng thái bảo trì, không thể đặt phòng',
           409,
+        );
+      }
+
+      // 2b. Upcoming-booking cap per customer (CWB-78); admin guest bookings are exempt.
+      // After the idempotency replay above, so retrying an already created booking still succeeds.
+      if (data.userId) {
+        await assertActiveBookingCapacity(
+          tx,
+          data.userId,
+          new Date(),
+          ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER,
         );
       }
 

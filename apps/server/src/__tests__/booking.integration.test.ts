@@ -7,8 +7,19 @@ import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { TestAccounts } from './support/test-accounts.js';
 import * as bookingCodeUtil from '../utils/booking-code.util.js';
+import { ENV } from '../config/env.config.js';
 
 describe('Booking API Integration Tests (Real MySQL Database & Transactions)', () => {
+  // These scenarios reuse one customer for many upcoming bookings (overlap, code collisions,
+  // outbox delivery). The CWB-78 per-customer cap is covered by booking-active-limit.integration.
+  const defaultActiveBookingLimit = ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER;
+  beforeAll(() => {
+    ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER = 100;
+  });
+  afterAll(() => {
+    ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER = defaultActiveBookingLimit;
+  });
+
   const accounts = new TestAccounts();
   beforeAll(() => accounts.persist());
   afterAll(() => accounts.cleanup());

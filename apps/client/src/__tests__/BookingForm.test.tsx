@@ -519,6 +519,45 @@ describe('BookingForm', () => {
       expect(screen.getByLabelText(/Thời gian kết thúc/i)).toHaveValue('2026-10-25T12:00');
     });
 
+    it.each([
+      [
+        'ACTIVE_BOOKING_LIMIT (CWB-78)',
+        409,
+        'ACTIVE_BOOKING_LIMIT',
+        'Bạn đang có 5 lượt đặt phòng sắp tới, đã đạt giới hạn 5 lượt.',
+        /Lịch sử đặt phòng/,
+      ],
+      [
+        '429 TOO_MANY_REQUESTS (CWB-78)',
+        429,
+        'TOO_MANY_REQUESTS',
+        'Bạn gửi quá nhiều yêu cầu đặt phòng. Vui lòng thử lại sau 15 phút.',
+        null,
+      ],
+    ])(
+      'shows a clear blocking message for %s and keeps the inputs',
+      async (_label, status, code, message, hint) => {
+        const user = userEvent.setup();
+        vi.mocked(bookingApi.createBooking).mockRejectedValueOnce({
+          name: 'AxiosError',
+          response: { status, data: { code, message } },
+        });
+
+        renderComponent();
+
+        await user.type(screen.getByLabelText(/Thời gian bắt đầu/i), '2026-10-25T10:00');
+        await user.type(screen.getByLabelText(/Thời gian kết thúc/i), '2026-10-25T12:00');
+        await user.click(screen.getByTestId('booking-submit-btn'));
+        await user.click(screen.getByTestId('booking-confirm-btn'));
+
+        const alert = await screen.findByRole('alert');
+        expect(alert).toHaveTextContent(message);
+        if (hint) expect(alert).toHaveTextContent(hint);
+        await user.click(screen.getByTestId('booking-back-btn'));
+        expect(screen.getByLabelText(/Thời gian bắt đầu/i)).toHaveValue('2026-10-25T10:00');
+      },
+    );
+
     it('explains a 409 BOOKING_CONFLICT as "just booked by someone else" and lets the user pick again with date and note kept', async () => {
       const user = userEvent.setup();
       vi.mocked(bookingApi.createBooking).mockRejectedValueOnce({

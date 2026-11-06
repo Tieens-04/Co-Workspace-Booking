@@ -7,6 +7,7 @@ import { bookingRepository } from '../repositories/booking.repository.js';
 import { bookingService, BookingService } from '../services/booking.service.js';
 import { BookingResponseDto } from '../types/booking.type.js';
 import { AppError } from '../utils/error.util.js';
+import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 // Prevent real DB access during unit tests
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
@@ -53,7 +54,9 @@ const mockBookingFixture = (override?: Partial<BookingResponseDto>): BookingResp
 };
 
 describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    // All tests post as one customer; reset the CWB-78 per-user limiter between tests.
+    await createBookingRateLimiter.resetKey(`user:${customerSub}`);
     vi.spyOn(bookingRepository, 'createBooking').mockResolvedValue(mockBookingFixture());
   });
 
@@ -283,14 +286,21 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
       const endDay = day.toISOString().slice(0, 10);
       for (const [path, token, identity] of [
         ['/api/v1/bookings', customerToken, {}],
-        ['/api/v1/admin/bookings/guest', adminToken, { guestName: 'Khách A', guestPhone: '0912345678' }],
+        [
+          '/api/v1/admin/bookings/guest',
+          adminToken,
+          { guestName: 'Khách A', guestPhone: '0912345678' },
+        ],
       ] as const) {
-        const res = await request(app).post(path).set('Authorization', `Bearer ${token}`).send({
-          roomId: validRoomId,
-          startTime: new Date(`${startDay}T${start}:00+07:00`).toISOString(),
-          endTime: new Date(`${endDay}T${end}:00+07:00`).toISOString(),
-          ...identity,
-        });
+        const res = await request(app)
+          .post(path)
+          .set('Authorization', `Bearer ${token}`)
+          .send({
+            roomId: validRoomId,
+            startTime: new Date(`${startDay}T${start}:00+07:00`).toISOString(),
+            endTime: new Date(`${endDay}T${end}:00+07:00`).toISOString(),
+            ...identity,
+          });
         expect(res.status).toBe(400);
         expect(res.body.code).toBe('OUTSIDE_OPERATING_HOURS');
       }

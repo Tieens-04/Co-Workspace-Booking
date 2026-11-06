@@ -501,6 +501,17 @@ export const BookingForm: React.FC<BookingFormProps> = ({
             }
           })
           .catch(() => {});
+      } else if (code === 'ACTIVE_BOOKING_LIMIT') {
+        // CWB-78: the slot itself is still free; the customer must use or cancel an upcoming booking.
+        const msg =
+          message ||
+          'Bạn đã đạt giới hạn số lượt đặt phòng sắp tới. Vui lòng hủy bớt một lượt trước khi đặt thêm.';
+        setErrors({ general: `${msg} Xem các lượt sắp tới trong mục "Lịch sử đặt phòng".` });
+        showToast(msg, 'error');
+      } else if (err.response?.status === 429) {
+        const msg = message || 'Bạn gửi quá nhiều yêu cầu đặt phòng. Vui lòng thử lại sau ít phút.';
+        setErrors({ general: msg });
+        showToast(msg, 'error');
       } else if (code === 'VALIDATION_ERROR' && Array.isArray(details) && details.length > 0) {
         const fieldErrors: BookingFormErrors = {};
         for (const item of details) {

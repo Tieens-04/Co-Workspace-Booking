@@ -12,8 +12,19 @@ import {
   emailRetryDelayMs,
 } from '../services/email-outbox.service.js';
 import { NotificationService } from '../services/notification.service.js';
+import { ENV } from '../config/env.config.js';
 
 describe('CWB-68 durable email outbox (real MySQL)', () => {
+  // These scenarios reuse one customer for many upcoming bookings (overlap, code collisions,
+  // outbox delivery). The CWB-78 per-customer cap is covered by booking-active-limit.integration.
+  const defaultActiveBookingLimit = ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER;
+  beforeAll(() => {
+    ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER = 100;
+  });
+  afterAll(() => {
+    ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER = defaultActiveBookingLimit;
+  });
+
   const prefix = `test_outbox_${randomUUID().slice(0, 8)}`;
   const customerEmail = `${prefix}_customer@example.com`;
   let customerId: string;
