@@ -289,7 +289,8 @@ export function AdminBookingTable({
                     data-label="Phòng · Thời gian"
                     className={cn(CELL_CLASS, st.full, 'text-[0.8125rem] tabular-nums')}
                   >
-                    <span className="block text-sm font-medium whitespace-normal">
+                    {/* CWB-72: cap the column on wide screens and wrap long unbroken names. */}
+                    <span className="block text-sm font-medium whitespace-normal wrap-anywhere md:max-w-64">
                       {booking.room.name}
                     </span>
                     <span className="mt-1 block">

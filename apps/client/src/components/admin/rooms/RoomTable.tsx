@@ -81,7 +81,7 @@ export function RoomTable({ rooms, loadingRoomId, activeRoomId, onEdit }: RoomTa
                   <TableCell
                     className={cn(CELL_CLASS, st.noLabel, 'whitespace-normal max-md:self-center')}
                   >
-                    <strong className="font-semibold">{room.name}</strong>
+                    <strong className="font-semibold wrap-anywhere">{room.name}</strong>
                   </TableCell>
                   <TableCell
                     data-label="Sức chứa"

@@ -57,7 +57,10 @@ export const RoomCard = memo(function RoomCard({
       </div>
 
       <div className="grid grid-rows-[auto_1fr_auto] gap-3 p-5">
-        <h3 className="text-h3 font-bold">{room.name}</h3>
+        {/* Free-text names up to 191 chars (CWB-72): wrap anywhere, clamp to 3 lines. */}
+        <h3 title={room.name} className="line-clamp-3 text-h3 font-bold wrap-anywhere">
+          {room.name}
+        </h3>
 
         <ul
           className="flex flex-wrap content-start gap-x-3.5 gap-y-1.5 text-sm text-muted-foreground"
