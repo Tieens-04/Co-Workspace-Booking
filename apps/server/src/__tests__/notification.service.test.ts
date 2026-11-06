@@ -52,6 +52,50 @@ describe('NotificationService (Unit)', () => {
     expect(mailOptions.html).toContain('200.000');
   });
 
+  it.each([
+    [false, 'chưa thanh toán', 'tiền mặt hoặc chuyển khoản QR tại quầy'],
+    [true, 'Đơn đã được thanh toán.', null],
+  ])(
+    'sends a booking reminder with Vietnam time, check-in and payment guidance (paid=%s, CWB-80)',
+    async (isPaid, paymentText, unpaidHint) => {
+      const service = new NotificationService({
+        smtpHost: 'smtp.gmail.com',
+        smtpPort: 587,
+        smtpUser: 'test@gmail.com',
+        smtpPass: 'app-password-123',
+        smtpFrom: '"Co-Space Working" <no-reply@co-space.local>',
+      });
+
+      const result = await service.sendBookingReminder({
+        recipientEmail: 'customer@example.com',
+        customerName: '<img src=x onerror=alert(1)>',
+        bookingCode: 'CS-20261014-ABCD',
+        roomName: 'Room <script>alert(1)</script>',
+        startTime: new Date('2026-10-14T02:00:00Z'),
+        endTime: new Date('2026-10-14T04:00:00Z'),
+        totalAmount: '200000.00',
+        isPaid,
+      });
+
+      expect(result).toBe(true);
+      const mail = mockSendMail.mock.calls[0][0];
+      expect(mail.to).toBe('customer@example.com');
+      expect(mail.subject).toContain('Nhắc lịch CS-20261014-ABCD');
+      // 02:00 UTC = 09:00 in Asia/Ho_Chi_Minh.
+      expect(mail.html).toContain('09:00');
+      expect(mail.html).toContain('11:00');
+      expect(mail.html).toContain('Check-in');
+      expect(mail.html).toContain(paymentText);
+      if (unpaidHint) {
+        expect(mail.html).toContain(unpaidHint);
+        expect(mail.html).toContain('200.000');
+      }
+      expect(mail.html).not.toContain('<script>');
+      expect(mail.html).not.toContain('<img');
+      expect(mail.html).toContain('&lt;script&gt;');
+    },
+  );
+
   it('sends booking cancellation email with reason', async () => {
     const service = new NotificationService({
       smtpHost: 'smtp.gmail.com',

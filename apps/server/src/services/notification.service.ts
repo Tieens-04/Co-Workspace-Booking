@@ -21,6 +21,11 @@ export interface BookingCancellationEmailPayload extends BaseBookingEmailPayload
   reason?: string | null;
 }
 
+export interface BookingReminderEmailPayload extends BaseBookingEmailPayload {
+  totalAmount: string | number;
+  isPaid: boolean;
+}
+
 export interface PasswordResetEmailPayload {
   recipientEmail: string;
   customerName: string;
@@ -184,6 +189,63 @@ Tổng tiền: ${formattedAmount}
       return true;
     } catch (err: unknown) {
       logEmailFailure('confirmation', payload.bookingCode, err);
+      return false;
+    }
+  }
+
+  /** CWB-80: sent a few hours before the start; every user-provided value is HTML-escaped. */
+  async sendBookingReminder(payload: BookingReminderEmailPayload): Promise<boolean> {
+    if (!this.transporter) {
+      return false;
+    }
+
+    try {
+      const startFormatted = formatDate(payload.startTime);
+      const endFormatted = formatDate(payload.endTime);
+      const formattedAmount = formatVND(payload.totalAmount);
+      const paymentLine = payload.isPaid
+        ? 'Đơn đã được thanh toán.'
+        : `Đơn chưa thanh toán (${formattedAmount}). Bạn có thể thanh toán bằng tiền mặt hoặc chuyển khoản QR tại quầy lễ tân.`;
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #2b6cb0;">Nhắc lịch đặt phòng</h2>
+          <p>Xin chào <strong>${escapeHtml(payload.customerName)}</strong>,</p>
+          <p>Lịch đặt phòng của bạn tại <strong>Co-Space Working</strong> sắp bắt đầu.</p>
+          <div style="background-color: #f7fafc; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 6px 0;"><strong>Mã đặt phòng:</strong> ${escapeHtml(payload.bookingCode)}</p>
+            <p style="margin: 6px 0;"><strong>Phòng:</strong> ${escapeHtml(payload.roomName)}</p>
+            <p style="margin: 6px 0;"><strong>Thời gian:</strong> ${escapeHtml(startFormatted)} - ${escapeHtml(endFormatted)} (giờ Việt Nam)</p>
+          </div>
+          <p><strong>Check-in:</strong> đến quầy lễ tân đúng giờ và đọc mã đặt phòng để nhận phòng.</p>
+          <p><strong>Thanh toán:</strong> ${escapeHtml(paymentLine)}</p>
+          <p>Nếu không thể đến, vui lòng hủy đơn trên hệ thống sớm (tối thiểu 1 giờ trước giờ bắt đầu) để nhường chỗ cho khách khác.</p>
+          <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;" />
+          <p style="color: #718096; font-size: 12px;">Co-Space Working System</p>
+        </div>
+      `;
+
+      const text = `
+Nhắc lịch đặt phòng
+Xin chào ${payload.customerName},
+Đơn ${payload.bookingCode} tại ${payload.roomName} sắp bắt đầu.
+Thời gian: ${startFormatted} - ${endFormatted} (giờ Việt Nam)
+Check-in: đến quầy lễ tân đúng giờ và đọc mã đặt phòng.
+Thanh toán: ${paymentLine}
+Nếu không thể đến, vui lòng hủy đơn sớm (tối thiểu 1 giờ trước giờ bắt đầu).
+      `.trim();
+
+      await this.transporter.sendMail({
+        from: this.config.smtpFrom,
+        to: payload.recipientEmail,
+        subject: `[Co-Space] Nhắc lịch ${payload.bookingCode} - ${startFormatted}`,
+        text,
+        html,
+      });
+
+      return true;
+    } catch (err: unknown) {
+      logEmailFailure('reminder', payload.bookingCode, err);
       return false;
     }
   }

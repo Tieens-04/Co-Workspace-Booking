@@ -2,6 +2,7 @@ import { BookingStatus, EmailOutboxStatus, Prisma, PrismaClient } from '@prisma/
 import prisma from '../utils/prisma.util.js';
 import { AppError } from '../utils/error.util.js';
 import { trackBackgroundTask } from '../utils/background-tasks.util.js';
+import { ENV } from '../config/env.config.js';
 import {
   notificationService as defaultNotificationService,
   NotificationService,
@@ -14,6 +15,8 @@ export const EMAIL_CLAIM_LEASE_MS = 2 * 60_000;
 const BASE_BACKOFF_MS = 30_000;
 const MAX_BACKOFF_MS = 60 * 60_000;
 const BATCH_SIZE = 10;
+/** Upper bound of reminders queued per pass; the next pass picks up the rest. */
+const REMINDER_ENQUEUE_LIMIT = 200;
 
 /** 30s, 60s, 120s, ... capped at 1h after the n-th failed attempt. */
 export const emailRetryDelayMs = (attempts: number) =>
@@ -35,6 +38,7 @@ const outboxInclude = {
       startTime: true,
       endTime: true,
       totalAmount: true,
+      paymentStatus: true,
       cancellationReason: true,
       room: { select: { name: true } },
       user: { select: { email: true, fullName: true } },
@@ -119,15 +123,57 @@ export class EmailOutboxService {
       startTime: booking.startTime,
       endTime: booking.endTime,
     };
-    return row.kind === 'BOOKING_CONFIRMATION'
-      ? this.notification.sendBookingConfirmation({
+    switch (row.kind) {
+      case 'BOOKING_CONFIRMATION':
+        return this.notification.sendBookingConfirmation({
           ...base,
           totalAmount: booking.totalAmount.toFixed(2),
-        })
-      : this.notification.sendBookingCancellation({
+        });
+      case 'BOOKING_REMINDER':
+        return this.notification.sendBookingReminder({
+          ...base,
+          totalAmount: booking.totalAmount.toFixed(2),
+          isPaid: booking.paymentStatus === 'PAID',
+        });
+      default:
+        return this.notification.sendBookingCancellation({
           ...base,
           reason: booking.cancellationReason,
         });
+    }
+  }
+
+  /**
+   * CWB-80: queues a reminder for every CONFIRMED customer booking that starts within the next
+   * `leadHours`. The (kind, booking) unique key + skipDuplicates makes reruns and concurrent
+   * instances idempotent. Bookings made inside the window are skipped: their confirmation email
+   * already arrived close to the start, so a second email would only be noise.
+   */
+  async enqueueDueReminders(
+    now = new Date(),
+    leadHours = ENV.BOOKING_REMINDER_HOURS,
+  ): Promise<number> {
+    const leadMs = leadHours * 3_600_000;
+    const candidates = await this.db.booking.findMany({
+      where: {
+        status: BookingStatus.CONFIRMED,
+        userId: { not: null },
+        startTime: { gt: now, lte: new Date(now.getTime() + leadMs) },
+        emailOutbox: { none: { kind: 'BOOKING_REMINDER' } },
+      },
+      select: { id: true, startTime: true, createdAt: true },
+      orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+      take: REMINDER_ENQUEUE_LIMIT,
+    });
+    const due = candidates.filter(
+      (booking) => booking.createdAt.getTime() <= booking.startTime.getTime() - leadMs,
+    );
+    if (due.length === 0) return 0;
+    const created = await this.db.emailOutbox.createMany({
+      data: due.map((booking) => ({ kind: 'BOOKING_REMINDER' as const, bookingId: booking.id })),
+      skipDuplicates: true,
+    });
+    return created.count;
   }
 
   async processDue(now = new Date(), limit = BATCH_SIZE): Promise<ProcessResult> {
@@ -149,6 +195,12 @@ export class EmailOutboxService {
         row.booking.status === BookingStatus.CANCELLED
       ) {
         skipReason = 'BOOKING_CANCELLED';
+      } else if (row.kind === 'BOOKING_REMINDER') {
+        // Checked on every attempt, including admin retries: a reminder only goes out for a
+        // booking that is still CONFIRMED and has not started yet.
+        if (row.booking.status === BookingStatus.CANCELLED) skipReason = 'BOOKING_CANCELLED';
+        else if (row.booking.status !== BookingStatus.CONFIRMED) skipReason = 'BOOKING_NOT_ACTIVE';
+        else if (row.booking.startTime.getTime() <= now.getTime()) skipReason = 'REMINDER_EXPIRED';
       }
       if (skipReason) {
         await this.finish(row.id, { status: 'SKIPPED', lastError: skipReason });
@@ -183,7 +235,13 @@ export class EmailOutboxService {
 
   private tick(): void {
     if (this.inFlight) return;
-    const run = this.processDue()
+    const run = this.enqueueDueReminders()
+      .catch((err: unknown) => {
+        // A failed reminder scan must not stop delivery of already queued emails.
+        const code = err instanceof Prisma.PrismaClientKnownRequestError ? err.code : 'UNKNOWN';
+        console.error(`[EmailOutbox] reminder scan failed; code=${code}`);
+      })
+      .then(() => this.processDue())
       .catch((err: unknown) => {
         const code = err instanceof Prisma.PrismaClientKnownRequestError ? err.code : 'UNKNOWN';
         console.error(`[EmailOutbox] processing pass failed; code=${code}`);

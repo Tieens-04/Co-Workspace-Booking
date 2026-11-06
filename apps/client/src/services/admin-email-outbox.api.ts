@@ -2,7 +2,7 @@ import { apiClient } from './api';
 import { ApiResponse, PaginationMeta } from '../types/room';
 
 export type EmailOutboxStatus = 'QUEUED' | 'SENT' | 'FAILED' | 'SKIPPED';
-export type EmailOutboxKind = 'BOOKING_CONFIRMATION' | 'BOOKING_CANCELLATION';
+export type EmailOutboxKind = 'BOOKING_CONFIRMATION' | 'BOOKING_CANCELLATION' | 'BOOKING_REMINDER';
 
 /** Delivery record; the server never returns the recipient address. */
 export interface EmailOutboxItem {

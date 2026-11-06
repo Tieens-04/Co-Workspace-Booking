@@ -131,3 +131,25 @@ it.each([
   const { ENV } = await import('../config/env.config.js');
   expect(ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER).toBe(limit);
 });
+
+it.each(['0', '49', '1.5', '-2', 'two'])(
+  'fails startup for invalid BOOKING_REMINDER_HOURS %s (CWB-80)',
+  async (value) => {
+    vi.stubEnv('BOOKING_REMINDER_HOURS', value);
+    vi.resetModules();
+    await expect(import('../config/env.config.js')).rejects.toThrow('BOOKING_REMINDER_HOURS');
+  },
+);
+
+it.each([
+  [undefined, 2],
+  ['', 2],
+  ['1', 1],
+  ['24', 24],
+  ['48', 48],
+])('reads BOOKING_REMINDER_HOURS=%s as %i hours (CWB-80)', async (value, hours) => {
+  vi.stubEnv('BOOKING_REMINDER_HOURS', value);
+  vi.resetModules();
+  const { ENV } = await import('../config/env.config.js');
+  expect(ENV.BOOKING_REMINDER_HOURS).toBe(hours);
+});

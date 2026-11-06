@@ -62,6 +62,17 @@ if (
   throw new Error('BOOKING_MAX_ACTIVE_PER_CUSTOMER must be an integer between 1 and 100.');
 }
 
+// CWB-80: reminder email this many hours before a booking starts.
+const rawReminderHours = process.env.BOOKING_REMINDER_HOURS?.trim();
+const bookingReminderHours = rawReminderHours ? Number(rawReminderHours) : 2;
+if (
+  !Number.isInteger(bookingReminderHours) ||
+  bookingReminderHours < 1 ||
+  bookingReminderHours > 48
+) {
+  throw new Error('BOOKING_REMINDER_HOURS must be an integer between 1 and 48.');
+}
+
 const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
 if (!cloudinaryCloudName) {
   throw new Error('CLOUDINARY_CLOUD_NAME is required.');
@@ -89,6 +100,7 @@ export const ENV = {
   SHUTDOWN_TIMEOUT_MS: shutdownTimeoutMs,
   BOOKING_MAX_ADVANCE_DAYS: bookingMaxAdvanceDays,
   BOOKING_MAX_ACTIVE_PER_CUSTOMER: bookingMaxActivePerCustomer,
+  BOOKING_REMINDER_HOURS: bookingReminderHours,
   CLOUDINARY_CLOUD_NAME: cloudinaryCloudName,
   CLOUDINARY_API_KEY: cloudinaryApiKey,
   CLOUDINARY_API_SECRET: cloudinaryApiSecret,

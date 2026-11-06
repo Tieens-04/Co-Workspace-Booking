@@ -28,12 +28,15 @@ const STATUS_LABELS: Record<EmailOutboxStatus, string> = {
 const KIND_LABELS = {
   BOOKING_CONFIRMATION: 'Xác nhận đặt phòng',
   BOOKING_CANCELLATION: 'Thông báo hủy',
+  BOOKING_REMINDER: 'Nhắc lịch',
 } as const;
 const REASON_LABELS: Record<string, string> = {
   SMTP_ERROR: 'Lỗi máy chủ email',
   SMTP_DISABLED: 'Chưa cấu hình SMTP',
   NO_RECIPIENT: 'Không có địa chỉ nhận',
   BOOKING_CANCELLED: 'Đơn đã hủy trước khi gửi',
+  BOOKING_NOT_ACTIVE: 'Đơn không còn ở trạng thái đã xác nhận',
+  REMINDER_EXPIRED: 'Đã qua giờ bắt đầu',
 };
 const STATUS_VARIANT: Record<
   EmailOutboxStatus,
@@ -102,7 +105,7 @@ export const AdminEmailsPage: React.FC = () => {
       <PageHeader
         eyebrow="Quản trị"
         title="Email thông báo"
-        description="Trạng thái gửi email xác nhận và hủy đặt phòng. Hệ thống tự gửi lại khi lỗi; email thất bại hoặc bị bỏ qua có thể được gửi lại thủ công."
+        description="Trạng thái gửi email xác nhận, nhắc lịch và hủy đặt phòng. Hệ thống tự gửi lại khi lỗi; email thất bại hoặc bị bỏ qua có thể được gửi lại thủ công."
       />
 
       <div className="max-w-xs">
