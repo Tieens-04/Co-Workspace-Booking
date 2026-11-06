@@ -39,6 +39,12 @@ phóng một lượt. Kiểm tra giới hạn nằm trong transaction tạo book
 (`SELECT ... FOR UPDATE`, khóa trước dòng phòng), nên hai request đồng thời cho hai phòng khác nhau không thể cùng
 vượt giới hạn. Retry cùng `Idempotency-Key` của booking đã tạo vẫn trả lại booking gốc.
 
+### Email nhắc lịch (CWB-80)
+
+Khách có tài khoản nhận một email nhắc `BOOKING_REMINDER_HOURS` giờ (mặc định 2) trước giờ bắt đầu cho mỗi booking
+`CONFIRMED`; không nhắc booking đặt sát giờ (đã trong cửa sổ nhắc), booking đã hủy/không còn `CONFIRMED`, booking đã bắt
+đầu và khách vãng lai. Email là tác dụng phụ: lỗi gửi không đổi trạng thái booking.
+
 ### Khóa tài khoản khách (CWB-79)
 
 Admin có thể khóa tài khoản `CUSTOMER` lạm dụng (bắt buộc lý do, có audit). Tài khoản bị khóa bị đăng xuất ngay,

@@ -44,6 +44,7 @@ enum EmailOutboxStatus {
 enum EmailOutboxKind {
   BOOKING_CONFIRMATION
   BOOKING_CANCELLATION
+  BOOKING_REMINDER
 }
 
 enum PaymentMethod {

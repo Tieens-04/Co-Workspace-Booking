@@ -62,6 +62,26 @@ describe('AdminEmailsPage (CWB-68)', () => {
     expect(screen.getByTestId('email-retry-mail-2')).toBeInTheDocument();
   });
 
+  it('labels reminder emails and their skip reasons (CWB-80)', async () => {
+    vi.mocked(adminEmailOutboxApi.list).mockResolvedValue(
+      page([
+        item({
+          id: 'mail-3',
+          kind: 'BOOKING_REMINDER',
+          status: 'SKIPPED',
+          lastError: 'REMINDER_EXPIRED',
+          sentAt: null,
+        }),
+      ]),
+    );
+    render(<AdminEmailsPage />);
+
+    const row = await screen.findByTestId('email-row-mail-3');
+    expect(row).toHaveTextContent('Nhắc lịch · CS-20261103-AB12');
+    expect(row).toHaveTextContent('Đã qua giờ bắt đầu');
+    expect(screen.getByTestId('email-retry-mail-3')).toBeInTheDocument();
+  });
+
   it('requeues a failed email, confirms with a toast and reloads', async () => {
     const user = userEvent.setup();
     vi.mocked(adminEmailOutboxApi.retry).mockResolvedValue({
