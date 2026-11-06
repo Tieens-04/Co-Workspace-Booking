@@ -10,6 +10,7 @@ import {
   cancelBookingQuerySchema,
   cancelBookingBodySchema,
 } from '../validators/booking.validator.js';
+import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 const router = Router();
 
@@ -20,7 +21,13 @@ router.get(
   validateQuery(getBookingByIdQuerySchema),
   bookingController.getBookingById,
 );
-router.post('/', validateBody(createBookingSchema), bookingController.createBooking);
+// verifyToken runs where this router is mounted, so the limiter keys on the verified user id.
+router.post(
+  '/',
+  createBookingRateLimiter,
+  validateBody(createBookingSchema),
+  bookingController.createBooking,
+);
 router.patch(
   '/:id/cancel',
   validateParams(cancelBookingParamsSchema),

@@ -12,11 +12,17 @@ import {
   resetLoginRateLimitOnSuccess,
   forgotPasswordRateLimiter,
   resetPasswordRateLimiter,
+  registerRateLimiter,
 } from '../middlewares/rate-limit.middleware.js';
 
 const router = Router();
 
-router.post('/register', validateBody(registerSchema), authController.register);
+router.post(
+  '/register',
+  registerRateLimiter,
+  validateBody(registerSchema),
+  authController.register,
+);
 router.post(
   '/login',
   validateBody(loginSchema),

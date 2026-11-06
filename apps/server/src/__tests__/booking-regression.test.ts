@@ -27,6 +27,7 @@ vi.mock('../repositories/room.repository.js', async (importOriginal) => {
 });
 
 import prisma from '../utils/prisma.util.js';
+import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
 import { lockRoomRow } from '../repositories/room.repository.js';
 
 const validRoomId = '11111111-1111-4111-8111-111111111111';
@@ -71,8 +72,11 @@ const mockBookingFixture = (override?: Partial<BookingResponseDto>): BookingResp
 };
 
 describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.restoreAllMocks();
+    // Every test posts as the same customers; the CWB-78 per-user limiter must not leak across tests.
+    await createBookingRateLimiter.resetKey(`user:${customerSub}`);
+    await createBookingRateLimiter.resetKey('user:customer-uuid-2');
   });
 
   afterEach(() => {
@@ -82,7 +86,11 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
   describe('Scenario 1: Partial Overlap (AC 1)', () => {
     it('rejects booking when slot partially overlaps start of an existing booking (11:00 - 13:00 vs 10:00 - 12:00)', async () => {
       vi.spyOn(bookingRepository, 'createBooking').mockRejectedValueOnce(
-        new AppError('BOOKING_CONFLICT', 'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác', 409),
+        new AppError(
+          'BOOKING_CONFLICT',
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+          409,
+        ),
       );
 
       const slot = createFixtureSlot(4, 2);
@@ -103,7 +111,11 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
 
     it('rejects booking when slot partially overlaps end of an existing booking (09:00 - 11:00 vs 10:00 - 12:00)', async () => {
       vi.spyOn(bookingRepository, 'createBooking').mockRejectedValueOnce(
-        new AppError('BOOKING_CONFLICT', 'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác', 409),
+        new AppError(
+          'BOOKING_CONFLICT',
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+          409,
+        ),
       );
 
       const slot = createFixtureSlot(6, 2);
@@ -140,7 +152,11 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
   describe('Scenario 2: Requested Booking Fully Inside Existing Booking (AC 2)', () => {
     it('rejects booking when requested slot is completely inside an existing booking (10:30 - 11:30 vs 10:00 - 12:00)', async () => {
       vi.spyOn(bookingRepository, 'createBooking').mockRejectedValueOnce(
-        new AppError('BOOKING_CONFLICT', 'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác', 409),
+        new AppError(
+          'BOOKING_CONFLICT',
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+          409,
+        ),
       );
 
       const slot = createFixtureSlot(5, 1);
@@ -159,7 +175,11 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
 
     it('rejects booking when requested slot completely encloses an existing booking (09:00 - 13:00 vs 10:00 - 12:00)', async () => {
       vi.spyOn(bookingRepository, 'createBooking').mockRejectedValueOnce(
-        new AppError('BOOKING_CONFLICT', 'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác', 409),
+        new AppError(
+          'BOOKING_CONFLICT',
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+          409,
+        ),
       );
 
       const slot = createFixtureSlot(4, 4);
@@ -189,7 +209,9 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
       // Requested: 09:00 - 13:00 (enclosing existing)
       const enclosingStart = new Date('2026-10-15T09:00:00.000Z');
       const enclosingEnd = new Date('2026-10-15T13:00:00.000Z');
-      expect(isIntervalOverlapping(existingStart, existingEnd, enclosingStart, enclosingEnd)).toBe(true);
+      expect(isIntervalOverlapping(existingStart, existingEnd, enclosingStart, enclosingEnd)).toBe(
+        true,
+      );
     });
   });
 
@@ -270,7 +292,11 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
           await new Promise((resolve) => setTimeout(resolve, 10));
           return fixture;
         }
-        throw new AppError('BOOKING_CONFLICT', 'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác', 409);
+        throw new AppError(
+          'BOOKING_CONFLICT',
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+          409,
+        );
       });
 
       const payload = {
@@ -309,7 +335,9 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
       const slot = createFixtureSlot(7, 2);
 
       const mockTx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: customerSub }]),
         booking: {
+          count: vi.fn().mockResolvedValue(0),
           findMany: vi.fn().mockResolvedValue([{ id: 'existing-conflicting-id' }]),
           create: vi.fn(),
         },
@@ -380,7 +408,9 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
       };
 
       const mockTx = {
+        $queryRaw: vi.fn().mockResolvedValue([{ id: customerSub }]),
         booking: {
+          count: vi.fn().mockResolvedValue(0),
           findMany: vi.fn().mockResolvedValue([]), // No conflicts found!
           create: vi.fn().mockResolvedValue(mockCreatedRecord),
         },
@@ -416,6 +446,111 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
         data: [{ kind: 'BOOKING_CONFIRMATION', bookingId: 'new-booking-uuid' }],
         skipDuplicates: true,
       });
+    });
+
+    it('BookingRepository locks the customer row before the room and rejects at the active-booking cap (CWB-78)', async () => {
+      const repo = new BookingRepository();
+      const slot = createFixtureSlot(8, 2);
+      const order: string[] = [];
+      const mockTx = {
+        $queryRaw: vi.fn(async (query: Prisma.Sql) => {
+          order.push(query.sql.includes('FROM users') ? 'user-lock' : 'other');
+          return [{ id: customerSub }];
+        }),
+        booking: {
+          count: vi.fn().mockResolvedValue(5),
+          findMany: vi.fn().mockResolvedValue([]),
+          create: vi.fn(),
+        },
+      };
+      vi.mocked(lockRoomRow).mockImplementationOnce(async () => {
+        order.push('room-lock');
+        return {
+          id: validRoomId,
+          name: 'Conference Room',
+          pricePerHour: new Prisma.Decimal('100.00'),
+          status: 'AVAILABLE',
+        } as any;
+      });
+      vi.mocked(prisma.$transaction).mockImplementationOnce(async (callback: any) =>
+        callback(mockTx),
+      );
+
+      await expect(
+        repo.createBooking({
+          roomId: validRoomId,
+          bookingCode: 'CS-20261014-CAP1',
+          startDate: slot.startDate,
+          endDate: slot.endDate,
+          durationMinutes: 120,
+          userId: customerSub,
+        }),
+      ).rejects.toThrowError(
+        expect.objectContaining({
+          code: 'ACTIVE_BOOKING_LIMIT',
+          statusCode: 409,
+          details: { limit: 5 },
+        }),
+      );
+
+      expect(order).toEqual(['user-lock', 'room-lock']);
+      expect(mockTx.booking.count).toHaveBeenCalledWith({
+        where: {
+          userId: customerSub,
+          status: BookingStatus.CONFIRMED,
+          startTime: { gte: expect.any(Date) },
+        },
+      });
+      expect(mockTx.booking.create).not.toHaveBeenCalled();
+    });
+
+    it('BookingRepository does not lock a user or apply the cap to admin guest bookings (CWB-78)', async () => {
+      const repo = new BookingRepository();
+      const slot = createFixtureSlot(8, 2);
+      const mockTx = {
+        $queryRaw: vi.fn(),
+        booking: {
+          count: vi.fn().mockResolvedValue(99),
+          findMany: vi.fn().mockResolvedValue([]),
+          create: vi.fn().mockResolvedValue({
+            id: 'guest-booking-uuid',
+            bookingCode: 'CS-20261014-GST1',
+            roomId: validRoomId,
+            room: { id: validRoomId, name: 'Conference Room' },
+            startTime: slot.startDate,
+            endTime: slot.endDate,
+            totalAmount: new Prisma.Decimal('200.00'),
+            note: null,
+            status: BookingStatus.CONFIRMED,
+            paymentStatus: PaymentStatus.UNPAID,
+            paymentMethod: null,
+          }),
+        },
+      };
+      vi.mocked(lockRoomRow).mockResolvedValueOnce({
+        id: validRoomId,
+        name: 'Conference Room',
+        pricePerHour: new Prisma.Decimal('100.00'),
+        status: 'AVAILABLE',
+      } as any);
+      vi.mocked(prisma.$transaction).mockImplementationOnce(async (callback: any) =>
+        callback(mockTx),
+      );
+
+      const result = await repo.createBooking({
+        roomId: validRoomId,
+        bookingCode: 'CS-20261014-GST1',
+        startDate: slot.startDate,
+        endDate: slot.endDate,
+        durationMinutes: 120,
+        userId: null,
+        guestName: 'Khach',
+        guestPhone: '0901234567',
+      });
+
+      expect(result.id).toBe('guest-booking-uuid');
+      expect(mockTx.$queryRaw).not.toHaveBeenCalled();
+      expect(mockTx.booking.count).not.toHaveBeenCalled();
     });
   });
 });

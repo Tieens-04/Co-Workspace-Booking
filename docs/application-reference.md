@@ -87,6 +87,7 @@ Vì ứng dụng sử dụng React Router với HTML5 History API (`BrowserRoute
 - **Đăng ký tài khoản (Customer):** `POST /api/v1/auth/register`
   - Body: `{ email, password, fullName, phoneNumber? }`
   - Mật khẩu tối thiểu 8 ký tự, tối đa 72 UTF-8 bytes. Role luôn là `CUSTOMER`.
+  - Rate limit (CWB-78) 10 yêu cầu/IP/1 giờ; mọi yêu cầu đều được tính (kể cả lỗi validation). Vượt ngưỡng trả `429 TOO_MANY_REQUESTS`.
 - **Đăng nhập:** `POST /api/v1/auth/login`
   - Body: `{ email, password }`
   - Password không rỗng và tối đa 72 UTF-8 bytes; vượt giới hạn trả `400 VALIDATION_ERROR`.
@@ -536,6 +537,10 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - **Tính tổng tiền Authoritative**: Server tính toán tổng tiền dựa trên giá trị `price_per_hour` đọc từ database tại thời điểm giao dịch và thời lượng thực tế (`pricePerHour * durationMinutes / 60`). Sử dụng `Prisma.Decimal` với chế độ làm tròn `ROUND_HALF_UP` 2 chữ số thập phân (làm tròn một lần duy nhất trên tổng số tiền, không làm tròn theo từng slot 30 phút nhằm tránh sai lệch tích lũy; ví dụ: `100.55 * 1.5h = 150.825 -> 150.83`, `100.01 * 1.5h = 150.015 -> 150.02`), tuyệt đối không dùng số thực dấu phẩy động (floating-point) của JavaScript để bảo đảm tính chính xác tiền tệ.
   - **Định dạng mã đặt phòng**: Tạo mã duy nhất theo định dạng `CS-YYYYMMDD-XXXX` (trong đó phần ngày `YYYYMMDD` được xác định theo thời gian bắt đầu `startTime` quy đổi về múi giờ `Asia/Ho_Chi_Minh`, không phụ thuộc vào thời điểm gửi request; hậu tố gồm 4 ký tự ngẫu nhiên `[0-9A-Z]` sinh bằng `crypto.randomInt`). Khi phát hiện xung đột unique constraint trên `bookingCode` (`P2002`), hệ thống thực hiện cơ chế thử lại tối đa 5 lần tổng cộng (`MAX_CODE_RETRIES = 5`). Nếu sau 5 lần vẫn xung đột, hệ thống rollback an toàn và trả về `409 BOOKING_CODE_CONFLICT`.
   - **Trạng thái ban đầu**: Booking tạo mới luôn có `status: "CONFIRMED"`, `paymentStatus: "UNPAID"`, `paymentMethod: null`.
+- **Chống giữ chỗ hàng loạt (CWB-78)**:
+  - **Giới hạn booking sắp tới**: mỗi customer giữ tối đa `BOOKING_MAX_ACTIVE_PER_CUSTOMER` (mặc định 5) booking `CONFIRMED` có `startTime >= now`. Transaction khóa dòng `users` của customer (`SELECT id FROM users WHERE id = ? FOR UPDATE`, trước khóa phòng) rồi đếm sau bước idempotency và kiểm tra bảo trì, nên request đồng thời cho các phòng khác nhau được serialize. Vượt giới hạn trả `409 ACTIVE_BOOKING_LIMIT` với `details: { limit }`. Guest booking của admin không bị giới hạn.
+  - **Rate limit**: 20 request/15 phút cho mỗi tài khoản (theo `sub` của JWT đã xác thực), tính mọi request kể cả lỗi validation; vượt ngưỡng trả `429 TOO_MANY_REQUESTS` theo error shape chung kèm header `RateLimit-*`.
+  - Client hiển thị thông báo của server trên form và toast; với `ACTIVE_BOOKING_LIMIT` kèm gợi ý xem các lượt sắp tới ở "Lịch sử đặt phòng".
   - **Idempotency (CWB-66)**: header tùy chọn `Idempotency-Key` (8–64 ký tự `[A-Za-z0-9_-]`, ví dụ UUID) cho `POST /api/v1/bookings` và `POST /api/v1/admin/bookings/guest`. Key sai định dạng trả `400 VALIDATION_ERROR`; không gửi key thì hành vi như cũ.
     - Key có phạm vi theo người gọi (`user:<id>` cho customer, `admin:<id>` cho admin), nên người khác dùng trùng key không ảnh hưởng nhau. Server lưu `idempotency_scope`, `idempotency_key` cùng SHA-256 của payload đã chuẩn hóa (`roomId`, thời gian, ghi chú, thông tin khách), có UNIQUE `(scope, key)`.
     - Kiểm tra key diễn ra trong transaction, sau khi khóa dòng phòng và trước các rule thời gian/overlap. Cùng key + cùng payload trả lại booking gốc với `200` và header `Idempotent-Replayed: true`, không tạo đơn mới, không gửi lại email; trường hợp này gồm cả retry sau khi đơn đã commit nhưng response bị mất, và request trùng gửi đồng thời. Cùng key + payload khác trả `409 IDEMPOTENCY_KEY_REUSED`.
@@ -554,6 +559,8 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - `409 ROOM_NOT_AVAILABLE`: Phòng đang ở trạng thái `MAINTENANCE`.
   - `409 BOOKING_CONFLICT`: Khung giờ yêu cầu đã bị trùng lặp với lịch đặt phòng khác.
   - `409 BOOKING_CODE_CONFLICT`: Xung đột mã đặt phòng sau số lần thử tối đa.
+  - `409 ACTIVE_BOOKING_LIMIT`: Customer đã có đủ số booking sắp tới tối đa (CWB-78).
+  - `429 TOO_MANY_REQUESTS`: Vượt rate limit tạo booking của tài khoản (CWB-78).
 - **Phản hồi `201 Created`**:
   ```json
   {

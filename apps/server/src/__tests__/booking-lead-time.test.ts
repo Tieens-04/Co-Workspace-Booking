@@ -4,10 +4,12 @@ import { Prisma, Role } from '@prisma/client';
 import app from '../app.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { lockRoomRow } from '../repositories/room.repository.js';
+import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 const db = vi.hoisted(() => {
   const tx = {
-    booking: { findMany: vi.fn(), create: vi.fn() },
+    $queryRaw: vi.fn(async () => [{ id: 'customer-id' }]),
+    booking: { findMany: vi.fn(), create: vi.fn(), count: vi.fn(async () => 0) },
     auditEvent: { create: vi.fn() },
     emailOutbox: { createMany: vi.fn() },
   };
@@ -32,7 +34,8 @@ const room = {
 };
 
 describe('Booking lead time at the persistence boundary', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    await createBookingRateLimiter.resetKey('user:customer-id');
     vi.useFakeTimers({ toFake: ['Date'], now: boundary - 1 });
     vi.mocked(lockRoomRow).mockResolvedValue(room);
     db.tx.booking.findMany.mockResolvedValue([]);

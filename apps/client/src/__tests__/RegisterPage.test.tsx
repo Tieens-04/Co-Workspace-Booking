@@ -170,6 +170,36 @@ describe('RegisterPage', () => {
     expect(screen.getByLabelText(/^Email/i)).toHaveValue('existing@example.com');
   });
 
+  it('shows the rate-limit message for 429 TOO_MANY_REQUESTS without blaming the email (CWB-78)', async () => {
+    const headers = new AxiosHeaders();
+    const message = 'Quá nhiều yêu cầu đăng ký từ mạng của bạn. Vui lòng thử lại sau 1 giờ.';
+    const axiosError = new AxiosError(
+      'Request failed with status code 429',
+      '429',
+      { headers } as never,
+      {},
+      {
+        status: 429,
+        statusText: 'Too Many Requests',
+        headers: {},
+        config: { headers } as never,
+        data: { success: false, code: 'TOO_MANY_REQUESTS', message },
+      },
+    );
+    vi.mocked(authApi.register).mockRejectedValueOnce(axiosError);
+
+    renderComponent();
+    const user = userEvent.setup();
+    await user.type(screen.getByLabelText(/Họ và tên/i), 'Nguyen Van A');
+    await user.type(screen.getByLabelText(/^Email/i), 'new@example.com');
+    await user.type(screen.getByLabelText(/^Mật khẩu/i), 'Password123');
+    await user.type(screen.getByLabelText(/^Xác nhận mật khẩu/i), 'Password123');
+    await user.click(screen.getByRole('button', { name: /^Đăng ký$/i }));
+
+    expect(await screen.findByText(message)).toBeInTheDocument();
+    expect(document.getElementById('reg-email-error')).toBeNull();
+  });
+
   it('maps backend 400 VALIDATION_ERROR field errors properly', async () => {
     const headers = new AxiosHeaders();
     const axiosError = new AxiosError(

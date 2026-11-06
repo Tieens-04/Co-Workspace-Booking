@@ -107,3 +107,27 @@ it.each([
   const { ENV } = await import('../config/env.config.js');
   expect(ENV.BOOKING_MAX_ADVANCE_DAYS).toBe(days);
 });
+
+it.each(['0', '101', '2.5', '-1', 'five'])(
+  'fails startup for invalid BOOKING_MAX_ACTIVE_PER_CUSTOMER %s (CWB-78)',
+  async (value) => {
+    vi.stubEnv('BOOKING_MAX_ACTIVE_PER_CUSTOMER', value);
+    vi.resetModules();
+    await expect(import('../config/env.config.js')).rejects.toThrow(
+      'BOOKING_MAX_ACTIVE_PER_CUSTOMER',
+    );
+  },
+);
+
+it.each([
+  [undefined, 5],
+  ['', 5],
+  ['1', 1],
+  ['10', 10],
+  ['100', 100],
+])('reads BOOKING_MAX_ACTIVE_PER_CUSTOMER=%s as %i bookings (CWB-78)', async (value, limit) => {
+  vi.stubEnv('BOOKING_MAX_ACTIVE_PER_CUSTOMER', value);
+  vi.resetModules();
+  const { ENV } = await import('../config/env.config.js');
+  expect(ENV.BOOKING_MAX_ACTIVE_PER_CUSTOMER).toBe(limit);
+});

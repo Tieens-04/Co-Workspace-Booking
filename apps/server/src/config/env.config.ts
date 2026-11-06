@@ -51,6 +51,17 @@ if (
   throw new Error('BOOKING_MAX_ADVANCE_DAYS must be an integer between 1 and 365.');
 }
 
+// CWB-78: upcoming CONFIRMED bookings one customer may hold at once (admin guest bookings exempt).
+const rawMaxActiveBookings = process.env.BOOKING_MAX_ACTIVE_PER_CUSTOMER?.trim();
+const bookingMaxActivePerCustomer = rawMaxActiveBookings ? Number(rawMaxActiveBookings) : 5;
+if (
+  !Number.isInteger(bookingMaxActivePerCustomer) ||
+  bookingMaxActivePerCustomer < 1 ||
+  bookingMaxActivePerCustomer > 100
+) {
+  throw new Error('BOOKING_MAX_ACTIVE_PER_CUSTOMER must be an integer between 1 and 100.');
+}
+
 const cloudinaryCloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
 if (!cloudinaryCloudName) {
   throw new Error('CLOUDINARY_CLOUD_NAME is required.');
@@ -77,6 +88,7 @@ export const ENV = {
   BCRYPT_SALT_ROUNDS: saltRounds,
   SHUTDOWN_TIMEOUT_MS: shutdownTimeoutMs,
   BOOKING_MAX_ADVANCE_DAYS: bookingMaxAdvanceDays,
+  BOOKING_MAX_ACTIVE_PER_CUSTOMER: bookingMaxActivePerCustomer,
   CLOUDINARY_CLOUD_NAME: cloudinaryCloudName,
   CLOUDINARY_API_KEY: cloudinaryApiKey,
   CLOUDINARY_API_SECRET: cloudinaryApiSecret,
