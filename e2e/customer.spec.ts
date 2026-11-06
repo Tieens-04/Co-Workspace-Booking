@@ -131,3 +131,12 @@ test('overlap and containment are unavailable while boundary-touching booking su
   );
   await submitBooking(page);
 });
+test('invalid room id URL displays not-found state without retry button and has accessible h1', async ({
+  page,
+}) => {
+  await page.goto('/rooms/not-a-uuid');
+  await expect(page.getByRole('heading', { level: 1, name: 'Không tìm thấy phòng' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Thử lại' })).not.toBeVisible();
+  await expect(page.getByText('Lỗi kết nối')).not.toBeVisible();
+  await noOverflow(page);
+});

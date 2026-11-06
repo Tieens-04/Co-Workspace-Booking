@@ -61,9 +61,15 @@ export const RoomDetailPage: React.FC = () => {
         if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') {
           return;
         }
+        const status = err.response?.status;
         const serverCode = err.response?.data?.code;
         const serverMessage = err.response?.data?.message || err.message;
-        setErrorCode(serverCode || (err.response?.status === 404 ? 'ROOM_NOT_FOUND' : 'ERROR'));
+        const isNotFound =
+          status === 404 ||
+          serverCode === 'ROOM_NOT_FOUND' ||
+          (status === 400 && (serverCode === 'VALIDATION_ERROR' || !serverCode));
+
+        setErrorCode(isNotFound ? 'ROOM_NOT_FOUND' : serverCode || 'ERROR');
         setErrorMessage(serverMessage || 'Không thể tải thông tin phòng');
         setLoading(false);
       });
@@ -132,6 +138,7 @@ export const RoomDetailPage: React.FC = () => {
           className="mt-6 max-w-2xl"
           icon={SearchX}
           title="Không tìm thấy phòng"
+          titleAs="h1"
           description="Phòng bạn đang tìm kiếm không tồn tại hoặc đã bị ngừng cung cấp dịch vụ."
           action={
             <Button asChild>
@@ -146,6 +153,7 @@ export const RoomDetailPage: React.FC = () => {
           <ErrorState
             className="w-full"
             title="Lỗi kết nối"
+            titleAs="h1"
             description={errorMessage || 'Đã có lỗi xảy ra khi tải thông tin chi tiết phòng.'}
             onRetry={() => id && fetchRoom(id)}
           />

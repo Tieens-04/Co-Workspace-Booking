@@ -6,7 +6,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { Pagination } from '../components/common/Pagination';
 import { SegmentedControl } from '../components/common/SegmentedControl';
 import { Field } from '../components/common/Field';
-import { ErrorState } from '../components/common/EmptyState';
+import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { Input } from '@/components/ui/input';
 import { getPaymentMethodLabel, getStatusMeta } from '../utils/status';
 
@@ -123,6 +123,16 @@ describe('Field', () => {
   });
 });
 
+describe('EmptyState', () => {
+  it('renders default h2 heading and custom heading tag when titleAs is provided', () => {
+    const { rerender } = render(<EmptyState title="Trống mặc định" />);
+    expect(screen.getByRole('heading', { level: 2, name: 'Trống mặc định' })).toBeInTheDocument();
+
+    rerender(<EmptyState title="Tiêu đề chính" titleAs="h1" />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Tiêu đề chính' })).toBeInTheDocument();
+  });
+});
+
 describe('ErrorState', () => {
   it('announces the error and retries', async () => {
     const onRetry = vi.fn();
@@ -131,5 +141,10 @@ describe('ErrorState', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Không thể tải dữ liệu');
     await user.click(screen.getByTestId('retry'));
     expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it('renders custom heading tag when titleAs is provided for accessibility', () => {
+    render(<ErrorState title="Lỗi hệ thống" titleAs="h1" />);
+    expect(screen.getByRole('heading', { level: 1, name: 'Lỗi hệ thống' })).toBeInTheDocument();
   });
 });

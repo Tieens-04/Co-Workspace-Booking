@@ -172,7 +172,7 @@ describe('RoomDetailPage', () => {
     expect(screen.getByAltText('Deluxe Meeting Space - Chưa có ảnh')).toBeInTheDocument();
   });
 
-  it('displays 404 ROOM_NOT_FOUND error screen when room does not exist', async () => {
+  it('displays 404 ROOM_NOT_FOUND error screen with accessible h1 when room does not exist', async () => {
     const error404 = {
       name: 'AxiosError',
       response: {
@@ -187,19 +187,51 @@ describe('RoomDetailPage', () => {
 
     renderComponent();
 
-    expect(await screen.findByText('Không tìm thấy phòng')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Không tìm thấy phòng' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(/Phòng bạn đang tìm kiếm không tồn tại hoặc đã bị ngừng cung cấp dịch vụ./i),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Quay về danh sách phòng/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Thử lại/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Lỗi kết nối')).not.toBeInTheDocument();
   });
 
-  it('displays server error screen with retry button on unexpected network failure', async () => {
+  it('displays "Không tìm thấy phòng" with accessible h1 when room ID is not a valid UUID (400 VALIDATION_ERROR)', async () => {
+    const error400 = {
+      name: 'AxiosError',
+      response: {
+        status: 400,
+        data: {
+          code: 'VALIDATION_ERROR',
+          message: 'ID phòng không đúng định dạng UUID',
+        },
+      },
+    };
+    vi.mocked(roomApi.getRoomById).mockRejectedValueOnce(error400);
+
+    renderComponent(['/rooms/not-a-uuid']);
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Không tìm thấy phòng' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(/Phòng bạn đang tìm kiếm không tồn tại hoặc đã bị ngừng cung cấp dịch vụ./i),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Quay về danh sách phòng/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Thử lại/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Lỗi kết nối')).not.toBeInTheDocument();
+  });
+
+  it('displays server error screen with retry button and accessible h1 on unexpected network failure', async () => {
     vi.mocked(roomApi.getRoomById).mockRejectedValueOnce(new Error('Máy chủ quá tải'));
 
     renderComponent();
 
-    expect(await screen.findByText('Lỗi kết nối')).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Lỗi kết nối' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Máy chủ quá tải')).toBeInTheDocument();
 
     vi.mocked(roomApi.getRoomById).mockResolvedValueOnce(mockRoomResponse());

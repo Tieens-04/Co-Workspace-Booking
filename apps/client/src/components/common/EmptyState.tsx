@@ -9,6 +9,7 @@ interface EmptyStateProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'ti
   title: React.ReactNode;
   description?: React.ReactNode;
   action?: React.ReactNode;
+  titleAs?: 'h1' | 'h2' | 'h3' | 'h4' | 'p';
 }
 
 /** Dashed, left-aligned block for "nothing here yet" states. */
@@ -18,6 +19,7 @@ export function EmptyState({
   description,
   action,
   className,
+  titleAs: TitleTag = 'h2',
   ...props
 }: EmptyStateProps) {
   return (
@@ -31,7 +33,7 @@ export function EmptyState({
       {Icon && (
         <Icon aria-hidden="true" className="size-7 text-muted-foreground" strokeWidth={1.25} />
       )}
-      <h2 className="text-h3">{title}</h2>
+      <TitleTag className="text-h3">{title}</TitleTag>
       {description && <p className="max-w-[52ch] text-sm text-muted-foreground">{description}</p>}
       {action && <div className="pt-1">{action}</div>}
     </div>
@@ -45,6 +47,7 @@ interface ErrorStateProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'ti
   retryLabel?: string;
   retryTestId?: string;
   retrying?: boolean;
+  titleAs?: 'h1' | 'h2' | 'h3' | 'h4' | 'p';
 }
 
 /** Error block with role="alert" and an optional retry button. */
@@ -56,6 +59,7 @@ export function ErrorState({
   retryTestId,
   retrying = false,
   className,
+  titleAs: TitleTag = 'p',
   ...props
 }: ErrorStateProps) {
   return (
@@ -69,7 +73,7 @@ export function ErrorState({
     >
       <CircleAlert aria-hidden="true" className="mt-0.5 size-5" />
       <div className="grid min-w-0 gap-1">
-        <p className="font-semibold">{title}</p>
+        <TitleTag className="font-semibold">{title}</TitleTag>
         {description && <p className="text-sm">{description}</p>}
       </div>
       {onRetry && (
