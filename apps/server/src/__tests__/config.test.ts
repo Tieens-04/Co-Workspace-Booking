@@ -85,3 +85,25 @@ it.each(['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET']
     await expect(import('../config/env.config.js')).rejects.toThrow(varName);
   },
 );
+
+it.each(['0', '366', '1.5', '-5', 'abc', '60d'])(
+  'fails startup for invalid BOOKING_MAX_ADVANCE_DAYS %s (CWB-75)',
+  async (value) => {
+    vi.stubEnv('BOOKING_MAX_ADVANCE_DAYS', value);
+    vi.resetModules();
+    await expect(import('../config/env.config.js')).rejects.toThrow('BOOKING_MAX_ADVANCE_DAYS');
+  },
+);
+
+it.each([
+  [undefined, 60],
+  ['', 60],
+  ['1', 1],
+  ['90', 90],
+  ['365', 365],
+])('reads BOOKING_MAX_ADVANCE_DAYS=%s as %i days (CWB-75)', async (value, days) => {
+  vi.stubEnv('BOOKING_MAX_ADVANCE_DAYS', value);
+  vi.resetModules();
+  const { ENV } = await import('../config/env.config.js');
+  expect(ENV.BOOKING_MAX_ADVANCE_DAYS).toBe(days);
+});

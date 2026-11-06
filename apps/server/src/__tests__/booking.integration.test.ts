@@ -98,7 +98,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       ['21:30', '22:30', 0],
       ['23:00', '01:00', 1],
     ])('does not persist an outside-hours booking %s–%s', async (start, end, nextDay) => {
-      const day = new Date(Date.now() + 200 * 24 * 60 * 60 * 1000);
+      const day = new Date(Date.now() + 20 * 24 * 60 * 60 * 1000);
       const startDay = day.toISOString().slice(0, 10);
       day.setUTCDate(day.getUTCDate() + nextDay);
       const endDay = day.toISOString().slice(0, 10);
@@ -114,6 +114,28 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       expect(res.status).toBe(400);
       expect(res.body.code).toBe('OUTSIDE_OPERATING_HOURS');
       expect(await prisma.booking.count({ where: { roomId: availableRoomId } })).toBe(beforeCount);
+    });
+
+    it('rejects a booking beyond the 60-day horizon with 400 BOOKING_HORIZON and persists nothing (CWB-75)', async () => {
+      // 09:00 Vietnam, three years ahead (the audit probe) and just past the horizon.
+      for (const daysAhead of [3 * 365, 61]) {
+        const start = new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000);
+        start.setUTCHours(2, 0, 0, 0);
+        const beforeCount = await prisma.booking.count({ where: { roomId: availableRoomId } });
+        const res = await request(app)
+          .post('/api/v1/bookings')
+          .set('Authorization', `Bearer ${customerToken}`)
+          .send({
+            roomId: availableRoomId,
+            startTime: start.toISOString(),
+            endTime: new Date(start.getTime() + 60 * 60 * 1000).toISOString(),
+          });
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('BOOKING_HORIZON');
+        expect(await prisma.booking.count({ where: { roomId: availableRoomId } })).toBe(
+          beforeCount,
+        );
+      }
     });
 
     it('creates booking with server price total, confirmed/unpaid defaults, and returns 201', async () => {

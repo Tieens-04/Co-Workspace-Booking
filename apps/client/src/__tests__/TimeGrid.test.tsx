@@ -479,4 +479,51 @@ describe('TimeGrid component', () => {
       expect(slot0900).toHaveAttribute('data-slot-state', 'past');
     });
   });
+  describe('booking horizon (CWB-75)', () => {
+    // Horizon of 1 day from 2026-10-24 10:00 VN ends at 2026-10-25 10:00 VN.
+    const horizonNow = new Date('2026-10-24T10:00:00.000+07:00');
+
+    it('disables start slots after the horizon and explains why', async () => {
+      const onSelectStart = vi.fn();
+      render(
+        <TimeGrid
+          {...defaultProps}
+          now={horizonNow}
+          maxAdvanceDays={1}
+          onSelectStart={onSelectStart}
+        />,
+      );
+
+      expect(screen.getByTestId('time-slot-10:00')).toBeEnabled();
+      const beyond = screen.getByTestId('time-slot-10:30');
+      expect(beyond).toBeDisabled();
+      expect(beyond).toHaveAccessibleName('10:30 - 11:00: Ngoài thời hạn đặt trước');
+      await userEvent.click(screen.getByTestId('time-slot-10:00'));
+      expect(onSelectStart).toHaveBeenCalledWith(
+        new Date('2026-10-25T10:00:00.000+07:00').toISOString(),
+      );
+    });
+
+    it('still lets a range that starts inside the horizon end after it', async () => {
+      const onSelectRange = vi.fn();
+      const startIso = new Date('2026-10-25T09:30:00.000+07:00').toISOString();
+      render(
+        <TimeGrid
+          {...defaultProps}
+          now={horizonNow}
+          maxAdvanceDays={1}
+          selectingStartTime={startIso}
+          onSelectRange={onSelectRange}
+        />,
+      );
+
+      const end = screen.getByTestId('time-slot-11:00');
+      expect(end).toBeEnabled();
+      await userEvent.click(end);
+      expect(onSelectRange).toHaveBeenCalledWith(
+        startIso,
+        new Date('2026-10-25T11:30:00.000+07:00').toISOString(),
+      );
+    });
+  });
 });

@@ -17,6 +17,8 @@ import {
 } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
 import { getDayBounds, generateAvailabilitySlots } from '../utils/room-availability.util.js';
+import { ENV } from '../config/env.config.js';
+import { bookingHorizonError, getBookingHorizonEnd } from '../utils/booking-time.util.js';
 import { BUSINESS_TIMEZONE } from '../utils/booking-code.util.js';
 
 export function formatPrice(price: unknown): string {
@@ -128,8 +130,18 @@ export class RoomService {
     };
   }
 
-  async getAvailability(id: string, date: string): Promise<RoomAvailabilityResponseData> {
+  async getAvailability(
+    id: string,
+    date: string,
+    now = new Date(),
+  ): Promise<RoomAvailabilityResponseData> {
     const { dayStart, dayEnd } = getDayBounds(date);
+
+    // CWB-75: a day whose first slot already starts after the horizon has nothing bookable.
+    const bookableUntil = getBookingHorizonEnd(now);
+    if (dayStart.getTime() > bookableUntil.getTime()) {
+      throw bookingHorizonError();
+    }
 
     const room = await this.roomRepo.findAvailabilityById(id, dayStart, dayEnd);
     if (!room) {
@@ -151,6 +163,8 @@ export class RoomService {
       date,
       timezone: BUSINESS_TIMEZONE,
       slots,
+      maxAdvanceDays: ENV.BOOKING_MAX_ADVANCE_DAYS,
+      bookableUntil: bookableUntil.toISOString(),
     };
   }
 }

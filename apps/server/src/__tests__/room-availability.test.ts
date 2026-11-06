@@ -323,6 +323,35 @@ describe('Room Availability Unit & API Tests', () => {
       expect(res.body.data.slots[0].userId).toBeUndefined();
     });
 
+    it('exposes the booking horizon and rejects days beyond it (CWB-75)', async () => {
+      vi.useFakeTimers({ toFake: ['Date'], now: new Date('2026-11-04T02:00:00.000Z') });
+      try {
+        // Horizon ends 2027-01-03T02:00Z (09:00 Vietnam): that day is still partly bookable.
+        const lastDay = await request(app).get(
+          `/api/v1/rooms/${validRoomId}/availability?date=2027-01-03`,
+        );
+        expect(lastDay.status).toBe(200);
+        expect(lastDay.body.data).toMatchObject({
+          maxAdvanceDays: 60,
+          bookableUntil: '2027-01-03T02:00:00.000Z',
+        });
+
+        for (const date of ['2027-01-04', '2099-01-01']) {
+          const beyond = await request(app).get(
+            `/api/v1/rooms/${validRoomId}/availability?date=${date}`,
+          );
+          expect(beyond.status).toBe(400);
+          expect(beyond.body).toEqual({
+            success: false,
+            code: 'BOOKING_HORIZON',
+            message: 'Chỉ được đặt phòng trước tối đa 60 ngày',
+          });
+        }
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
     it('reflects BOOKED status when repository returns blocking intervals', async () => {
       vi.mocked(roomRepository.findAvailabilityById).mockResolvedValue(
         mockAvailabilityFixture({

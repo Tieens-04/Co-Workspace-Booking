@@ -12,6 +12,9 @@ export interface RoomAvailabilityResponseData {
   date: string;
   timezone: string;
   slots: RoomAvailabilitySlot[];
+  /** CWB-75: server booking horizon; bookings may start at most this many days ahead. */
+  maxAdvanceDays?: number;
+  bookableUntil?: string;
 }
 
 export interface Amenity {

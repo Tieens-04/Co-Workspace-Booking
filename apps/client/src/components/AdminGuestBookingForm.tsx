@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import {
   getVietnamTodayString,
+  getBookingHorizonEnd,
   formatVnDateTimeLocal,
   parseVnDateTimeLocalToUtc,
   formatVnDate,
@@ -225,6 +226,15 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
 
   const availability = useRoomAvailability(selectedRoomId, datesToLoad, isAvailabilityEnabled);
 
+  // CWB-75: the server reports its booking horizon with each availability response.
+  const todayVn = getVietnamTodayString(new Date(currentMs));
+  const horizonMaxDate = availability.maxAdvanceDays
+    ? formatVnDate(getBookingHorizonEnd(availability.maxAdvanceDays, new Date(currentMs)))
+    : undefined;
+  const horizonHint = availability.maxAdvanceDays
+    ? `Có thể đặt trước tối đa ${availability.maxAdvanceDays} ngày (đến ${horizonMaxDate!.split('-').reverse().join('/')}).`
+    : null;
+
   const allLoadedCoveredSlots = useMemo(() => {
     const slots: RoomAvailabilitySlot[] = [];
     for (const d of coveredDates) {
@@ -243,7 +253,13 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     if (!startUtc || !endUtc || endUtc <= startUtc) return false;
     if (hasBookingConflict || isStaleMaintenance) return false;
     if (availability.loading || Boolean(availability.error)) return false;
-    const timeValidation = validateBookingSelection(startUtc, endUtc, new Date(currentMs));
+    const timeValidation = validateBookingSelection(
+      startUtc,
+      endUtc,
+      new Date(currentMs),
+      undefined,
+      availability.maxAdvanceDays,
+    );
     if (!timeValidation.isValid) return false;
     if (!allLoadedCoveredSlots) return false;
     const rangeCheck = checkRangeAvailability(startUtc, endUtc, allLoadedCoveredSlots);
@@ -257,6 +273,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     isStaleMaintenance,
     availability.loading,
     availability.error,
+    availability.maxAdvanceDays,
   ]);
 
   // Grid callbacks
@@ -360,7 +377,13 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     }
 
     if (startUtc && endUtc) {
-      const timeCheck = validateBookingSelection(startUtc, endUtc, new Date(currentMs), note);
+      const timeCheck = validateBookingSelection(
+        startUtc,
+        endUtc,
+        new Date(currentMs),
+        note,
+        availability.maxAdvanceDays,
+      );
       if (!timeCheck.isValid) {
         Object.assign(newErrors, timeCheck.errors);
       }
@@ -402,7 +425,13 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
       }
 
       // 2. Re-validate time rules with fresh Date() right before POST (guards against slow GET)
-      const postValidation = validateBookingSelection(startUtc!, endUtc!, new Date(), note);
+      const postValidation = validateBookingSelection(
+        startUtc!,
+        endUtc!,
+        new Date(),
+        note,
+        availability.maxAdvanceDays,
+      );
       if (!postValidation.isValid) {
         setErrors(postValidation.errors);
         return;
@@ -705,10 +734,12 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                   </p>
 
                   <div className="grid gap-4 sm:grid-cols-3">
-                    <Field id="viewDate" label="Xem lịch ngày">
+                    <Field id="viewDate" label="Xem lịch ngày" hint={horizonHint}>
                       <Input
                         type="date"
                         className="tabular-nums"
+                        min={todayVn}
+                        max={horizonMaxDate}
                         value={viewDate}
                         onChange={handleViewDateChange}
                         disabled={isSubmitting}
@@ -815,6 +846,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                           onSelectStart={handleSelectStart}
                           onSelectRange={handleSelectRange}
                           disabled={isSubmitting || availability.loading}
+                          maxAdvanceDays={availability.maxAdvanceDays}
                         />
                       </div>
                     )}

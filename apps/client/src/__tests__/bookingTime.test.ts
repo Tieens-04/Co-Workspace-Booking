@@ -242,4 +242,26 @@ describe('bookingTime utility', () => {
       expect(res.reason).toBe('MISSING_SLOT');
     });
   });
+  describe('booking horizon (CWB-75)', () => {
+    const now = new Date('2026-11-04T02:00:00.000Z'); // 09:00 Vietnam
+    const DAY = 24 * 60 * 60 * 1000;
+    const hour = (start: Date) => new Date(start.getTime() + 60 * 60 * 1000);
+
+    it('accepts a start exactly N days ahead', () => {
+      const start = new Date(now.getTime() + 60 * DAY);
+      expect(validateBookingSelection(start, hour(start), now, undefined, 60).isValid).toBe(true);
+    });
+
+    it('rejects a start N days and 30 minutes ahead with the server message', () => {
+      const start = new Date(now.getTime() + 60 * DAY + 30 * 60 * 1000);
+      const res = validateBookingSelection(start, hour(start), now, undefined, 60);
+      expect(res.isValid).toBe(false);
+      expect(res.errors.startTime).toBe('Chỉ được đặt phòng trước tối đa 60 ngày');
+    });
+
+    it('skips the check until the server horizon is known', () => {
+      const start = new Date(now.getTime() + 400 * DAY);
+      expect(validateBookingSelection(start, hour(start), now, undefined, null).isValid).toBe(true);
+    });
+  });
 });

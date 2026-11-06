@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client';
 import { AppError } from './error.util.js';
+import { ENV } from '../config/env.config.js';
 
 export const MIN_DURATION_MINUTES = 60;
 export const MAX_DURATION_MINUTES = 480;
@@ -8,6 +9,24 @@ export const CANCELLATION_MIN_LEAD_MINUTES = 60;
 export const OPENING_HOUR = 7;
 export const CLOSING_HOUR = 22;
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Latest allowed booking start (CWB-75): exactly `maxAdvanceDays` days after `now`, inclusive. */
+export function getBookingHorizonEnd(
+  now = new Date(),
+  maxAdvanceDays = ENV.BOOKING_MAX_ADVANCE_DAYS,
+): Date {
+  return new Date(now.getTime() + maxAdvanceDays * DAY_MS);
+}
+
+export function bookingHorizonError(maxAdvanceDays = ENV.BOOKING_MAX_ADVANCE_DAYS): AppError {
+  return new AppError(
+    'BOOKING_HORIZON',
+    `Chỉ được đặt phòng trước tối đa ${maxAdvanceDays} ngày`,
+    400,
+  );
+}
 
 export function isSlotAligned(date: Date): boolean {
   if (Number.isNaN(date.getTime())) {
@@ -18,7 +37,12 @@ export function isSlotAligned(date: Date): boolean {
   );
 }
 
-export function validateBookingTime(startDate: Date, endDate: Date, now = new Date()): void {
+export function validateBookingTime(
+  startDate: Date,
+  endDate: Date,
+  now = new Date(),
+  maxAdvanceDays = ENV.BOOKING_MAX_ADVANCE_DAYS,
+): void {
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
     throw new AppError('INVALID_SLOT', 'Thời gian bắt đầu hoặc kết thúc không hợp lệ', 400);
   }
@@ -64,6 +88,10 @@ export function validateBookingTime(startDate: Date, endDate: Date, now = new Da
       `Phải đặt phòng trước thời gian bắt đầu ít nhất ${ADVANCE_NOTICE_MINUTES} phút`,
       400,
     );
+  }
+
+  if (startDate.getTime() > getBookingHorizonEnd(now, maxAdvanceDays).getTime()) {
+    throw bookingHorizonError(maxAdvanceDays);
   }
 
   // Shift to Vietnam wall time and read UTC fields so the host timezone cannot change the rule.

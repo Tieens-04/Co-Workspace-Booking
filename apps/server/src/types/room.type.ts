@@ -68,4 +68,7 @@ export interface RoomAvailabilityResponseData {
   date: string;
   timezone: string;
   slots: RoomAvailabilitySlotDto[];
+  /** CWB-75: bookings may start at most this many days ahead, i.e. no later than `bookableUntil`. */
+  maxAdvanceDays: number;
+  bookableUntil: string;
 }
