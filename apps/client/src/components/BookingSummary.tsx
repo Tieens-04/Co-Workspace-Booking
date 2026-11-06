@@ -31,7 +31,9 @@ export const BookingSummary: React.FC<BookingSummaryProps> = ({
       </DetailRow>
 
       <DetailRow label="Phòng làm việc">
-        <span data-testid="booking-room-value">{booking.room.name}</span>
+        <span className="wrap-anywhere" data-testid="booking-room-value">
+          {booking.room.name}
+        </span>
       </DetailRow>
 
       <DetailRow label="Thời gian">

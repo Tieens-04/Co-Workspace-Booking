@@ -408,7 +408,10 @@ export const BookingDetailPage: React.FC = () => {
                 <div className="grid gap-6 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
                   <div className="grid min-w-0 gap-2">
                     <p className="eyebrow">Phòng làm việc</p>
-                    <h2 className="text-h2 font-bold break-words" data-testid="booking-room-value">
+                    <h2
+                      className="text-h2 font-bold wrap-anywhere"
+                      data-testid="booking-room-value"
+                    >
                       {effectiveBooking.room.name}
                     </h2>
                     <p className="text-[0.9375rem]" data-testid="booking-time-value">
@@ -531,7 +534,7 @@ export const BookingDetailPage: React.FC = () => {
                         </AlertDialogDescription>
                       </AlertDialogHeader>
 
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm wrap-anywhere text-muted-foreground">
                         Đơn{' '}
                         <strong className="font-semibold text-foreground tabular-nums">
                           {effectiveBooking.bookingCode}

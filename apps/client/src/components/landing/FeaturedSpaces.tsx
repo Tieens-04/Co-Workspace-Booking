@@ -157,9 +157,16 @@ function FeaturedCard({ room, frameClassName, large }: FeaturedCardProps) {
         )}
       </div>
 
-      <div className="grid gap-3 border-t pt-4 sm:grid-cols-[1fr_auto] sm:items-end sm:gap-6">
-        <div className="grid gap-2">
-          <h3 className={large ? 'text-h1' : 'text-h2'}>{room.name}</h3>
+      <div className="grid gap-3 border-t pt-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end sm:gap-6">
+        <div className="grid min-w-0 gap-2">
+          {/* Names are free text up to 191 chars (CWB-72): wrap anywhere, clamp to 3 lines; the
+              full name stays in `title` and in the card link's accessible name. */}
+          <h3
+            title={room.name}
+            className={cn(large ? 'text-h1' : 'text-h2', 'line-clamp-3 wrap-anywhere')}
+          >
+            {room.name}
+          </h3>
           <p className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-on-ink-muted">
             <span className="inline-flex items-center gap-1.5 tabular-nums">
               <Users aria-hidden="true" className="size-4" strokeWidth={1.75} />
