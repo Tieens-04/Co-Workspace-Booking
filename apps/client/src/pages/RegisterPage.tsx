@@ -5,7 +5,7 @@ import { AnimatePresence, m } from 'motion/react';
 import { DURATION, EASE_EDITORIAL } from '@/lib/motion';
 import { authApi } from '../services/auth.api';
 import { ApiErrorResponse, RegisterRequest } from '../types/auth';
-import { registerSchema } from '../utils/validation';
+import { registerSchema, normalizePhoneNumber } from '../utils/validation';
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -41,7 +41,7 @@ export const RegisterPage: React.FC = () => {
     const validationResult = registerSchema.safeParse({
       fullName,
       email,
-      phoneNumber: phoneNumber.trim() || undefined,
+      phoneNumber: phoneNumber.trim() === '' ? undefined : phoneNumber,
       password,
       confirmPassword,
     });
@@ -66,7 +66,7 @@ export const RegisterPage: React.FC = () => {
       fullName: fullName.trim(),
       email: sanitizedEmail,
       password, // never trim password
-      ...(phoneNumber.trim() ? { phoneNumber: phoneNumber.trim() } : {}),
+      ...(phoneNumber.trim() ? { phoneNumber: normalizePhoneNumber(phoneNumber.trim()) } : {}),
     };
 
     try {
@@ -182,6 +182,7 @@ export const RegisterPage: React.FC = () => {
             >
               <Input
                 type="tel"
+                inputMode="tel"
                 className="tabular-nums"
                 value={phoneNumber}
                 onChange={(e) => setPhoneNumber(e.target.value)}

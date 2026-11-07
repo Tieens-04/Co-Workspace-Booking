@@ -53,6 +53,32 @@ describe('RegisterPage', () => {
     expect(authApi.register).not.toHaveBeenCalled();
   });
 
+  it('validates phone number format client-side and has inputMode="tel" (CWB-74)', async () => {
+    renderComponent();
+    const user = userEvent.setup();
+
+    const phoneInput = screen.getByLabelText(/Số điện thoại/i);
+    expect(phoneInput).toHaveAttribute('inputMode', 'tel');
+
+    await user.type(screen.getByLabelText(/Họ và tên/i), 'Nguyen Van A');
+    await user.type(screen.getByLabelText(/^Email/i), 'test@example.com');
+    await user.type(phoneInput, 'abc');
+    await user.type(screen.getByLabelText(/^Mật khẩu/i), 'SecurePass123!');
+    await user.type(screen.getByLabelText(/^Xác nhận mật khẩu/i), 'SecurePass123!');
+
+    await user.click(screen.getByRole('button', { name: /^Đăng ký$/i }));
+
+    expect(await screen.findByText('Số điện thoại không đúng định dạng')).toBeInTheDocument();
+    expect(authApi.register).not.toHaveBeenCalled();
+
+    // Verify punctuation-only input is also rejected and does not bypass validation
+    await user.clear(phoneInput);
+    await user.type(phoneInput, '- .');
+    await user.click(screen.getByRole('button', { name: /^Đăng ký$/i }));
+    expect(await screen.findByText('Số điện thoại không đúng định dạng')).toBeInTheDocument();
+    expect(authApi.register).not.toHaveBeenCalled();
+  });
+
   it('validates password mismatch', async () => {
     renderComponent();
     const user = userEvent.setup();

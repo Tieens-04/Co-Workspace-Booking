@@ -182,6 +182,7 @@ describe('Register/Login HTTP regressions (mocked repository, real bcrypt/JWT)',
     { email: 'invalid' },
     { fullName: ' ' },
     { fullName: 'x'.repeat(192) },
+    { phoneNumber: 'abc' },
     { phoneNumber: '1'.repeat(192) },
     { email: 'a'.repeat(64) + '@' + 'b'.repeat(63) + '.' + 'c'.repeat(63) + '.com' },
   ])('rejects invalid register data before persistence: %j', async (invalid) => {
@@ -196,8 +197,20 @@ describe('Register/Login HTTP regressions (mocked repository, real bcrypt/JWT)',
   it('accepts text fields at the schema limit', async () => {
     const res = await request(app)
       .post('/api/v1/auth/register')
-      .send({ ...registration, fullName: 'x'.repeat(191), phoneNumber: '1'.repeat(191) });
+      .send({ ...registration, fullName: 'x'.repeat(191) });
     expect(res.status).toBe(201);
+  });
+
+  it('normalizes phoneNumber and accepts Vietnamese formats at register (CWB-74)', async () => {
+    const res = await request(app)
+      .post('/api/v1/auth/register')
+      .send({ ...registration, email: 'phone-test@example.com', phoneNumber: '0912.345.678' });
+    expect(res.status).toBe(201);
+    expect(userRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phoneNumber: '0912345678',
+      }),
+    );
   });
 
   it('returns 409 for an existing email', async () => {

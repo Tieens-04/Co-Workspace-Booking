@@ -23,9 +23,17 @@ import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
 import { meApi } from '../services/me.api';
 import { SafeUser } from '../types/auth';
+import { normalizePhoneNumber, optionalPhoneRule } from '../utils/validation';
 
 type ApiError = {
-  response?: { status?: number; data?: { code?: string; message?: string } };
+  response?: {
+    status?: number;
+    data?: {
+      code?: string;
+      message?: string;
+      details?: Array<{ field?: string; path?: (string | number)[]; message?: string }>;
+    };
+  };
 };
 
 const errorMessage = (err: unknown, fallback: string) =>
@@ -46,6 +54,7 @@ export const AccountPage: React.FC = () => {
   const [fullName, setFullName] = useState('');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   const [profileSaved, setProfileSaved] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
 
@@ -95,16 +104,27 @@ export const AccountPage: React.FC = () => {
     e.preventDefault();
     if (isSavingProfile) return;
     setProfileSaved(false);
-    if (!fullName.trim()) {
+    setProfileError(null);
+    setPhoneError(null);
+
+    const trimmedName = fullName.trim();
+    if (!trimmedName) {
       setProfileError('Họ và tên không được để trống.');
       return;
     }
-    setProfileError(null);
+
+    const phoneValidation = optionalPhoneRule.safeParse(phoneNumber);
+    if (!phoneValidation.success) {
+      setPhoneError(phoneValidation.error.issues[0].message);
+      return;
+    }
+    const trimmedPhone = phoneNumber.trim();
+
     setIsSavingProfile(true);
     try {
       const res = await meApi.updateMe({
-        fullName: fullName.trim(),
-        phoneNumber: phoneNumber.trim(),
+        fullName: trimmedName,
+        phoneNumber: trimmedPhone ? normalizePhoneNumber(trimmedPhone) : '',
       });
       setProfile(res.data);
       setFullName(res.data.fullName);
@@ -113,7 +133,16 @@ export const AccountPage: React.FC = () => {
       setProfileSaved(true);
       showToast('Đã cập nhật thông tin tài khoản', 'success');
     } catch (err) {
-      setProfileError(errorMessage(err, 'Không thể cập nhật thông tin. Vui lòng thử lại.'));
+      const apiErr = err as ApiError;
+      const issues = apiErr.response?.data?.details;
+      const phoneIssue = Array.isArray(issues)
+        ? issues.find((i) => i.field === 'phoneNumber' || (Array.isArray(i.path) && i.path.includes('phoneNumber')))
+        : null;
+      if (phoneIssue) {
+        setPhoneError(phoneIssue.message || 'Số điện thoại không đúng định dạng');
+      } else {
+        setProfileError(errorMessage(err, 'Không thể cập nhật thông tin. Vui lòng thử lại.'));
+      }
     } finally {
       setIsSavingProfile(false);
     }
@@ -219,13 +248,17 @@ export const AccountPage: React.FC = () => {
                     onChange={(e) => setFullName(e.target.value)}
                   />
                 </Field>
-                <Field id="account-phone" label="Số điện thoại" hint="Để trống nếu muốn xóa.">
+                <Field id="account-phone" label="Số điện thoại" hint="Để trống nếu muốn xóa." error={phoneError || undefined}>
                   <Input
                     value={phoneNumber}
                     maxLength={191}
+                    type="tel"
                     inputMode="tel"
                     autoComplete="tel"
-                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    onChange={(e) => {
+                      setPhoneNumber(e.target.value);
+                      if (phoneError) setPhoneError(null);
+                    }}
                   />
                 </Field>
                 {profileError && (

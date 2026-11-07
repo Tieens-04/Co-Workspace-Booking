@@ -103,6 +103,28 @@ describe('AccountPage and profile hydration (CWB-63)', () => {
     expect(meApi.updateMe).not.toHaveBeenCalled();
   });
 
+  it('validates phone number format client-side, surfaces inline error, and has inputMode="tel" (CWB-74)', async () => {
+    const user$ = userEvent.setup();
+    renderPage();
+
+    const phoneInput = await screen.findByLabelText('Số điện thoại');
+    expect(phoneInput).toHaveAttribute('inputMode', 'tel');
+
+    await user$.clear(phoneInput);
+    await user$.type(phoneInput, 'abc');
+    await user$.click(screen.getByRole('button', { name: 'Lưu thông tin' }));
+
+    expect(await screen.findByText('Số điện thoại không đúng định dạng')).toBeInTheDocument();
+    expect(meApi.updateMe).not.toHaveBeenCalled();
+
+    // Verify punctuation-only input is rejected
+    await user$.clear(phoneInput);
+    await user$.type(phoneInput, '- .');
+    await user$.click(screen.getByRole('button', { name: 'Lưu thông tin' }));
+    expect(await screen.findByText('Số điện thoại không đúng định dạng')).toBeInTheDocument();
+    expect(meApi.updateMe).not.toHaveBeenCalled();
+  });
+
   it('changes the password and continues the session with the new token', async () => {
     const user$ = userEvent.setup();
     const newToken = createMockJwt({

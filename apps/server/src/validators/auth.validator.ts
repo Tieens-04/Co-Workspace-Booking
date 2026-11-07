@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { registerPhoneSchema } from './phone.validator.js';
 
 const emailSchema = z.string().trim().toLowerCase().max(191).email('Email không đúng định dạng');
 export const passwordSchema = z.string().refine((val) => Buffer.byteLength(val, 'utf8') <= 72, {
@@ -10,7 +11,7 @@ export const registerSchema = z
     email: emailSchema,
     password: passwordSchema.min(8, 'Mật khẩu phải có ít nhất 8 ký tự'),
     fullName: z.string().trim().min(1, 'Họ và tên không được để trống').max(191),
-    phoneNumber: z.string().trim().max(191).optional().nullable(),
+    phoneNumber: registerPhoneSchema,
   })
   .strict();
 

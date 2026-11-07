@@ -10,6 +10,7 @@ import { useRoomAvailability } from '../hooks/useRoomAvailability';
 import { TimeGrid } from './TimeGrid';
 import { GuestBookingSuccess } from './admin/bookings/GuestBookingSuccess';
 import { formatCurrency } from '../utils/format';
+import { normalizePhoneNumber, phoneRule } from '../utils/validation';
 import { ChevronDown, ChevronUp, CircleAlert, Loader2, UserPlus } from 'lucide-react';
 import { ErrorState } from '@/components/common/EmptyState';
 import { Field } from '@/components/common/Field';
@@ -356,11 +357,9 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
       newErrors.guestName = 'Tên khách hàng không được vượt quá 191 ký tự';
     }
 
-    const trimmedPhone = guestPhone.trim();
-    if (!trimmedPhone) {
-      newErrors.guestPhone = 'Số điện thoại không được để trống';
-    } else if (trimmedPhone.length > 191) {
-      newErrors.guestPhone = 'Số điện thoại không được vượt quá 191 ký tự';
+    const phoneValidation = phoneRule.safeParse(guestPhone);
+    if (!phoneValidation.success) {
+      newErrors.guestPhone = phoneValidation.error.issues[0].message;
     }
 
     if (!selectedRoomId) {
@@ -455,7 +454,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
         startTime: startUtc!.toISOString(),
         endTime: endUtc!.toISOString(),
         guestName: trimmedName,
-        guestPhone: trimmedPhone,
+        guestPhone: normalizePhoneNumber(guestPhone.trim()),
         note: note.trim() === '' ? null : note.trim(),
       };
       // Same intent reuses its key, so a retry after a lost response returns the same booking.
@@ -640,6 +639,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                   >
                     <Input
                       type="tel"
+                      inputMode="tel"
                       className="tabular-nums"
                       value={guestPhone}
                       onChange={(e) => {

@@ -4,6 +4,34 @@ export const utf8ByteLength = (val: string): number => {
   return new TextEncoder().encode(val).length;
 };
 
+export const normalizePhoneNumber = (raw: string): string => {
+  return raw.replace(/[\s.-]/g, '');
+};
+
+export const VIETNAMESE_PHONE_REGEX = /^(?:0|\+84)\d{9,10}$/;
+
+export const phoneRule = z
+  .string()
+  .trim()
+  .min(1, 'Số điện thoại không được để trống')
+  .max(191, 'Số điện thoại không được vượt quá 191 ký tự')
+  .refine((val) => VIETNAMESE_PHONE_REGEX.test(normalizePhoneNumber(val)), {
+    message: 'Số điện thoại không đúng định dạng',
+  });
+
+export const optionalPhoneRule = z
+  .string()
+  .max(191, 'Số điện thoại không được vượt quá 191 ký tự')
+  .optional()
+  .or(z.literal(''))
+  .refine(
+    (val) => {
+      if (!val || val.trim() === '') return true;
+      return VIETNAMESE_PHONE_REGEX.test(normalizePhoneNumber(val.trim()));
+    },
+    { message: 'Số điện thoại không đúng định dạng' },
+  );
+
 export const emailSchema = z
   .string({ error: 'Email không được để trống' })
   .trim()
@@ -30,11 +58,7 @@ export const registerSchema = z
       .min(1, 'Họ và tên không được để trống')
       .max(191, 'Họ và tên không được vượt quá 191 ký tự'),
     email: emailSchema,
-    phoneNumber: z
-      .string()
-      .max(191, 'Số điện thoại không được vượt quá 191 ký tự')
-      .optional()
-      .or(z.literal('')),
+    phoneNumber: optionalPhoneRule,
     password: basePasswordRule.min(8, 'Mật khẩu phải có ít nhất 8 ký tự'),
     confirmPassword: z
       .string({ error: 'Vui lòng xác nhận mật khẩu' })

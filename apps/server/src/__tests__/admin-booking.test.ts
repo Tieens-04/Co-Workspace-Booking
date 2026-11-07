@@ -290,6 +290,69 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res2.status).toBe(400);
     });
 
+    it('rejects invalid guestPhone format ("abc") with 400 VALIDATION_ERROR (CWB-74)', async () => {
+      const slot = getFutureSlot(3, 2);
+
+      const res = await request(app)
+        .post('/api/v1/admin/bookings/guest')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roomId: validRoomId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          guestName: 'Khách A',
+          guestPhone: 'abc',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(JSON.stringify(res.body)).toContain('Số điện thoại không đúng định dạng');
+    });
+
+    it('normalizes guestPhone with spaces, dots, and hyphens (CWB-74)', async () => {
+      const slot = getFutureSlot(3, 2);
+      const fixture = mockAdminBookingFixture({
+        startTime: slot.startDate,
+        endTime: slot.endDate,
+        customer: {
+          kind: 'GUEST',
+          name: 'Khách A',
+          phone: '0912345678',
+        },
+      });
+
+      const spy = vi.spyOn(bookingRepository, 'createBooking').mockResolvedValueOnce({
+        id: fixture.id,
+        bookingCode: fixture.bookingCode,
+        room: fixture.room,
+        startTime: fixture.startTime,
+        endTime: fixture.endTime,
+        totalAmount: fixture.totalAmount,
+        note: fixture.note,
+        status: fixture.status,
+        paymentStatus: fixture.paymentStatus,
+        paymentMethod: fixture.paymentMethod,
+        checkedInAt: fixture.checkedInAt,
+        attendanceTrackingEnabled: fixture.attendanceTrackingEnabled,
+      });
+
+      const res = await request(app)
+        .post('/api/v1/admin/bookings/guest')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roomId: validRoomId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          guestName: 'Khách A',
+          guestPhone: '0912.345.678',
+        });
+      expect(res.status).toBe(201);
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          guestPhone: '0912345678',
+        }),
+      );
+    });
+
     it('rejects mass-assignment attempts (userId, role, price, status) with 400', async () => {
       const slot = getFutureSlot(3, 2);
 
