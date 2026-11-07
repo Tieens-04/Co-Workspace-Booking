@@ -11,7 +11,7 @@ import {
   hashBookingIntent,
   idempotencyKeyReused,
 } from '../utils/idempotency.util.js';
-import { CreateBookingInput } from '../validators/booking.validator.js';
+import { CreateBookingInput, RescheduleBookingBodyInput } from '../validators/booking.validator.js';
 import { CreateGuestBookingInput } from '../validators/admin-booking.validator.js';
 import {
   BookingResponseDto,
@@ -176,6 +176,17 @@ export class BookingService {
     // The cancellation email was queued in the cancel transaction (once per booking).
     if (booking.isNewlyCancelled !== false) this.emailOutbox.kick();
 
+    return booking;
+  }
+
+  async rescheduleBooking(
+    userId: string,
+    id: string,
+    input: RescheduleBookingBodyInput,
+    clock?: (() => Date) | Date,
+  ): Promise<BookingResponseDto> {
+    const booking = await this.bookingRepo.rescheduleBooking(userId, id, input, clock);
+    this.emailOutbox.kick();
     return booking;
   }
 }

@@ -45,3 +45,11 @@ export interface GetBookingsResponseData {
 export type GetBookingsResponse = ApiResponse<GetBookingsResponseData>;
 export type GetBookingDetailResponse = ApiResponse<BookingResult>;
 export type CancelBookingResponse = ApiResponse<BookingResult>;
+export interface RescheduleBookingPayload {
+  startTime: string;
+  endTime: string;
+  roomId?: string;
+  note?: string | null;
+}
+
+export type RescheduleBookingResponse = ApiResponse<BookingResult>;

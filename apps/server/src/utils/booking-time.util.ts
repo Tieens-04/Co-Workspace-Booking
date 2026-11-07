@@ -6,6 +6,7 @@ export const MIN_DURATION_MINUTES = 60;
 export const MAX_DURATION_MINUTES = 480;
 export const ADVANCE_NOTICE_MINUTES = 30;
 export const CANCELLATION_MIN_LEAD_MINUTES = 60;
+export const RESCHEDULE_MIN_LEAD_MINUTES = 60;
 export const OPENING_HOUR = 7;
 export const CLOSING_HOUR = 22;
 const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -118,6 +119,17 @@ export function validateCustomerCancellationTime(startTime: Date, now = new Date
     throw new AppError(
       'CANCELLATION_POLICY_VIOLATION',
       'Chỉ được hủy đặt phòng trước thời gian bắt đầu ít nhất 1 giờ',
+      400,
+    );
+  }
+}
+
+export function validateCustomerRescheduleTime(startTime: Date, now = new Date()): void {
+  const minLeadMs = RESCHEDULE_MIN_LEAD_MINUTES * 60 * 1000;
+  if (startTime.getTime() - now.getTime() < minLeadMs) {
+    throw new AppError(
+      'RESCHEDULE_POLICY_VIOLATION',
+      'Chỉ được đổi lịch đặt phòng trước thời gian bắt đầu ít nhất 1 giờ',
       400,
     );
   }

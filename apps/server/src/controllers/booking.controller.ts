@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { bookingService, BookingService } from '../services/booking.service.js';
 import { sendSuccess } from '../utils/response.util.js';
 import { parseIdempotencyKey } from '../utils/idempotency.util.js';
-import { CreateBookingInput, GetBookingsQueryInput } from '../validators/booking.validator.js';
+import { CreateBookingInput, GetBookingsQueryInput, RescheduleBookingBodyInput } from '../validators/booking.validator.js';
 
 export class BookingController {
   constructor(private readonly service: BookingService = bookingService) {}
@@ -54,6 +54,18 @@ export class BookingController {
       const { id } = req.params;
       const result = await this.service.cancelBooking(userId, id);
       return sendSuccess(res, result, 'Hủy đặt phòng thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  rescheduleBooking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const userId = req.user!.sub;
+      const { id } = req.params;
+      const body = req.body as RescheduleBookingBodyInput;
+      const result = await this.service.rescheduleBooking(userId, id, body);
+      return sendSuccess(res, result, 'Đổi lịch đặt phòng thành công', 200);
     } catch (err) {
       return next(err);
     }

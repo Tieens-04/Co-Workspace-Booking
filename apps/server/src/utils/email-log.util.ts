@@ -14,7 +14,7 @@ const safeCodes = new Set([
 ]);
 
 export function logEmailFailure(
-  operation: 'confirmation' | 'cancellation' | 'admin cancellation' | 'password reset' | 'reminder',
+  operation: 'confirmation' | 'cancellation' | 'admin cancellation' | 'password reset' | 'reminder' | 'reschedule',
   /** Non-sensitive reference (booking code or user id); never an email address or token. */
   bookingCode: string,
   error: unknown,

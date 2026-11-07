@@ -135,11 +135,20 @@ export class EmailOutboxService {
           totalAmount: booking.totalAmount.toFixed(2),
           isPaid: booking.paymentStatus === 'PAID',
         });
-      default:
+      case 'BOOKING_RESCHEDULED':
+        return this.notification.sendBookingRescheduled({
+          ...base,
+          totalAmount: booking.totalAmount.toFixed(2),
+        });
+      case 'BOOKING_CANCELLATION':
         return this.notification.sendBookingCancellation({
           ...base,
           reason: booking.cancellationReason,
         });
+      default: {
+        const _exhaustive: never = row.kind;
+        throw new Error(`Unhandled outbox kind: ${_exhaustive}`);
+      }
     }
   }
 
@@ -191,7 +200,7 @@ export class EmailOutboxService {
       if (!row.booking.user?.email) skipReason = 'NO_RECIPIENT';
       else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
       else if (
-        row.kind === 'BOOKING_CONFIRMATION' &&
+        (row.kind === 'BOOKING_CONFIRMATION' || row.kind === 'BOOKING_RESCHEDULED') &&
         row.booking.status === BookingStatus.CANCELLED
       ) {
         skipReason = 'BOOKING_CANCELLED';

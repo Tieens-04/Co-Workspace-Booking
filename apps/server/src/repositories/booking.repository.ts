@@ -1,4 +1,4 @@
-import { BookingStatus, PaymentMethod, PaymentStatus, Prisma } from '@prisma/client';
+import { BookingStatus, PaymentMethod, PaymentStatus, Prisma, Role } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { summarizeRevenueGroups, toRevenueGroups } from '../utils/booking-revenue.util.js';
 import { lockRoomRow } from './room.repository.js';
@@ -18,6 +18,7 @@ import {
   calculateBookingTotal,
   validateBookingTime,
   validateCustomerCancellationTime,
+  validateCustomerRescheduleTime,
 } from '../utils/booking-time.util.js';
 import { getDayBounds } from '../utils/room-availability.util.js';
 import { AppError } from '../utils/error.util.js';
@@ -154,14 +155,13 @@ export type BookingReadRecord = Prisma.BookingGetPayload<{
   select: typeof bookingReadSelect;
 }>;
 
+const formatAmount = (amt: unknown): string =>
+  amt && typeof amt === 'object' && 'toFixed' in amt && typeof (amt as { toFixed: (digits: number) => string }).toFixed === 'function'
+    ? (amt as { toFixed: (digits: number) => string }).toFixed(2)
+    : Number(amt).toFixed(2);
+
 export function mapBookingRecordToDto(record: BookingReadRecord): BookingResponseDto {
-  const totalAmount =
-    record.totalAmount &&
-    typeof record.totalAmount === 'object' &&
-    'toFixed' in record.totalAmount &&
-    typeof (record.totalAmount as { toFixed: (digits: number) => string }).toFixed === 'function'
-      ? (record.totalAmount as { toFixed: (digits: number) => string }).toFixed(2)
-      : Number(record.totalAmount).toFixed(2);
+  const totalAmount = formatAmount(record.totalAmount);
 
   return {
     id: record.id,
@@ -257,13 +257,7 @@ async function auditBookingChange(
 export function mapAdminBookingRecordToDto(
   record: AdminBookingReadRecord,
 ): AdminBookingResponseDto {
-  const totalAmount =
-    record.totalAmount &&
-    typeof record.totalAmount === 'object' &&
-    'toFixed' in record.totalAmount &&
-    typeof (record.totalAmount as { toFixed: (digits: number) => string }).toFixed === 'function'
-      ? (record.totalAmount as { toFixed: (digits: number) => string }).toFixed(2)
-      : Number(record.totalAmount).toFixed(2);
+  const totalAmount = formatAmount(record.totalAmount);
 
   const customer: AdminBookingCustomerDto = record.user
     ? {
@@ -313,6 +307,19 @@ export interface BookingRepositoryContract {
     id: string,
     clock?: (() => Date) | Date,
   ): Promise<BookingResponseDto>;
+  rescheduleBooking(
+    userId: string,
+    id: string,
+    input: RescheduleBookingRepoInput,
+    clock?: (() => Date) | Date,
+  ): Promise<BookingResponseDto>;
+}
+
+export interface RescheduleBookingRepoInput {
+  startTime: string;
+  endTime: string;
+  roomId?: string;
+  note?: string | null;
 }
 
 export interface AdminBookingRepositoryContract {
@@ -611,6 +618,173 @@ export class BookingRepository
       const dto = mapBookingRecordToDto(updated);
       dto.isNewlyCancelled = true;
       return dto;
+    });
+  }
+
+  async rescheduleBooking(
+    userId: string,
+    id: string,
+    input: RescheduleBookingRepoInput,
+    clock?: (() => Date) | Date,
+  ): Promise<BookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      // 0. CWB-78: lock user row first (user -> booking -> room)
+      const [account] = await tx.$queryRaw<Array<{ locked_at: Date | null }>>(
+        Prisma.sql`SELECT locked_at FROM users WHERE id = ${userId} FOR UPDATE`,
+      );
+      if (account?.locked_at) throw accountLockedError();
+
+      // 1. Lock booking row in MySQL with FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          booking_code: string;
+          user_id: string;
+          room_id: string;
+          status: BookingStatus;
+          payment_status: PaymentStatus;
+          start_time: Date | string;
+          end_time: Date | string;
+          total_amount: Prisma.Decimal | string | number;
+          note: string | null;
+        }>
+      >(
+        Prisma.sql`SELECT id, booking_code, user_id, room_id, status, payment_status, start_time, end_time, total_amount, note FROM bookings WHERE id = ${id} AND user_id = ${userId} FOR UPDATE`,
+      );
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      }
+
+      const lockedBooking = rows[0];
+
+      if (lockedBooking.status !== BookingStatus.CONFIRMED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể đổi lịch đơn đặt phòng ở trạng thái đã xác nhận',
+          409,
+        );
+      }
+
+      if (lockedBooking.payment_status === PaymentStatus.PAID) {
+        throw new AppError(
+          'PAID_BOOKING_CANNOT_RESCHEDULE',
+          'Đơn đặt phòng đã thanh toán không thể tự đổi lịch trực tuyến. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.',
+          409,
+        );
+      }
+
+      const evaluationTime = typeof clock === 'function' ? clock() : (clock ?? new Date());
+      validateCustomerRescheduleTime(new Date(lockedBooking.start_time), evaluationTime);
+
+      // 2. Lock target room (defaults to current room)
+      const targetRoomId = input.roomId ?? lockedBooking.room_id;
+      const lockedRoom = await lockRoomRow(tx, targetRoomId);
+
+      if (lockedRoom.status === 'MAINTENANCE') {
+        throw new AppError(
+          'ROOM_NOT_AVAILABLE',
+          'Phòng đang trong trạng thái bảo trì, không thể đặt phòng',
+          409,
+        );
+      }
+
+      // 3. Validate new time slot
+      const newStartDate = new Date(input.startTime);
+      const newEndDate = new Date(input.endTime);
+      validateBookingTime(newStartDate, newEndDate, evaluationTime);
+
+      // 4. Check overlap on target room, strictly excluding this booking
+      const conflictingBookings = await tx.booking.findMany({
+        where: {
+          roomId: targetRoomId,
+          id: { not: id },
+          status: { in: [...BLOCKING_BOOKING_STATUSES] },
+          startTime: { lt: newEndDate },
+          endTime: { gt: newStartDate },
+        },
+        take: 1,
+        select: { id: true },
+      });
+
+      if (conflictingBookings.length > 0) {
+        throw new AppError(
+          'BOOKING_CONFLICT',
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+          409,
+        );
+      }
+
+      // 5. Calculate new totalAmount deterministically
+      const durationMinutes = (newEndDate.getTime() - newStartDate.getTime()) / (60 * 1000);
+      const newTotalAmount = calculateBookingTotal(lockedRoom.pricePerHour, durationMinutes);
+
+      // 6. Update booking (bookingCode is preserved)
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          roomId: targetRoomId,
+          startTime: newStartDate,
+          endTime: newEndDate,
+          totalAmount: newTotalAmount,
+          ...(input.note !== undefined ? { note: input.note } : {}),
+        },
+        select: bookingReadSelect,
+      });
+
+      // 7. Audit log
+      await recordAuditEvent(tx, {
+        actor: { id: userId, role: Role.CUSTOMER },
+        action: 'BOOKING_RESCHEDULED',
+        entityType: 'BOOKING',
+        entityId: id,
+        before: {
+          bookingCode: lockedBooking.booking_code,
+          roomId: lockedBooking.room_id,
+          startTime: new Date(lockedBooking.start_time).toISOString(),
+          endTime: new Date(lockedBooking.end_time).toISOString(),
+          totalAmount: formatAmount(lockedBooking.total_amount),
+        },
+        after: {
+          bookingCode: updated.bookingCode,
+          roomId: updated.room.id,
+          startTime: updated.startTime.toISOString(),
+          endTime: updated.endTime.toISOString(),
+          totalAmount: formatAmount(updated.totalAmount),
+        },
+      });
+
+      // 8. Enqueue outbox email and reset/remove any prior reminder
+      await tx.emailOutbox.deleteMany({
+        where: { bookingId: id, kind: 'BOOKING_REMINDER' },
+      });
+
+      await tx.emailOutbox.upsert({
+        where: {
+          kind_bookingId: {
+            kind: 'BOOKING_RESCHEDULED',
+            bookingId: id,
+          },
+        },
+        create: {
+          kind: 'BOOKING_RESCHEDULED',
+          bookingId: id,
+          status: 'QUEUED',
+          attempts: 0,
+          nextAttemptAt: evaluationTime,
+          lastError: null,
+          sentAt: null,
+        },
+        update: {
+          status: 'QUEUED',
+          attempts: 0,
+          nextAttemptAt: evaluationTime,
+          lastError: null,
+          sentAt: null,
+        },
+      });
+
+      return mapBookingRecordToDto(updated);
     });
   }
 

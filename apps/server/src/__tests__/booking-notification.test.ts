@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { BookingService } from '../services/booking.service.js';
 import { AdminBookingService } from '../services/admin-booking.service.js';
+import { EmailOutboxService } from '../services/email-outbox.service.js';
 import { BookingStatus, PaymentStatus } from '@prisma/client';
 import { BookingResponseDto } from '../types/booking.type.js';
 import { AdminBookingResponseDto } from '../types/admin-booking.type.js';
@@ -65,6 +66,11 @@ describe('Booking notification triggers (outbox)', () => {
         status: BookingStatus.CANCELLED,
         isNewlyCancelled: true,
       }),
+      rescheduleBooking: vi.fn().mockResolvedValue({
+        ...mockBooking,
+        startTime: new Date('2026-10-14T11:00:00Z'),
+        endTime: new Date('2026-10-14T13:00:00Z'),
+      }),
     };
     mockAdminBookingRepo = {
       cancelBookingForAdmin: vi.fn().mockResolvedValue(adminCancelled({ isNewlyCancelled: true })),
@@ -117,5 +123,95 @@ describe('Booking notification triggers (outbox)', () => {
     );
     await admin.cancelBooking('booking-2', 'Khách vãng lai');
     expect(outbox.kick).toHaveBeenCalledTimes(1);
+  });
+
+  it('nudges the outbox worker after a customer reschedule', async () => {
+    const { customer } = services();
+    await customer.rescheduleBooking(userId, 'booking-1', {
+      startTime: '2026-10-14T11:00:00.000Z',
+      endTime: '2026-10-14T13:00:00.000Z',
+    });
+    expect(outbox.kick).toHaveBeenCalledTimes(1);
+  });
+
+  describe('EmailOutboxService delivery dispatch (CWB-81 Finding 1 regression)', () => {
+    it('dispatches BOOKING_RESCHEDULED to sendBookingRescheduled and never to sendBookingCancellation', async () => {
+      const mockNotification = {
+        canDeliver: () => true,
+        sendBookingRescheduled: vi.fn().mockResolvedValue(true),
+        sendBookingCancellation: vi.fn().mockResolvedValue(true),
+        sendBookingConfirmation: vi.fn().mockResolvedValue(true),
+        sendBookingReminder: vi.fn().mockResolvedValue(true),
+      };
+      const service = new EmailOutboxService(mockNotification as any, {} as any);
+      const row = {
+        id: 'outbox-1',
+        kind: 'BOOKING_RESCHEDULED',
+        status: 'QUEUED',
+        booking: {
+          bookingCode: 'CS-20261108-ABCD',
+          startTime: new Date('2026-11-08T03:00:00Z'),
+          endTime: new Date('2026-11-08T05:00:00Z'),
+          totalAmount: { toFixed: () => '500000.00' },
+          paymentStatus: 'UNPAID',
+          cancellationReason: null,
+          room: { name: 'Creative Studio' },
+          user: { email: 'client@example.com', fullName: 'Nguyen Van A' },
+        },
+      };
+
+      const result = await (service as any).deliver(row);
+      expect(result).toBe(true);
+      expect(mockNotification.sendBookingRescheduled).toHaveBeenCalledTimes(1);
+      expect(mockNotification.sendBookingRescheduled).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientEmail: 'client@example.com',
+          customerName: 'Nguyen Van A',
+          bookingCode: 'CS-20261108-ABCD',
+          roomName: 'Creative Studio',
+          totalAmount: '500000.00',
+        }),
+      );
+      expect(mockNotification.sendBookingCancellation).not.toHaveBeenCalled();
+    });
+
+    it('dispatches BOOKING_CANCELLATION to sendBookingCancellation', async () => {
+      const mockNotification = {
+        canDeliver: () => true,
+        sendBookingRescheduled: vi.fn().mockResolvedValue(true),
+        sendBookingCancellation: vi.fn().mockResolvedValue(true),
+        sendBookingConfirmation: vi.fn().mockResolvedValue(true),
+        sendBookingReminder: vi.fn().mockResolvedValue(true),
+      };
+      const service = new EmailOutboxService(mockNotification as any, {} as any);
+      const row = {
+        id: 'outbox-2',
+        kind: 'BOOKING_CANCELLATION',
+        status: 'QUEUED',
+        booking: {
+          bookingCode: 'CS-20261108-ABCD',
+          startTime: new Date('2026-11-08T03:00:00Z'),
+          endTime: new Date('2026-11-08T05:00:00Z'),
+          totalAmount: { toFixed: () => '500000.00' },
+          paymentStatus: 'UNPAID',
+          cancellationReason: 'Khách bận đột xuất',
+          room: { name: 'Creative Studio' },
+          user: { email: 'client@example.com', fullName: 'Nguyen Van A' },
+        },
+      };
+
+      const result = await (service as any).deliver(row);
+      expect(result).toBe(true);
+      expect(mockNotification.sendBookingCancellation).toHaveBeenCalledTimes(1);
+      expect(mockNotification.sendBookingCancellation).toHaveBeenCalledWith(
+        expect.objectContaining({
+          recipientEmail: 'client@example.com',
+          customerName: 'Nguyen Van A',
+          bookingCode: 'CS-20261108-ABCD',
+          reason: 'Khách bận đột xuất',
+        }),
+      );
+      expect(mockNotification.sendBookingRescheduled).not.toHaveBeenCalled();
+    });
   });
 });

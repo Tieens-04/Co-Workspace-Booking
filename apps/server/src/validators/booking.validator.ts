@@ -70,3 +70,31 @@ export type CancelBookingQueryInput = z.infer<typeof cancelBookingQuerySchema>;
 
 export const cancelBookingBodySchema = z.object({}).strict();
 export type CancelBookingBodyInput = z.infer<typeof cancelBookingBodySchema>;
+
+export const rescheduleBookingParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type RescheduleBookingParamsInput = z.infer<typeof rescheduleBookingParamsSchema>;
+
+export const rescheduleBookingQuerySchema = z.object({}).strict();
+export type RescheduleBookingQueryInput = z.infer<typeof rescheduleBookingQuerySchema>;
+
+export const rescheduleBookingBodySchema = z
+  .object({
+    startTime: z.string().datetime({
+      offset: true,
+      message: 'Thời gian bắt đầu không đúng định dạng ISO 8601',
+    }),
+    endTime: z.string().datetime({
+      offset: true,
+      message: 'Thời gian kết thúc không đúng định dạng ISO 8601',
+    }),
+    roomId: z.string().uuid('ID phòng không đúng định dạng UUID').optional(),
+    note: noteSchema.optional(),
+  })
+  .strict();
+
+export type RescheduleBookingBodyInput = z.infer<typeof rescheduleBookingBodySchema>;

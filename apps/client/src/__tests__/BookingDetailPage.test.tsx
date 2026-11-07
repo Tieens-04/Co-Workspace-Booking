@@ -14,8 +14,45 @@ vi.mock('../services/booking.api', () => ({
   bookingApi: {
     getBookingById: vi.fn(),
     cancelBooking: vi.fn(),
+    rescheduleBooking: vi.fn(),
   },
 }));
+
+vi.mock('../services/room.api', () => {
+  const createSlotsForDate = (dateStr: string) => {
+    const slots = [];
+    const startOfDay = new Date(`${dateStr}T00:00:00.000+07:00`);
+    for (let i = 0; i < 48; i++) {
+      const slotStart = new Date(startOfDay.getTime() + i * 30 * 60 * 1000);
+      const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
+      slots.push({
+        startTime: slotStart.toISOString(),
+        endTime: slotEnd.toISOString(),
+        available: true,
+        status: 'AVAILABLE' as const,
+      });
+    }
+    return slots;
+  };
+
+  return {
+    roomApi: {
+      getAvailability: vi.fn().mockImplementation((roomId: string, date: string) =>
+        Promise.resolve({
+          success: true,
+          message: 'Lấy danh sách khung giờ thành công',
+          data: {
+            roomId,
+            date,
+            timezone: 'Asia/Ho_Chi_Minh',
+            slots: createSlotsForDate(date),
+            maxAdvanceDays: 30,
+          },
+        }),
+      ),
+    },
+  };
+});
 
 const validBookingId = '11111111-1111-4111-8111-111111111111';
 
@@ -47,6 +84,7 @@ describe('BookingDetailPage', () => {
   beforeEach(() => {
     vi.mocked(bookingApi.getBookingById).mockReset();
     vi.mocked(bookingApi.cancelBooking).mockReset();
+    vi.mocked(bookingApi.rescheduleBooking).mockReset();
     localStorage.clear();
     localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' }));
   });
@@ -682,6 +720,175 @@ describe('BookingDetailPage', () => {
       expect(screen.getByTestId('detail-booking-code')).toHaveTextContent('CS-20261025-WXYZ');
       expect(screen.getByTestId('booking-status-badge')).toHaveTextContent('Đã xác nhận');
       expect(screen.queryByTestId('cancel-success-banner')).not.toBeInTheDocument();
+    });
+  });
+  describe('Reschedule Booking Feature (CWB-81)', () => {
+    it('displays "Đổi lịch đặt phòng" button when booking is CONFIRMED and >= 1h away', async () => {
+      const futureStart = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({ ...mockDetailData, startTime: futureStart, endTime: futureEnd }),
+      );
+
+      renderComponent();
+
+      const rescheduleBtn = await screen.findByTestId('reschedule-booking-init-btn');
+      expect(rescheduleBtn).toBeInTheDocument();
+      expect(rescheduleBtn).not.toBeDisabled();
+    });
+
+    it('disables "Đổi lịch đặt phòng" button when booking is within 1 hour of start', async () => {
+      const nearStart = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+      const nearEnd = new Date(Date.now() + 90 * 60 * 1000).toISOString();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({ ...mockDetailData, startTime: nearStart, endTime: nearEnd }),
+      );
+
+      renderComponent();
+
+      const rescheduleBtn = await screen.findByTestId('reschedule-booking-init-btn');
+      expect(rescheduleBtn).toBeInTheDocument();
+      expect(rescheduleBtn).toBeDisabled();
+    });
+
+    it('disables "Đổi lịch đặt phòng" button when booking paymentStatus is PAID', async () => {
+      const futureStart = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: futureStart,
+          endTime: futureEnd,
+          paymentStatus: 'PAID',
+        }),
+      );
+
+      renderComponent();
+
+      const rescheduleBtn = await screen.findByTestId('reschedule-booking-init-btn');
+      expect(rescheduleBtn).toBeInTheDocument();
+      expect(rescheduleBtn).toBeDisabled();
+      expect(screen.getByTestId('reschedule-paid-note')).toHaveTextContent(
+        'Đơn đặt phòng đã thanh toán không thể tự đổi lịch trực tuyến. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.',
+      );
+    });
+
+    it('does not display "Đổi lịch đặt phòng" button when booking is CANCELLED or COMPLETED', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({ ...mockDetailData, status: 'CANCELLED' }),
+      );
+
+      renderComponent();
+
+      await screen.findByTestId('booking-detail-card');
+      expect(screen.queryByTestId('reschedule-booking-init-btn')).not.toBeInTheDocument();
+    });
+
+    it('opens reschedule dialog when "Đổi lịch đặt phòng" button is clicked', async () => {
+      const futureStart = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({ ...mockDetailData, startTime: futureStart, endTime: futureEnd }),
+      );
+
+      renderComponent();
+
+      const user = userEvent.setup();
+      const rescheduleBtn = await screen.findByTestId('reschedule-booking-init-btn');
+      await user.click(rescheduleBtn);
+
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+      expect(screen.getByTestId('reschedule-date-input')).toBeInTheDocument();
+      expect(screen.getByTestId('reschedule-confirm-btn')).toBeDisabled(); // initially disabled without selection
+    });
+    it('submits reschedule, updates booking on page, and closes dialog', async () => {
+      const futureStart = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({ ...mockDetailData, startTime: futureStart, endTime: futureEnd }),
+      );
+
+      const updatedBooking: BookingResult = {
+        ...mockDetailData,
+        startTime: '2026-10-25T08:00:00.000Z',
+        endTime: '2026-10-25T10:00:00.000Z',
+        totalAmount: '600000.00',
+        note: 'Ghi chú mới',
+      };
+      vi.mocked(bookingApi.rescheduleBooking).mockResolvedValue({
+        success: true,
+        message: 'Đổi lịch đặt phòng thành công',
+        data: updatedBooking,
+      });
+
+      renderComponent();
+
+      const user = userEvent.setup();
+      const rescheduleBtn = await screen.findByTestId('reschedule-booking-init-btn');
+      await user.click(rescheduleBtn);
+
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+
+      // Click slot to select start, and another to select range
+      // The slots in mock are from 00:00 to 23:30 (operating hours 07:00 to 22:00)
+      const slotStart = await screen.findByTestId('time-slot-08:00');
+      const slotEnd = screen.getByTestId('time-slot-10:00');
+      await user.click(slotStart);
+      await user.click(slotEnd);
+
+      const confirmBtn = screen.getByTestId('reschedule-confirm-btn');
+      expect(confirmBtn).not.toBeDisabled();
+
+      await user.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(bookingApi.rescheduleBooking).toHaveBeenCalled();
+        expect(screen.queryByTestId('reschedule-dialog-content')).not.toBeInTheDocument();
+      });
+
+      // Updated total amount on page
+      expect(screen.getByTestId('booking-total-value')).toHaveTextContent('600.000 đ');
+      expect(screen.getByTestId('booking-note-value')).toHaveTextContent('Ghi chú mới');
+    });
+
+    it('displays error notice in dialog when reschedule fails with 409 conflict', async () => {
+      const futureStart = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({ ...mockDetailData, startTime: futureStart, endTime: futureEnd }),
+      );
+
+      const err: any = new Error('Khung giờ này đã có người đặt');
+      err.response = {
+        status: 409,
+        data: {
+          success: false,
+          code: 'BOOKING_CONFLICT',
+          message: 'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+        },
+      };
+      vi.mocked(bookingApi.rescheduleBooking).mockRejectedValue(err);
+
+      renderComponent();
+
+      const user = userEvent.setup();
+      const rescheduleBtn = await screen.findByTestId('reschedule-booking-init-btn');
+      await user.click(rescheduleBtn);
+
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+
+      const slotStart = await screen.findByTestId('time-slot-08:00');
+      const slotEnd = screen.getByTestId('time-slot-10:00');
+      await user.click(slotStart);
+      await user.click(slotEnd);
+
+      const confirmBtn = screen.getByTestId('reschedule-confirm-btn');
+      await user.click(confirmBtn);
+
+      const errorNotice = await screen.findByTestId('reschedule-error-notice');
+      expect(errorNotice).toBeInTheDocument();
+      expect(errorNotice).toHaveTextContent('Khung giờ này đã có người đặt');
+      expect(screen.getByTestId('reschedule-dialog-content')).toBeInTheDocument();
     });
   });
 });

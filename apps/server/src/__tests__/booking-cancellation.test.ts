@@ -251,6 +251,7 @@ describe('Customer Booking Cancellation Unit Tests (PATCH /api/v1/bookings/:id/c
         findManyAndCountForUser: vi.fn(),
         findByIdForUser: vi.fn(),
         cancelBooking: vi.fn().mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
+        rescheduleBooking: vi.fn(),
       };
       const service = new BookingService(mockRepo);
       const fixedNow = new Date('2026-10-25T08:00:00.000Z');
@@ -267,6 +268,7 @@ describe('Customer Booking Cancellation Unit Tests (PATCH /api/v1/bookings/:id/c
         findManyAndCountForUser: vi.fn(),
         findByIdForUser: vi.fn(),
         cancelBooking: vi.fn().mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
+        rescheduleBooking: vi.fn(),
       };
       const service = new BookingService(mockRepo);
       const clockFn = () => new Date('2026-10-25T08:00:00.000Z');
@@ -283,6 +285,7 @@ describe('Customer Booking Cancellation Unit Tests (PATCH /api/v1/bookings/:id/c
         findManyAndCountForUser: vi.fn(),
         findByIdForUser: vi.fn(),
         cancelBooking: vi.fn().mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
+        rescheduleBooking: vi.fn(),
       };
       const service = new BookingService(mockRepo);
 
