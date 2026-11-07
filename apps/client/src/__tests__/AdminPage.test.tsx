@@ -310,10 +310,74 @@ describe('AdminPage - Room Management & Form', () => {
         'Sức chứa phải là số nguyên dương',
       );
       expect(screen.getByTestId('error-pricePerHour')).toHaveTextContent(
-        'Đơn giá phải là số tiền không âm với tối đa 2 chữ số thập phân',
+        'Đơn giá phải lớn hơn 0 với tối đa 2 chữ số thập phân',
       );
 
       expect(adminRoomApi.createRoom).not.toHaveBeenCalled();
+    });
+
+    it('rejects pricePerHour <= 0 on client validation (AC1)', async () => {
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), {
+        target: { name: 'name', value: 'Phòng Mới' },
+      });
+      fireEvent.change(screen.getByLabelText(/Sức chứa/i), {
+        target: { name: 'capacity', value: '4' },
+      });
+      fireEvent.change(screen.getByLabelText(/Đơn giá mỗi giờ/i), {
+        target: { name: 'pricePerHour', value: '0' },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      expect(screen.getByTestId('error-pricePerHour')).toHaveTextContent(
+        'Đơn giá phải lớn hơn 0 với tối đa 2 chữ số thập phân',
+      );
+      expect(adminRoomApi.createRoom).not.toHaveBeenCalled();
+    });
+
+    it('displays error at name field when API returns 409 ROOM_NAME_CONFLICT (AC2, AC3)', async () => {
+      vi.mocked(adminRoomApi.createRoom).mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            code: 'ROOM_NAME_CONFLICT',
+            message: 'Tên phòng đã tồn tại',
+            details: [{ field: 'name', message: 'Tên phòng đã tồn tại' }],
+          },
+        },
+      });
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), {
+        target: { name: 'name', value: 'Phòng Họp Ban Giám Đốc' },
+      });
+      fireEvent.change(screen.getByLabelText(/Sức chứa/i), {
+        target: { name: 'capacity', value: '10' },
+      });
+      fireEvent.change(screen.getByLabelText(/Đơn giá mỗi giờ/i), {
+        target: { name: 'pricePerHour', value: '250000.00' },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('error-name')).toHaveTextContent('Tên phòng đã tồn tại');
+      });
     });
 
     it('manages dynamic image URLs: first image is auto-primary, removing primary promotes first remaining', async () => {

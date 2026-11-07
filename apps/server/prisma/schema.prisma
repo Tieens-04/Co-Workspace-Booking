@@ -94,7 +94,7 @@ model PasswordResetToken {
 
 model Room {
   id           String     @id @default(uuid())
-  name         String
+  name         String     @unique
   description  String?    @db.Text
   capacity     Int
   pricePerHour Decimal    @map("price_per_hour") @db.Decimal(10, 2)

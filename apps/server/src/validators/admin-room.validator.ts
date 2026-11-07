@@ -61,10 +61,10 @@ const pricePerHourSchema = z
         });
         return z.NEVER;
       }
-      if (val < 0) {
+      if (val <= 0) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Đơn giá phải là số tiền không âm với tối đa 2 chữ số thập phân',
+          message: 'Đơn giá phải lớn hơn 0 với tối đa 2 chữ số thập phân',
         });
         return z.NEVER;
       }
@@ -79,16 +79,31 @@ const pricePerHourSchema = z
       strVal = val.toFixed(2);
     } else {
       strVal = val.trim();
-      if (!/^\d+(\.\d{1,2})?$/.test(strVal)) {
+      if (!/^\d+(\.\d+)?$/.test(strVal)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: 'Đơn giá phải là số tiền không âm với tối đa 2 chữ số thập phân',
+          message: 'Đơn giá phải lớn hơn 0 với tối đa 2 chữ số thập phân',
+        });
+        return z.NEVER;
+      }
+      const parts = strVal.split('.');
+      if (parts.length > 1 && parts[1].length > 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Đơn giá tối đa 2 chữ số thập phân',
         });
         return z.NEVER;
       }
     }
 
     const cents = moneyToCents(strVal);
+    if (cents <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Đơn giá phải lớn hơn 0 với tối đa 2 chữ số thập phân',
+      });
+      return z.NEVER;
+    }
     if (!Number.isSafeInteger(cents) || cents > ROOM_PRICE_MAX_CENTS) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

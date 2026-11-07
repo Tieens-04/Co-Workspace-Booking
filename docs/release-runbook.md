@@ -43,6 +43,13 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
 
    Kiểm tra file khác rỗng và kết thúc bằng dòng `-- Dump completed`. Sao chép ra ngoài host (kho lưu trữ có mã hóa); không commit file dump.
 
+   - **Lưu ý migration CWB-76 (`20261107140000_cwb76_room_unique_name`):** Trước khi deploy, kiểm tra phòng trùng tên trong database:
+     ```bash
+     docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" \
+       -e "SELECT name, COUNT(*) AS count FROM rooms GROUP BY name HAVING count > 1;"
+     ```
+     Nếu có kết quả trả về, thực hiện đổi tên các phòng trùng lặp (ví dụ nối thêm hậu tố phân biệt) trước khi chạy `prisma migrate deploy` để tránh MySQL văng lỗi `ERROR 1062 (23000): Duplicate entry` làm gián đoạn triển khai.
+
 3. **Triển khai:**
 
    ```bash
