@@ -157,6 +157,30 @@ describe('AdminGuestBookingForm Component Tests', () => {
     expect(screen.getByText('Vui lòng chọn phòng làm việc')).toBeInTheDocument();
   });
 
+  it('validates phone number format ("abc") client-side and has inputMode="tel" (CWB-74)', async () => {
+    const user = userEvent.setup();
+    renderComponent();
+
+    const phoneInput = screen.getByTestId('guest-phone-input');
+    expect(phoneInput).toHaveAttribute('inputMode', 'tel');
+
+    await user.type(screen.getByTestId('guest-name-input'), 'Khách A');
+    await user.type(phoneInput, 'abc');
+
+    const submitBtn = screen.getByTestId('guest-submit-btn');
+    await user.click(submitBtn);
+
+    expect(screen.getByText('Số điện thoại không đúng định dạng')).toBeInTheDocument();
+    expect(adminBookingApi.createGuestBooking).not.toHaveBeenCalled();
+
+    // Verify punctuation-only input is rejected
+    await user.clear(phoneInput);
+    await user.type(phoneInput, '- .');
+    await user.click(submitBtn);
+    expect(screen.getByText('Số điện thoại không đúng định dạng')).toBeInTheDocument();
+    expect(adminBookingApi.createGuestBooking).not.toHaveBeenCalled();
+  });
+
   it('submits valid guest booking payload and displays success summary', async () => {
     const slot = getFutureSlot(4, 2);
     const mockCreatedBooking: AdminBookingItem = {

@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { BookingStatus, PaymentMethod } from '@prisma/client';
 import { positiveIntSchema, MYSQL_INT_MAX, isValidCalendarDate } from './room.validator.js';
+import { guestPhoneSchema } from './phone.validator.js';
 
 const noteSchema = z
   .union([z.string().trim().max(500, 'Ghi chú không được vượt quá 500 ký tự'), z.null()])
@@ -65,11 +66,7 @@ export const createGuestBookingSchema = z
       .trim()
       .min(1, 'Tên khách hàng không được để trống')
       .max(191, 'Tên khách hàng không được vượt quá 191 ký tự'),
-    guestPhone: z
-      .string()
-      .trim()
-      .min(1, 'Số điện thoại không được để trống')
-      .max(191, 'Số điện thoại không được vượt quá 191 ký tự'),
+    guestPhone: guestPhoneSchema,
     note: noteSchema.default(null),
   })
   .strict();

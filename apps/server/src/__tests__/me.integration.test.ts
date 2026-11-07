@@ -101,6 +101,7 @@ describe('Account self-service /api/v1/me (CWB-63, real MySQL)', () => {
     [{ passwordHash: 'x' }],
     [{}],
     [{ fullName: '   ' }],
+    [{ phoneNumber: 'abc' }],
   ])('rejects mass assignment or empty updates %j with 400', async (body) => {
     const { user, token } = await createUser();
 
@@ -114,6 +115,20 @@ describe('Account self-service /api/v1/me (CWB-63, real MySQL)', () => {
     const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
     expect(stored.role).toBe(Role.CUSTOMER);
     expect(stored.email).toBe(user.email);
+  });
+
+  it('normalizes phoneNumber and saves valid Vietnamese format (CWB-74)', async () => {
+    const { user, token } = await createUser();
+
+    const res = await request(app)
+      .patch('/api/v1/me')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ phoneNumber: '+84 912.345-678' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toMatchObject({ phoneNumber: '+84912345678' });
+    const stored = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
+    expect(stored.phoneNumber).toBe('+84912345678');
   });
 
   it('changes the password, returns a fresh token and lets the user log in with it', async () => {

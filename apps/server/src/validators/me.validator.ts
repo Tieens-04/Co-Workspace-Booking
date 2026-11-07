@@ -1,17 +1,13 @@
 import { z } from 'zod';
 import { passwordSchema } from './auth.validator.js';
+import { updateMePhoneSchema } from './phone.validator.js';
 
 /** Only contact details are editable; role, email, id and password hash are never accepted here. */
 export const updateMeBodySchema = z
   .object({
     fullName: z.string().trim().min(1, 'Họ và tên không được để trống').max(191),
     // Empty string clears the phone number.
-    phoneNumber: z
-      .string()
-      .trim()
-      .max(191)
-      .nullable()
-      .transform((value) => (value ? value : null)),
+    phoneNumber: updateMePhoneSchema,
   })
   .partial()
   .strict()
