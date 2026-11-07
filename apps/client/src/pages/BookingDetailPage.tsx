@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { EmptyState, ErrorState } from '../components/common/EmptyState';
 import { Notice } from '../components/booking/Notice';
+import { RescheduleBookingDialog } from '../components/booking/RescheduleBookingDialog';
 import { CopyCodeButton } from '../components/booking/CopyCodeButton';
 import { DetailList, DetailRow } from '../components/booking/DetailList';
 import { BookingTimeRange } from '../components/booking/BookingTimeRange';
@@ -50,6 +51,7 @@ export const BookingDetailPage: React.FC = () => {
   const { principal } = useAuth();
   const { showToast } = useToast();
 
+  const [isRescheduleOpen, setIsRescheduleOpen] = useState(false);
   const [state, setState] = useState<BookingDetailState>(() => ({
     sessionUserId: principal?.id,
     bookingId: id,
@@ -285,12 +287,11 @@ export const BookingDetailPage: React.FC = () => {
   );
 
   // Display-only hint derived from the ≥ 1 h self-cancel rule; the server decides.
-  const cancelDeadline = (() => {
-    if (!effectiveBooking) return null;
-    const startMs = new Date(effectiveBooking.startTime).getTime();
-    if (Number.isNaN(startMs)) return null;
-    return formatVietnamDateTime(new Date(startMs - 60 * 60 * 1000).toISOString());
-  })();
+  const startMs = effectiveBooking ? new Date(effectiveBooking.startTime).getTime() : NaN;
+  const isWithin1Hour = Number.isFinite(startMs) && Date.now() >= startMs - 60 * 60 * 1000;
+  const cancelDeadline = Number.isFinite(startMs)
+    ? formatVietnamDateTime(new Date(startMs - 60 * 60 * 1000).toISOString())
+    : null;
 
   const handleCancelDialogOpenChange = (open: boolean) => {
     // Keep the dialog open while the cancel request is in flight.
@@ -484,7 +485,7 @@ export const BookingDetailPage: React.FC = () => {
                   data-testid="cancellation-section"
                 >
                   <h2 id="cancellation-heading" className="text-h3 font-bold">
-                    Hủy đặt phòng
+                    Quản lý đặt phòng
                   </h2>
                   <Notice tone="info">
                     <strong className="font-semibold">Chính sách hủy đặt phòng:</strong> Quý khách
@@ -501,7 +502,17 @@ export const BookingDetailPage: React.FC = () => {
                     </p>
                   )}
 
-                  <div>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => setIsRescheduleOpen(true)}
+                      disabled={isWithin1Hour || effectiveBooking.paymentStatus === 'PAID'}
+                      data-testid="reschedule-booking-init-btn"
+                    >
+                      Đổi lịch đặt phòng
+                    </Button>
+
                     <Button
                       type="button"
                       variant="outline"
@@ -518,6 +529,25 @@ export const BookingDetailPage: React.FC = () => {
                       Hủy đặt phòng
                     </Button>
                   </div>
+
+                  {effectiveBooking.paymentStatus === 'PAID' && (
+                    <p className="text-xs text-muted-foreground" data-testid="reschedule-paid-note">
+                      * Đơn đặt phòng đã thanh toán không thể tự đổi lịch trực tuyến. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.
+                    </p>
+                  )}
+
+                  <RescheduleBookingDialog
+                    isOpen={isRescheduleOpen}
+                    onOpenChange={setIsRescheduleOpen}
+                    booking={effectiveBooking}
+                    onSuccess={(updatedBooking) => {
+                      setState((prev) => ({
+                        ...prev,
+                        booking: updatedBooking,
+                      }));
+                      showToast('Đổi lịch đặt phòng thành công', 'success');
+                    }}
+                  />
 
                   <AlertDialog
                     open={isCancelDialogOpen}

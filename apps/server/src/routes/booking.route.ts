@@ -9,6 +9,9 @@ import {
   cancelBookingParamsSchema,
   cancelBookingQuerySchema,
   cancelBookingBodySchema,
+  rescheduleBookingParamsSchema,
+  rescheduleBookingQuerySchema,
+  rescheduleBookingBodySchema,
 } from '../validators/booking.validator.js';
 import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
@@ -27,6 +30,14 @@ router.post(
   createBookingRateLimiter,
   validateBody(createBookingSchema),
   bookingController.createBooking,
+);
+router.patch(
+  '/:id',
+  createBookingRateLimiter,
+  validateParams(rescheduleBookingParamsSchema),
+  validateQuery(rescheduleBookingQuerySchema),
+  validateBody(rescheduleBookingBodySchema),
+  bookingController.rescheduleBooking,
 );
 router.patch(
   '/:id/cancel',

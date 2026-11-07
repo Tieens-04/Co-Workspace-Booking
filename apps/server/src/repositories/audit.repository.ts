@@ -8,6 +8,7 @@ export interface AuditActor {
 }
 
 export const AUDIT_ACTIONS = [
+  'BOOKING_RESCHEDULED',
   'BOOKING_GUEST_CREATED',
   'BOOKING_PAYMENT_CONFIRMED',
   'BOOKING_CANCELLED_BY_ADMIN',

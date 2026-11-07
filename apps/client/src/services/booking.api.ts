@@ -5,6 +5,8 @@ import {
   GetBookingsParams,
   GetBookingsResponse,
   GetBookingDetailResponse,
+  RescheduleBookingPayload,
+  RescheduleBookingResponse,
 } from '../types/booking';
 
 export const bookingApi = {
@@ -35,6 +37,21 @@ export const bookingApi = {
     const response = await apiClient.get<GetBookingDetailResponse>(`/bookings/${id}`, {
       signal,
     });
+    return response.data;
+  },
+
+  rescheduleBooking: async (
+    id: string,
+    payload: RescheduleBookingPayload,
+    signal?: AbortSignal,
+  ): Promise<RescheduleBookingResponse> => {
+    const response = await apiClient.patch<RescheduleBookingResponse>(
+      `/bookings/${id}`,
+      payload,
+      {
+        signal,
+      },
+    );
     return response.data;
   },
 
