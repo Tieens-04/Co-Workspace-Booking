@@ -53,14 +53,12 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
   });
 
   afterAll(async () => {
-    if (createdRoomId) {
-      await prisma.booking.deleteMany({
-        where: { roomId: createdRoomId },
-      });
-      await prisma.room.deleteMany({
-        where: { id: createdRoomId },
-      });
-    }
+    await prisma.booking.deleteMany({
+      where: { room: { name: { startsWith: testPrefix } } },
+    });
+    await prisma.room.deleteMany({
+      where: { name: { startsWith: testPrefix } },
+    });
 
     if (testUserId) {
       await prisma.booking.deleteMany({
@@ -137,6 +135,38 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       expect(primaryImg).toBeDefined();
       expect(primaryImg!.imageUrl).toBe('https://images.example.com/p1.jpg');
     });
+
+    it('rejects creating room with pricePerHour <= 0', async () => {
+      for (const invalidPrice of [0, '0', '0.00', -50, '-10.00']) {
+        const res = await request(app)
+          .post('/api/v1/admin/rooms')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            name: `${testPrefix}_Zero_Price_${randomUUID()}`,
+            capacity: 4,
+            pricePerHour: invalidPrice,
+          });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+      }
+    });
+
+    it('rejects creating room with duplicate name (case-insensitive, trimmed)', async () => {
+      const duplicateRes = await request(app)
+        .post('/api/v1/admin/rooms')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: `  ${testPrefix.toUpperCase()}_ROOM_MAIN  `,
+          capacity: 4,
+          pricePerHour: '150.00',
+        });
+
+      expect(duplicateRes.status).toBe(409);
+      expect(duplicateRes.body.code).toBe('ROOM_NAME_CONFLICT');
+      expect(duplicateRes.body.message).toBe('Tên phòng đã tồn tại');
+      expect(duplicateRes.body.details).toEqual([{ field: 'name', message: 'Tên phòng đã tồn tại' }]);
+    });
   });
 
   describe('PATCH /api/v1/admin/rooms/:id (Atomic Update & Sync)', () => {
@@ -183,6 +213,54 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       expect(dbRoom!.images).toHaveLength(1);
       expect(dbRoom!.images[0].imageUrl).toBe('https://images.example.com/new_cover.jpg');
       expect(dbRoom!.images[0].publicId).toBeNull();
+    });
+
+    it('rejects updating room with pricePerHour <= 0', async () => {
+      for (const invalidPrice of [0, '0', '0.00', -20]) {
+        const res = await request(app)
+          .patch(`/api/v1/admin/rooms/${createdRoomId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ pricePerHour: invalidPrice });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+      }
+    });
+
+    it('rejects updating room name to an existing room name (case-insensitive, trimmed)', async () => {
+      const secondRoomRes = await request(app)
+        .post('/api/v1/admin/rooms')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: `${testPrefix}_Second_Room`,
+          capacity: 6,
+          pricePerHour: '200.00',
+        });
+      expect(secondRoomRes.status).toBe(201);
+      const secondRoomId = secondRoomRes.body.data.id;
+
+      const conflictRes = await request(app)
+        .patch(`/api/v1/admin/rooms/${secondRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: `  ${testPrefix.toUpperCase()}_ROOM_MAIN_UPDATED  `,
+        });
+
+      expect(conflictRes.status).toBe(409);
+      expect(conflictRes.body.code).toBe('ROOM_NAME_CONFLICT');
+      expect(conflictRes.body.message).toBe('Tên phòng đã tồn tại');
+      expect(conflictRes.body.details).toEqual([{ field: 'name', message: 'Tên phòng đã tồn tại' }]);
+
+      // Updating room without changing name succeeds
+      const keepNameRes = await request(app)
+        .patch(`/api/v1/admin/rooms/${secondRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: `${testPrefix}_Second_Room`,
+          capacity: 8,
+        });
+      expect(keepNameRes.status).toBe(200);
+      expect(keepNameRes.body.data.capacity).toBe(8);
     });
 
     it('rejects an invalid amenity before changing room scalars', async () => {

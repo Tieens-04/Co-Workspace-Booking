@@ -164,6 +164,26 @@ export interface RoomRepositoryContract {
   ): Promise<RoomAvailabilityRecord | null>;
 }
 
+export function isRoomNameConflictError(err: unknown): boolean {
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+    const target = err.meta?.target;
+    if (typeof target === 'string') {
+      const lower = target.toLowerCase();
+      return lower.includes('rooms_name_key') || lower === 'name' || lower.endsWith('.name');
+    }
+    if (Array.isArray(target)) {
+      return target.some(
+        (t) =>
+          typeof t === 'string' &&
+          (t.toLowerCase() === 'name' ||
+            t.toLowerCase().includes('rooms_name_key') ||
+            t.toLowerCase().endsWith('.name')),
+      );
+    }
+  }
+  return false;
+}
+
 export class RoomRepository implements RoomRepositoryContract {
   buildWhere(filter: FindRoomsFilter): Prisma.RoomWhereInput {
     const where: Prisma.RoomWhereInput = {};
@@ -243,6 +263,8 @@ export class RoomRepository implements RoomRepositoryContract {
 
   async createWithRelations(data: CreateRoomRepoInput): Promise<RoomDetailRecord> {
     return prisma.$transaction(async (tx) => {
+      const trimmedName = data.name.trim();
+
       if (data.amenityIds && data.amenityIds.length > 0) {
         const existingAmenities = await tx.amenity.findMany({
           where: { id: { in: data.amenityIds } },
@@ -258,36 +280,46 @@ export class RoomRepository implements RoomRepositoryContract {
       }
 
       const createdAt = new Date();
-      const created = await tx.room.create({
-        data: {
-          name: data.name,
-          description: data.description ?? null,
-          capacity: data.capacity,
-          pricePerHour: new Prisma.Decimal(data.pricePerHour),
-          status: RoomStatus.AVAILABLE,
-          createdAt,
-          statusHistory: {
-            create: { status: RoomStatus.AVAILABLE, effectiveAt: createdAt },
+      let created: RoomDetailRecord;
+      try {
+        created = await tx.room.create({
+          data: {
+            name: trimmedName,
+            description: data.description ?? null,
+            capacity: data.capacity,
+            pricePerHour: new Prisma.Decimal(data.pricePerHour),
+            status: RoomStatus.AVAILABLE,
+            createdAt,
+            statusHistory: {
+              create: { status: RoomStatus.AVAILABLE, effectiveAt: createdAt },
+            },
+            amenities:
+              data.amenityIds && data.amenityIds.length > 0
+                ? {
+                    create: data.amenityIds.map((amenityId) => ({ amenityId })),
+                  }
+                : undefined,
+            images:
+              data.images && data.images.length > 0
+                ? {
+                    create: data.images.map((img) => ({
+                      imageUrl: img.imageUrl,
+                      isPrimary: img.isPrimary,
+                      publicId: null,
+                    })),
+                  }
+                : undefined,
           },
-          amenities:
-            data.amenityIds && data.amenityIds.length > 0
-              ? {
-                  create: data.amenityIds.map((amenityId) => ({ amenityId })),
-                }
-              : undefined,
-          images:
-            data.images && data.images.length > 0
-              ? {
-                  create: data.images.map((img) => ({
-                    imageUrl: img.imageUrl,
-                    isPrimary: img.isPrimary,
-                    publicId: null,
-                  })),
-                }
-              : undefined,
-        },
-        select: roomDetailSelect,
-      });
+          select: roomDetailSelect,
+        });
+      } catch (err) {
+        if (isRoomNameConflictError(err)) {
+          throw new AppError('ROOM_NAME_CONFLICT', 'Tên phòng đã tồn tại', 409, [
+            { field: 'name', message: 'Tên phòng đã tồn tại' },
+          ]);
+        }
+        throw err;
+      }
 
       return created;
     });
@@ -351,7 +383,9 @@ export class RoomRepository implements RoomRepositoryContract {
       }
 
       const scalarUpdate: Prisma.RoomUpdateInput = {};
-      if (data.name !== undefined) scalarUpdate.name = data.name;
+      if (data.name !== undefined) {
+        scalarUpdate.name = data.name.trim();
+      }
       if (data.description !== undefined) scalarUpdate.description = data.description;
       if (data.capacity !== undefined) scalarUpdate.capacity = data.capacity;
       if (data.pricePerHour !== undefined) {
@@ -374,10 +408,19 @@ export class RoomRepository implements RoomRepositoryContract {
       }
 
       if (Object.keys(scalarUpdate).length > 0) {
-        await tx.room.update({
-          where: { id },
-          data: scalarUpdate,
-        });
+        try {
+          await tx.room.update({
+            where: { id },
+            data: scalarUpdate,
+          });
+        } catch (err) {
+          if (isRoomNameConflictError(err)) {
+            throw new AppError('ROOM_NAME_CONFLICT', 'Tên phòng đã tồn tại', 409, [
+              { field: 'name', message: 'Tên phòng đã tồn tại' },
+            ]);
+          }
+          throw err;
+        }
       }
 
       if (data.auditActor && data.status !== undefined && data.status !== lockedRoom.status) {

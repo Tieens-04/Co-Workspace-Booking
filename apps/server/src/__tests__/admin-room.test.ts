@@ -277,7 +277,7 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       },
     );
 
-    it.each([-10, 'not-a-number', '10.555', 100000000])(
+    it.each([0, '0', '0.00', -10, '-10.00', 'not-a-number', '10.555', 100000000])(
       'rejects invalid pricePerHour: %s',
       async (pricePerHour) => {
         const res = await request(app)
@@ -293,6 +293,53 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
         expect(res.body.code).toBe('VALIDATION_ERROR');
       },
     );
+
+    it.each([10.555, '10.555'])(
+      'returns consistent decimal limit message for number and string on POST: %s',
+      async (pricePerHour) => {
+        const res = await request(app)
+          .post('/api/v1/admin/rooms')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            name: 'Valid Name',
+            capacity: 4,
+            pricePerHour,
+          });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+        expect(res.body.details).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              field: 'pricePerHour',
+              message: 'Đơn giá tối đa 2 chữ số thập phân',
+            }),
+          ]),
+        );
+      },
+    );
+
+    it('returns 409 ROOM_NAME_CONFLICT when roomRepository throws duplicate name error', async () => {
+      vi.mocked(roomRepository.createWithRelations).mockRejectedValueOnce(
+        new AppError('ROOM_NAME_CONFLICT', 'Tên phòng đã tồn tại', 409, [
+          { field: 'name', message: 'Tên phòng đã tồn tại' },
+        ]),
+      );
+
+      const res = await request(app)
+        .post('/api/v1/admin/rooms')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          name: 'Existing Boardroom',
+          capacity: 4,
+          pricePerHour: '100.00',
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ROOM_NAME_CONFLICT');
+      expect(res.body.message).toBe('Tên phòng đã tồn tại');
+      expect(res.body.details).toEqual([{ field: 'name', message: 'Tên phòng đã tồn tại' }]);
+    });
 
     it('rejects duplicate amenityIds', async () => {
       const res = await request(app)
@@ -467,6 +514,58 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
         images: [],
         auditActor: { id: 'admin-uuid-1', role: Role.ADMIN },
       });
+    });
+
+    it.each([0, '0', '0.00', -10, '-10.00', 'not-a-number', '10.555', 100000000])(
+      'rejects invalid pricePerHour on PATCH: %s',
+      async (pricePerHour) => {
+        const res = await request(app)
+          .patch(`/api/v1/admin/rooms/${roomId1}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ pricePerHour });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+      },
+    );
+
+    it.each([10.555, '10.555'])(
+      'returns consistent decimal limit message on PATCH: %s',
+      async (pricePerHour) => {
+        const res = await request(app)
+          .patch(`/api/v1/admin/rooms/${roomId1}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ pricePerHour });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('VALIDATION_ERROR');
+        expect(res.body.details).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              field: 'pricePerHour',
+              message: 'Đơn giá tối đa 2 chữ số thập phân',
+            }),
+          ]),
+        );
+      },
+    );
+
+    it('returns 409 ROOM_NAME_CONFLICT when updating room to an existing room name', async () => {
+      vi.mocked(roomRepository.updateWithRelations).mockRejectedValueOnce(
+        new AppError('ROOM_NAME_CONFLICT', 'Tên phòng đã tồn tại', 409, [
+          { field: 'name', message: 'Tên phòng đã tồn tại' },
+        ]),
+      );
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ name: 'Another Existing Room' });
+
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('ROOM_NAME_CONFLICT');
+      expect(res.body.message).toBe('Tên phòng đã tồn tại');
+      expect(res.body.details).toEqual([{ field: 'name', message: 'Tên phòng đã tồn tại' }]);
     });
 
     it('rejects empty body {} on PATCH', async () => {

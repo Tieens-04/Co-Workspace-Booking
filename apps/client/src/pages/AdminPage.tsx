@@ -438,8 +438,8 @@ export const AdminPage: React.FC = () => {
     }
 
     const priceStr = formData.pricePerHour.toString().trim();
-    if (!priceStr || !/^\d+(\.\d{1,2})?$/.test(priceStr)) {
-      errors.pricePerHour = 'Đơn giá phải là số tiền không âm với tối đa 2 chữ số thập phân';
+    if (!priceStr || !/^\d+(\.\d{1,2})?$/.test(priceStr) || Number(priceStr) <= 0) {
+      errors.pricePerHour = 'Đơn giá phải lớn hơn 0 với tối đa 2 chữ số thập phân';
     }
 
     if (formData.images.length > 0) {
@@ -553,6 +553,10 @@ export const AdminPage: React.FC = () => {
       const serverDetails = err.response?.data?.details;
       const serverMessage = err.response?.data?.message || 'Đã có lỗi xảy ra khi lưu phòng.';
       const mapped: AdminFormErrors = { general: serverMessage };
+
+      if (err.response?.data?.code === 'ROOM_NAME_CONFLICT') {
+        mapped.name = serverMessage;
+      }
 
       if (Array.isArray(serverDetails)) {
         for (const item of serverDetails) {
