@@ -3,10 +3,24 @@ import { CircleAlert, LoaderCircle, RotateCcw, RotateCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/common/Field';
-import { Checkbox } from '@/components/common/NativeSelect';
+import { Checkbox, NativeSelect } from '@/components/common/NativeSelect';
 import type { Amenity } from '../../types/room';
-import { MYSQL_INT_MAX, type RoomFilterFieldErrors } from '../../utils/roomFilters';
+import {
+  MYSQL_INT_MAX,
+  getVietnamTodayString,
+  type RoomFilterFieldErrors,
+} from '../../utils/roomFilters';
 import { AmenityIcon } from './AmenityIcon';
+
+const generateHalfHourSlots = (startHour: number, endHour: number) =>
+  Array.from({ length: (endHour - startHour) * 2 + 1 }, (_, i) => {
+    const h = startHour + Math.floor(i / 2);
+    const m = i % 2 === 0 ? '00' : '30';
+    return `${String(h).padStart(2, '0')}:${m}`;
+  });
+
+const START_TIMES = generateHalfHourSlots(7, 21);
+const END_TIMES = generateHalfHourSlots(8, 22);
 
 export interface RoomFiltersProps {
   capacity: string;
@@ -15,6 +29,13 @@ export interface RoomFiltersProps {
   onCapacityChange: (value: string) => void;
   onMinPriceChange: (value: string) => void;
   onMaxPriceChange: (value: string) => void;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
+  onDateChange?: (value: string) => void;
+  onStartTimeChange?: (value: string) => void;
+  onEndTimeChange?: (value: string) => void;
+  onClearSlot?: () => void;
   errors: RoomFilterFieldErrors;
   amenities: Amenity[];
   loadingAmenities: boolean;
@@ -45,6 +66,13 @@ export function RoomFilters({
   onCapacityChange,
   onMinPriceChange,
   onMaxPriceChange,
+  date,
+  startTime,
+  endTime,
+  onDateChange,
+  onStartTimeChange,
+  onEndTimeChange,
+  onClearSlot,
   errors,
   amenities,
   loadingAmenities,
@@ -86,6 +114,85 @@ export function RoomFilters({
           )}
         </div>
       )}
+
+      {/* Date & Time Slot Availability Filter */}
+      <div className="grid gap-2">
+        <div className="flex items-baseline justify-between gap-2">
+          <span className="text-sm font-medium">Khung giờ cần tìm (Tùy chọn)</span>
+          {(date || startTime || endTime) && onClearSlot && (
+            <button
+              type="button"
+              onClick={onClearSlot}
+              className="text-xs text-muted-foreground transition-colors hover:text-foreground"
+            >
+              Xóa khung giờ
+            </button>
+          )}
+        </div>
+        <div className="grid gap-2">
+          <div>
+            <label htmlFor="slot-date-filter" className="sr-only">
+              Ngày cần đặt
+            </label>
+            <Input
+              id="slot-date-filter"
+              type="date"
+              min={getVietnamTodayString()}
+              value={date ?? ''}
+              onChange={(e) => onDateChange?.(e.target.value)}
+              aria-label="Ngày cần tìm phòng"
+              aria-invalid={errors.slot ? true : undefined}
+              aria-describedby={errors.slot ? 'slot-error' : undefined}
+            />
+          </div>
+          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+            <div className="min-w-0">
+              <label htmlFor="slot-start-time-filter" className="sr-only">
+                Giờ bắt đầu
+              </label>
+              <NativeSelect
+                id="slot-start-time-filter"
+                value={startTime ?? ''}
+                onChange={(e) => onStartTimeChange?.(e.target.value)}
+                aria-label="Giờ bắt đầu"
+                aria-invalid={errors.slot ? true : undefined}
+                aria-describedby={errors.slot ? 'slot-error' : undefined}
+              >
+                <option value="">Giờ bắt đầu</option>
+                {START_TIMES.map((time) => (
+                  <option key={time} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <span aria-hidden="true" className="text-muted-foreground">
+              –
+            </span>
+            <div className="min-w-0">
+              <label htmlFor="slot-end-time-filter" className="sr-only">
+                Giờ kết thúc
+              </label>
+              <NativeSelect
+                id="slot-end-time-filter"
+                value={endTime ?? ''}
+                onChange={(e) => onEndTimeChange?.(e.target.value)}
+                aria-label="Giờ kết thúc"
+                aria-invalid={errors.slot ? true : undefined}
+                aria-describedby={errors.slot ? 'slot-error' : undefined}
+              >
+                <option value="">Giờ kết thúc</option>
+                {END_TIMES.map((time) => (
+                  <option key={time} value={time}>
+                    {time}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+          </div>
+        </div>
+        {errors.slot && <FilterError id="slot-error">{errors.slot}</FilterError>}
+      </div>
 
       <Field
         id="capacity-filter"

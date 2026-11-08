@@ -18,7 +18,11 @@ import {
 import { AppError } from '../utils/error.util.js';
 import { getDayBounds, generateAvailabilitySlots } from '../utils/room-availability.util.js';
 import { ENV } from '../config/env.config.js';
-import { bookingHorizonError, getBookingHorizonEnd } from '../utils/booking-time.util.js';
+import {
+  bookingHorizonError,
+  getBookingHorizonEnd,
+  validateBookingTime,
+} from '../utils/booking-time.util.js';
 import { BUSINESS_TIMEZONE } from '../utils/booking-code.util.js';
 
 export function formatPrice(price: unknown): string {
@@ -88,6 +92,12 @@ export class RoomService {
   constructor(private readonly roomRepo: RoomRepositoryContract = roomRepository) {}
 
   async getRooms(filter: FindRoomsFilter): Promise<GetRoomsResponseData> {
+    if (Boolean(filter.startDate) !== Boolean(filter.endDate)) {
+      throw new AppError('VALIDATION_ERROR', 'startDate và endDate phải đi cùng nhau', 400);
+    }
+    if (filter.startDate && filter.endDate) {
+      validateBookingTime(filter.startDate, filter.endDate);
+    }
     const [total, rooms] = await this.roomRepo.findManyAndCount(filter);
     const totalPages = total === 0 ? 0 : Math.ceil(total / filter.limit);
 

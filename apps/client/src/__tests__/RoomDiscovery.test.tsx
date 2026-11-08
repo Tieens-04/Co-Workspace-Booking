@@ -498,4 +498,230 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
       expect(screen.queryByRole('link', { name: /Lịch sử đặt phòng/i })).not.toBeInTheDocument();
     });
   });
+
+  describe('CWB-84: Keyword Search, Sort Options, and Time Slot Availability', () => {
+    it('debounces search input and requests rooms with q, syncing URL', async () => {
+      renderComponent();
+      await screen.findByText('Focus Room Creative');
+
+      const searchInput = screen.getByRole('searchbox', { name: /Tìm kiếm phòng theo tên/i });
+      fireEvent.change(searchInput, { target: { value: 'Creative' } });
+
+      await waitFor(
+        () => {
+          expect(roomApi.getRooms).toHaveBeenCalledWith(
+            expect.objectContaining({ q: 'Creative' }),
+            expect.any(AbortSignal),
+          );
+        },
+        { timeout: 1500 },
+      );
+
+      expect(screen.getByTestId('location-search')).toHaveTextContent('q=Creative');
+      expect(screen.getByText('Từ khóa: "Creative"')).toBeInTheDocument();
+    });
+
+    it('clears search keyword via clear button', async () => {
+      renderComponent('/rooms?q=Creative');
+      await screen.findByText('Focus Room Creative');
+
+      const searchInput = screen.getByRole('searchbox', { name: /Tìm kiếm phòng theo tên/i });
+      expect(searchInput).toHaveValue('Creative');
+
+      const clearBtn = screen.getByRole('button', { name: /Xóa từ khóa tìm kiếm/i });
+      fireEvent.click(clearBtn);
+
+      await waitFor(() => {
+        expect(searchInput).toHaveValue('');
+        expect(screen.getByTestId('location-search')).not.toHaveTextContent('q=Creative');
+      });
+    });
+
+    it('changes sort option and calls API with sort, updating URL', async () => {
+      renderComponent();
+      await screen.findByText('Focus Room Creative');
+
+      const sortSelect = screen.getByRole('combobox', { name: /Sắp xếp danh sách phòng/i });
+      expect(sortSelect).toHaveValue('newest');
+
+      fireEvent.change(sortSelect, { target: { value: 'price_asc' } });
+
+      await waitFor(() => {
+        expect(roomApi.getRooms).toHaveBeenCalledWith(
+          expect.objectContaining({ sort: 'price_asc' }),
+          expect.any(AbortSignal),
+        );
+      });
+
+      expect(screen.getByTestId('location-search')).toHaveTextContent('sort=price_asc');
+    });
+
+    it('selects valid date and time slot, calls API with slot params and displays chip', async () => {
+      renderComponent();
+      await screen.findByText('Focus Room Creative');
+
+      const dateInput = screen.getByLabelText(/Ngày cần tìm phòng/i);
+      const startSelect = screen.getByLabelText(/Giờ bắt đầu/i);
+      const endSelect = screen.getByLabelText(/Giờ kết thúc/i);
+
+      fireEvent.change(dateInput, { target: { value: '2026-11-20' } });
+      fireEvent.change(startSelect, { target: { value: '09:00' } });
+      fireEvent.change(endSelect, { target: { value: '11:00' } });
+
+      await waitFor(() => {
+        expect(roomApi.getRooms).toHaveBeenCalledWith(
+          expect.objectContaining({
+            date: '2026-11-20',
+            startTime: '09:00',
+            endTime: '11:00',
+          }),
+          expect.any(AbortSignal),
+        );
+      });
+
+      expect(screen.getByTestId('location-search')).toHaveTextContent('date=2026-11-20');
+      expect(screen.getByTestId('location-search')).toHaveTextContent('startTime=09%3A00');
+      expect(screen.getByTestId('location-search')).toHaveTextContent('endTime=11%3A00');
+      expect(screen.getByText('Khung giờ: 2026-11-20 (09:00 - 11:00)')).toBeInTheDocument();
+    });
+
+    it('removes active chip for slot and resets slot filter', async () => {
+      renderComponent('/rooms?date=2026-11-20&startTime=09:00&endTime=11:00');
+      await screen.findByText('Focus Room Creative');
+
+      const chip = await screen.findByRole('button', {
+        name: /Bỏ lọc: Khung giờ: 2026-11-20 \(09:00 - 11:00\)/i,
+      });
+      fireEvent.click(chip);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2026-11-20');
+      });
+    });
+
+    it('shows validation error when end time is before or equal to start time', async () => {
+      renderComponent();
+      await screen.findByText('Focus Room Creative');
+
+      const dateInput = screen.getByLabelText(/Ngày cần tìm phòng/i);
+      const startSelect = screen.getByLabelText(/Giờ bắt đầu/i);
+      const endSelect = screen.getByLabelText(/Giờ kết thúc/i);
+
+      fireEvent.change(dateInput, { target: { value: '2026-11-20' } });
+      fireEvent.change(startSelect, { target: { value: '11:00' } });
+      fireEvent.change(endSelect, { target: { value: '09:00' } });
+
+      expect(await screen.findByText('Giờ kết thúc phải sau giờ bắt đầu')).toBeInTheDocument();
+      expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2026-11-20');
+    });
+
+    it('clears slot filter via "Xóa khung giờ" button in filter panel', async () => {
+      renderComponent('/rooms?date=2026-11-20&startTime=09:00&endTime=11:00');
+      await screen.findByText('Focus Room Creative');
+
+      const clearSlotBtn = screen.getByRole('button', { name: /Xóa khung giờ/i });
+      fireEvent.click(clearSlotBtn);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2026-11-20');
+      });
+    });
+
+    it('removes active chip for search keyword q and resets search input without debounced re-injection (F1/F10 Regression)', async () => {
+      renderComponent('/rooms?q=Creative');
+      await screen.findByText('Focus Room Creative');
+
+      const chip = await screen.findByRole('button', {
+        name: /Bỏ lọc: Từ khóa: "Creative"/i,
+      });
+      fireEvent.click(chip);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-search')).not.toHaveTextContent('q=Creative');
+      });
+
+      const searchInput = screen.getByRole('searchbox', { name: /Tìm kiếm phòng theo tên/i });
+      expect(searchInput).toHaveValue('');
+
+      // Wait past debounce period to ensure debounced effect does not re-inject q
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      });
+      expect(screen.getByTestId('location-search')).not.toHaveTextContent('q=Creative');
+    });
+
+    it('restores search keyword q on browser back without writing the newer value back (F1/F10 Regression)', async () => {
+      render(
+        <MemoryRouter initialEntries={['/rooms?q=Initial', '/rooms?q=Updated']} initialIndex={1}>
+          <AuthProvider>
+            <HistoryControls />
+            <Routes>
+              <Route
+                path="/rooms"
+                element={
+                  <>
+                    <RoomsPage />
+                    <LocationProbe />
+                  </>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      await screen.findByText('Focus Room Creative');
+      const searchInput = screen.getByRole('searchbox', { name: /Tìm kiếm phòng theo tên/i });
+      expect(searchInput).toHaveValue('Updated');
+
+      const user = userEvent.setup();
+      await user.click(screen.getByRole('button', { name: 'History back' }));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-search')).toHaveTextContent('?q=Initial');
+        expect(searchInput).toHaveValue('Initial');
+      });
+
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 350));
+      });
+      expect(screen.getByTestId('location-search')).toHaveTextContent('?q=Initial');
+      expect(vi.mocked(roomApi.getRooms).mock.calls.at(-1)?.[0]).toEqual(
+        expect.objectContaining({ q: 'Initial' }),
+      );
+    });
+
+    it('enforces maxLength={100} on keyword search input (Finding 9 Regression)', async () => {
+      renderComponent();
+      await screen.findByText('Focus Room Creative');
+
+      const searchInput = screen.getByRole('searchbox', { name: /Tìm kiếm phòng theo tên/i });
+      expect(searchInput).toHaveAttribute('maxLength', '100');
+    });
+
+    it('sets min attribute to today on date filter input (Finding 2 Regression)', async () => {
+      renderComponent();
+      await screen.findByText('Focus Room Creative');
+
+      const dateInput = screen.getByLabelText(/Ngày cần tìm phòng/i);
+      expect(dateInput).toHaveAttribute('min');
+      expect(dateInput.getAttribute('min')).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    });
+
+    it('shows inline validation error when date is in the past and prevents API call (Finding 2 Regression)', async () => {
+      renderComponent();
+      await screen.findByText('Focus Room Creative');
+
+      const dateInput = screen.getByLabelText(/Ngày cần tìm phòng/i);
+      const startSelect = screen.getByLabelText(/Giờ bắt đầu/i);
+      const endSelect = screen.getByLabelText(/Giờ kết thúc/i);
+
+      fireEvent.change(dateInput, { target: { value: '2020-01-01' } });
+      fireEvent.change(startSelect, { target: { value: '09:00' } });
+      fireEvent.change(endSelect, { target: { value: '11:00' } });
+
+      expect(await screen.findByText('Không được chọn ngày trong quá khứ')).toBeInTheDocument();
+      expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2020-01-01');
+    });
+  });
 });

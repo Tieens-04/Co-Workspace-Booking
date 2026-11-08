@@ -1,6 +1,13 @@
 export type RoomStatus = 'AVAILABLE' | 'MAINTENANCE';
 export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';
 
+export type RoomSortOption =
+  | 'newest'
+  | 'price_asc'
+  | 'price_desc'
+  | 'capacity_asc'
+  | 'capacity_desc';
+
 export interface RoomAvailabilitySlot {
   startTime: string;
   endTime: string;
@@ -74,6 +81,11 @@ export interface RoomFilters {
   minPrice?: string;
   maxPrice?: string;
   amenityIds?: string[];
+  q?: string;
+  sort?: RoomSortOption;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
 }
 
 export interface GetRoomsParams {
@@ -83,4 +95,9 @@ export interface GetRoomsParams {
   minPrice?: string;
   maxPrice?: string;
   amenityIds?: string;
+  q?: string;
+  sort?: RoomSortOption;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
 }

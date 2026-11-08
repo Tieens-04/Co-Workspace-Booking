@@ -46,6 +46,13 @@ export interface GetRoomsResponseData {
   pagination: PaginationMeta;
 }
 
+export type RoomSortOption =
+  | 'price_asc'
+  | 'price_desc'
+  | 'capacity_asc'
+  | 'capacity_desc'
+  | 'newest';
+
 export interface FindRoomsFilter {
   page: number;
   limit: number;
@@ -53,6 +60,10 @@ export interface FindRoomsFilter {
   minPrice?: string;
   maxPrice?: string;
   amenityIds?: string[];
+  q?: string;
+  sort?: RoomSortOption;
+  startDate?: Date;
+  endDate?: Date;
 }
 
 export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';
