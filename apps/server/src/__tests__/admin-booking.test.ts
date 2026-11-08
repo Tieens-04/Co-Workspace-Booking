@@ -686,6 +686,29 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res.status).toBe(200);
       expect(res.body.data.status).toBe('CANCELLED');
     });
+
+    it('returns cancelledAt, cancelledBy = ADMIN, and cancellationReason', async () => {
+      const cancelTime = new Date('2026-10-25T02:00:00.000Z');
+      const fixture = mockAdminBookingFixture({
+        id: validBookingId,
+        status: BookingStatus.CANCELLED,
+        cancellationReason: 'Bảo trì phòng',
+        cancelledAt: cancelTime,
+        cancelledBy: Role.ADMIN,
+      });
+      vi.spyOn(bookingRepository, 'cancelBookingForAdmin').mockResolvedValue(fixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/admin/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ reason: 'Bảo trì phòng' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CANCELLED');
+      expect(res.body.data.cancellationReason).toBe('Bảo trì phòng');
+      expect(res.body.data.cancelledAt).toBe(cancelTime.toISOString());
+      expect(res.body.data.cancelledBy).toBe('ADMIN');
+    });
   });
 
   describe('PATCH /api/v1/admin/bookings/:id/complete (Check-in & Complete Flow)', () => {

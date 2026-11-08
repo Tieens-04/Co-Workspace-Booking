@@ -84,6 +84,25 @@ describe('Customer Booking Cancellation Unit Tests (PATCH /api/v1/bookings/:id/c
         undefined,
       );
     });
+
+    it('returns cancelledAt and cancelledBy = CUSTOMER when booking is cancelled', async () => {
+      const cancelTime = new Date('2026-10-25T02:00:00.000Z');
+      const fixture = mockBookingFixture({
+        status: BookingStatus.CANCELLED,
+        cancelledAt: cancelTime,
+        cancelledBy: Role.CUSTOMER,
+      });
+      vi.spyOn(bookingRepository, 'cancelBooking').mockResolvedValue(fixture);
+
+      const res = await request(app)
+        .patch(`/api/v1/bookings/${validBookingId}/cancel`)
+        .set('Authorization', `Bearer ${customerToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CANCELLED');
+      expect(res.body.data.cancelledAt).toBe(cancelTime.toISOString());
+      expect(res.body.data.cancelledBy).toBe('CUSTOMER');
+    });
   });
 
   describe('Validation - Params, Query, and Body', () => {
@@ -250,7 +269,9 @@ describe('Customer Booking Cancellation Unit Tests (PATCH /api/v1/bookings/:id/c
         createBooking: vi.fn(),
         findManyAndCountForUser: vi.fn(),
         findByIdForUser: vi.fn(),
-        cancelBooking: vi.fn().mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
+        cancelBooking: vi
+          .fn()
+          .mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
         rescheduleBooking: vi.fn(),
       };
       const service = new BookingService(mockRepo);
@@ -267,7 +288,9 @@ describe('Customer Booking Cancellation Unit Tests (PATCH /api/v1/bookings/:id/c
         createBooking: vi.fn(),
         findManyAndCountForUser: vi.fn(),
         findByIdForUser: vi.fn(),
-        cancelBooking: vi.fn().mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
+        cancelBooking: vi
+          .fn()
+          .mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
         rescheduleBooking: vi.fn(),
       };
       const service = new BookingService(mockRepo);
@@ -284,7 +307,9 @@ describe('Customer Booking Cancellation Unit Tests (PATCH /api/v1/bookings/:id/c
         createBooking: vi.fn(),
         findManyAndCountForUser: vi.fn(),
         findByIdForUser: vi.fn(),
-        cancelBooking: vi.fn().mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
+        cancelBooking: vi
+          .fn()
+          .mockResolvedValue(mockBookingFixture({ status: BookingStatus.CANCELLED })),
         rescheduleBooking: vi.fn(),
       };
       const service = new BookingService(mockRepo);

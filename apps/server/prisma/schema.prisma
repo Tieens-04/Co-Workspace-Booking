@@ -179,6 +179,8 @@ model Booking {
   checkedInAt               DateTime?      @map("checked_in_at")
   attendanceTrackingEnabled Boolean        @default(true) @map("attendance_tracking_enabled")
   cancellationReason        String?        @map("cancellation_reason") @db.Text
+  cancelledAt               DateTime?      @map("cancelled_at")
+  cancelledBy               Role?          @map("cancelled_by")
   createdAt                 DateTime       @default(now()) @map("created_at")
   updatedAt                 DateTime       @updatedAt @map("updated_at")
 

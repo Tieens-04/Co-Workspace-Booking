@@ -22,6 +22,8 @@ function fixture(): AdminBookingReadRecord {
     paymentStatus: PaymentStatus.UNPAID,
     paymentMethod: null,
     cancellationReason: null,
+    cancelledAt: null,
+    cancelledBy: null,
     guestName: null,
     guestPhone: null,
     user: {
@@ -69,6 +71,8 @@ describe('Public admin booking customer contract (CWB-46)', () => {
         'paymentStatus',
         'paymentMethod',
         'cancellationReason',
+        'cancelledAt',
+        'cancelledBy',
         'customer',
       ].sort(),
     );

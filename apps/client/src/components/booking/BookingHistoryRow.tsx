@@ -50,12 +50,17 @@ export const BookingHistoryRow: React.FC<BookingHistoryRowProps> = ({ booking })
       {formatCurrency(booking.totalAmount)}
     </strong>
 
-    <StatusBadge
-      kind="booking"
-      status={booking.status}
-      className="self-center justify-self-end [grid-area:status] md:self-start"
-      data-testid="booking-status-badge"
-    />
+    <div className="flex flex-col items-end gap-1 self-center justify-self-end [grid-area:status] md:self-start">
+      <StatusBadge kind="booking" status={booking.status} data-testid="booking-status-badge" />
+      {booking.status === 'CANCELLED' && booking.cancelledBy && (
+        <span
+          className="text-xs text-muted-foreground whitespace-nowrap"
+          data-testid="booking-cancellation-indicator"
+        >
+          {booking.cancelledBy === 'ADMIN' ? 'Đã hủy bởi Co-Space' : 'Bạn đã hủy'}
+        </span>
+      )}
+    </div>
 
     <Button
       asChild

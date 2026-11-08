@@ -90,6 +90,63 @@ describe('BookingHistoryPage', () => {
     );
   };
 
+  describe('CWB-82: Cancellation indicators in history (AC2)', () => {
+    it('displays corresponding cancellation indicators for CANCELLED bookings', async () => {
+      const items: BookingResult[] = [
+        {
+          ...mockBookings[0],
+          id: 'b-admin-cancel',
+          status: 'CANCELLED',
+          cancelledBy: 'ADMIN',
+          cancelledAt: '2026-10-25T07:00:00.000Z',
+          cancellationReason: 'Bảo trì',
+        },
+        {
+          ...mockBookings[1],
+          id: 'b-cust-cancel',
+          status: 'CANCELLED',
+          cancelledBy: 'CUSTOMER',
+          cancelledAt: '2026-10-20T08:00:00.000Z',
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-legacy-cancel',
+          status: 'CANCELLED',
+          cancelledBy: null,
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-confirmed',
+          status: 'CONFIRMED',
+        },
+      ];
+
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(items, 4, 1));
+
+      renderComponent();
+
+      const rowAdmin = await screen.findByTestId('booking-item-b-admin-cancel');
+      expect(within(rowAdmin).getByTestId('booking-cancellation-indicator')).toHaveTextContent(
+        'Đã hủy bởi Co-Space',
+      );
+
+      const rowCust = screen.getByTestId('booking-item-b-cust-cancel');
+      expect(within(rowCust).getByTestId('booking-cancellation-indicator')).toHaveTextContent(
+        'Bạn đã hủy',
+      );
+
+      const rowLegacy = screen.getByTestId('booking-item-b-legacy-cancel');
+      expect(
+        within(rowLegacy).queryByTestId('booking-cancellation-indicator'),
+      ).not.toBeInTheDocument();
+
+      const rowConfirmed = screen.getByTestId('booking-item-b-confirmed');
+      expect(
+        within(rowConfirmed).queryByTestId('booking-cancellation-indicator'),
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it('renders heading, filter tabs, and calls bookingApi.getBookings with defaults', async () => {
     vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(mockBookings, 2, 1));
 

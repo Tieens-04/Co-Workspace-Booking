@@ -48,6 +48,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       'paymentStatus',
       'paymentMethod',
       'cancellationReason',
+      'cancelledAt',
+      'cancelledBy',
       'customer',
       'isNewlyCancelled',
     ];

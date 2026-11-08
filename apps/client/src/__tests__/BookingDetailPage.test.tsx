@@ -386,6 +386,88 @@ describe('BookingDetailPage', () => {
     );
   });
 
+  describe('CWB-82: Cancellation Details & Reason Banner (AC2, AC3)', () => {
+    it('renders admin cancellation banner with formatted time and reason (AC2)', async () => {
+      const cancelledBooking: BookingResult = {
+        ...mockDetailData,
+        status: 'CANCELLED',
+        cancelledBy: 'ADMIN',
+        cancelledAt: '2026-10-25T07:00:00.000Z', // 14:00 VN
+        cancellationReason: 'Phòng cần bảo trì hệ thống điều hòa',
+      };
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(cancelledBooking),
+      );
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('cancellation-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Đã hủy bởi Co-Space');
+      expect(banner).toHaveTextContent('14:00 25/10/2026');
+      expect(banner).toHaveTextContent('– Lý do: Phòng cần bảo trì hệ thống điều hòa');
+    });
+
+    it('renders customer self-cancellation banner with formatted time (AC2)', async () => {
+      const cancelledBooking: BookingResult = {
+        ...mockDetailData,
+        status: 'CANCELLED',
+        cancelledBy: 'CUSTOMER',
+        cancelledAt: '2026-10-25T07:00:00.000Z', // 14:00 VN
+        cancellationReason: null,
+      };
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(cancelledBooking),
+      );
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('cancellation-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Bạn đã hủy');
+      expect(banner).toHaveTextContent('14:00 25/10/2026');
+      expect(banner).not.toHaveTextContent('Lý do');
+    });
+
+    it('escapes HTML tags and prevents XSS in cancellation reason (AC3)', async () => {
+      const maliciousReason = '<script>alert("xss")</script><b id="injected-tag">injected</b>';
+      const cancelledBooking: BookingResult = {
+        ...mockDetailData,
+        status: 'CANCELLED',
+        cancelledBy: 'ADMIN',
+        cancelledAt: '2026-10-25T07:00:00.000Z',
+        cancellationReason: maliciousReason,
+      };
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(cancelledBooking),
+      );
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('cancellation-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent(maliciousReason);
+      expect(document.getElementById('injected-tag')).toBeNull();
+    });
+
+    it('handles legacy data fallback gracefully when cancelledBy is null (AC2)', async () => {
+      const legacyBooking: BookingResult = {
+        ...mockDetailData,
+        status: 'CANCELLED',
+        cancelledBy: null,
+        cancelledAt: null,
+        cancellationReason: 'Lý do cũ',
+      };
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(legacyBooking));
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('cancellation-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Đã hủy – Lý do: Lý do cũ');
+    });
+  });
+
   describe('Customer Booking Cancellation (CWB-26)', () => {
     it('displays "Hủy đặt phòng" button and cancellation policy info when booking is CONFIRMED (AC1)', async () => {
       vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
@@ -802,8 +884,8 @@ describe('BookingDetailPage', () => {
       expect(screen.getByTestId('reschedule-confirm-btn')).toBeDisabled(); // initially disabled without selection
     });
     it('submits reschedule, updates booking on page, and closes dialog', async () => {
-      const futureStart = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
-      const futureEnd = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      const futureStart = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
       vi.mocked(bookingApi.getBookingById).mockResolvedValue(
         mockDetailResponse({ ...mockDetailData, startTime: futureStart, endTime: futureEnd }),
       );
@@ -852,8 +934,8 @@ describe('BookingDetailPage', () => {
     });
 
     it('displays error notice in dialog when reschedule fails with 409 conflict', async () => {
-      const futureStart = new Date(Date.now() + 5 * 3600 * 1000).toISOString();
-      const futureEnd = new Date(Date.now() + 7 * 3600 * 1000).toISOString();
+      const futureStart = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
       vi.mocked(bookingApi.getBookingById).mockResolvedValue(
         mockDetailResponse({ ...mockDetailData, startTime: futureStart, endTime: futureEnd }),
       );

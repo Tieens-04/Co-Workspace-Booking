@@ -25,6 +25,9 @@ export interface BookingResult {
   status: string;
   paymentStatus: string;
   paymentMethod: string | null;
+  cancellationReason?: string | null;
+  cancelledAt?: string | null;
+  cancelledBy?: 'CUSTOMER' | 'ADMIN' | null;
 }
 
 export type CreateBookingResponse = ApiResponse<BookingResult>;

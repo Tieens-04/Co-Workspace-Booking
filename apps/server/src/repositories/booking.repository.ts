@@ -149,6 +149,8 @@ export const bookingReadSelect = {
   paymentStatus: true,
   paymentMethod: true,
   cancellationReason: true,
+  cancelledAt: true,
+  cancelledBy: true,
 } satisfies Prisma.BookingSelect;
 
 export type BookingReadRecord = Prisma.BookingGetPayload<{
@@ -156,7 +158,10 @@ export type BookingReadRecord = Prisma.BookingGetPayload<{
 }>;
 
 const formatAmount = (amt: unknown): string =>
-  amt && typeof amt === 'object' && 'toFixed' in amt && typeof (amt as { toFixed: (digits: number) => string }).toFixed === 'function'
+  amt &&
+  typeof amt === 'object' &&
+  'toFixed' in amt &&
+  typeof (amt as { toFixed: (digits: number) => string }).toFixed === 'function'
     ? (amt as { toFixed: (digits: number) => string }).toFixed(2)
     : Number(amt).toFixed(2);
 
@@ -180,6 +185,8 @@ export function mapBookingRecordToDto(record: BookingReadRecord): BookingRespons
     paymentStatus: record.paymentStatus,
     paymentMethod: record.paymentMethod,
     cancellationReason: record.cancellationReason ?? null,
+    cancelledAt: record.cancelledAt ?? null,
+    cancelledBy: record.cancelledBy ?? null,
   };
 }
 
@@ -202,6 +209,8 @@ export const adminBookingReadSelect = {
   paymentStatus: true,
   paymentMethod: true,
   cancellationReason: true,
+  cancelledAt: true,
+  cancelledBy: true,
   guestName: true,
   guestPhone: true,
   user: {
@@ -290,6 +299,8 @@ export function mapAdminBookingRecordToDto(
     paymentStatus: record.paymentStatus,
     paymentMethod: record.paymentMethod,
     cancellationReason: record.cancellationReason ?? null,
+    cancelledAt: record.cancelledAt ?? null,
+    cancelledBy: record.cancelledBy ?? null,
     customer,
   };
 }
@@ -609,6 +620,8 @@ export class BookingRepository
         where: { id },
         data: {
           status: BookingStatus.CANCELLED,
+          cancelledAt: evaluationTime,
+          cancelledBy: Role.CUSTOMER,
         },
         select: bookingReadSelect,
       });
@@ -987,6 +1000,8 @@ export class BookingRepository
         data: {
           status: BookingStatus.CANCELLED,
           cancellationReason: reason,
+          cancelledAt: clock(),
+          cancelledBy: Role.ADMIN,
         },
         select: adminBookingReadSelect,
       });
