@@ -52,6 +52,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       'cancelledBy',
       'customer',
       'isNewlyCancelled',
+      'refundedAmount',
+      'refunds',
     ];
     expect(Object.keys(booking).every((key) => allowed.includes(key))).toBe(true);
     const room = booking.room as Record<string, unknown>;
@@ -1201,4 +1203,373 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(potentialNum).toBeCloseTo(actualNum + unpaidNum, 2);
     });
   });
+
+  describe('Refund Recording Integration Tests (CWB-83, real MySQL & Audit)', () => {
+    it('successfully records full refund for CANCELLED + PAID booking and writes audit log', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF1`;
+      const start = new Date(Date.now() + 300 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('300000.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+          cancelledAt: new Date(),
+          cancelledBy: Role.CUSTOMER,
+        },
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 300000,
+          method: 'CASH',
+          reason: 'Hoàn trả đủ tiền phòng do khách báo hủy sớm',
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.paymentStatus).toBe(PaymentStatus.REFUNDED);
+      expect(res.body.data.refundedAmount).toBe('300000.00');
+      expectPublicBooking(res.body.data);
+
+      // Verify in DB
+      const dbBooking = await prisma.booking.findUnique({
+        where: { id: booking.id },
+        include: { refunds: true },
+      });
+      expect(dbBooking?.paymentStatus).toBe(PaymentStatus.REFUNDED);
+      expect(dbBooking?.refundedAmount.toFixed(2)).toBe('300000.00');
+      expect(dbBooking?.refunds).toHaveLength(1);
+      expect(dbBooking?.refunds[0].amount.toFixed(2)).toBe('300000.00');
+      expect(dbBooking?.refunds[0].method).toBe(PaymentMethod.CASH);
+      expect(dbBooking?.refunds[0].reason).toBe('Hoàn trả đủ tiền phòng do khách báo hủy sớm');
+      expect(dbBooking?.refunds[0].actorId).toBe(adminUserId);
+
+      // Verify AuditEvent
+      const audit = await prisma.auditEvent.findFirst({
+        where: {
+          entityType: 'BOOKING',
+          entityId: booking.id,
+          action: 'BOOKING_REFUNDED',
+        },
+        orderBy: { sequence: 'desc' },
+      });
+      expect(audit).not.toBeNull();
+      expect(audit?.actorId).toBe(adminUserId);
+      expect(audit?.actorRole).toBe(Role.ADMIN);
+      expect((audit?.before as Record<string, unknown>).paymentStatus).toBe(PaymentStatus.PAID);
+      expect((audit?.after as Record<string, unknown>).paymentStatus).toBe(PaymentStatus.REFUNDED);
+    });
+
+    it('handles two consecutive partial refunds until fully refunded, then rejects subsequent refund', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF2`;
+      const start = new Date(Date.now() + 310 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('200000.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.QR,
+          cancelledAt: new Date(),
+          cancelledBy: Role.CUSTOMER,
+        },
+      });
+
+      // Refund 1: 80,000 VND
+      const res1 = await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 80000,
+          method: 'QR',
+          reason: 'Hoàn đợt 1',
+        });
+      expect(res1.status).toBe(200);
+      expect(res1.body.data.paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(res1.body.data.refundedAmount).toBe('80000.00');
+
+      // Refund 2: 120,000 VND (completes 200k)
+      const res2 = await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 120000,
+          method: 'QR',
+          reason: 'Hoàn đợt 2',
+        });
+      expect(res2.status).toBe(200);
+      expect(res2.body.data.paymentStatus).toBe(PaymentStatus.REFUNDED);
+      expect(res2.body.data.refundedAmount).toBe('200000.00');
+
+      // Refund 3: any amount on fully refunded booking should fail with 409
+      const res3 = await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 10000,
+          method: 'QR',
+          reason: 'Hoàn thêm',
+        });
+      expect(res3.status).toBe(409);
+      expect(res3.body.code).toBe('BOOKING_ALREADY_FULLY_REFUNDED');
+    });
+
+    it('rejects refund if booking is not CANCELLED', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF3`;
+      const start = new Date(Date.now() + 320 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('200000.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+        },
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 100000,
+          method: 'CASH',
+          reason: 'Hoàn tiền',
+        });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('rejects refund if booking is UNPAID', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF4`;
+      const start = new Date(Date.now() + 330 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('200000.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.UNPAID,
+          cancelledAt: new Date(),
+          cancelledBy: Role.CUSTOMER,
+        },
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 100000,
+          method: 'CASH',
+          reason: 'Hoàn tiền',
+        });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('rejects refund when amount exceeds remaining refundable amount', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF5`;
+      const start = new Date(Date.now() + 340 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('150000.00'),
+          refundedAmount: new Prisma.Decimal('50000.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          paymentMethod: PaymentMethod.CASH,
+          cancelledAt: new Date(),
+          cancelledBy: Role.CUSTOMER,
+        },
+      });
+
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 100001,
+          method: 'CASH',
+          reason: 'Hoàn vượt mức',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('REFUND_AMOUNT_EXCEEDED');
+    });
+
+    it('deducts refund from actual revenue in revenue API', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF6`;
+      const start = new Date(Date.now() - 24 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('500000.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+          cancelledAt: new Date(),
+          cancelledBy: Role.CUSTOMER,
+        },
+      });
+
+      const resBefore = await request(app)
+        .get(`/api/v1/admin/revenue?roomId=${availableRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      const actualBefore = Number(resBefore.body.data.actualRevenue);
+
+      // Refund 300,000 VND
+      await request(app)
+        .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          amount: 300000,
+          method: 'CASH',
+          reason: 'Hoàn 300k',
+        });
+
+      const resAfter = await request(app)
+        .get(`/api/v1/admin/revenue?roomId=${availableRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      const actualAfter = Number(resAfter.body.data.actualRevenue);
+
+      expect(actualAfter).toBeCloseTo(actualBefore - 300000, 2);
+    });
+
+    it('throws REFUND_AMOUNT_INVALID when repository receives refundAmount <= 0 (Defense-in-depth, F4 Regression)', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF7`;
+      const start = new Date(Date.now() + 350 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('200000.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+          cancelledAt: new Date(),
+          cancelledBy: Role.CUSTOMER,
+        },
+      });
+
+      await expect(
+        bookingRepository.recordRefundForAdmin(booking.id, {
+          amount: 0,
+          method: PaymentMethod.CASH,
+          reason: 'Hoàn 0đ',
+        }),
+      ).rejects.toMatchObject({
+        code: 'REFUND_AMOUNT_INVALID',
+        statusCode: 400,
+      });
+
+      await expect(
+        bookingRepository.recordRefundForAdmin(booking.id, {
+          amount: -50000,
+          method: PaymentMethod.CASH,
+          reason: 'Hoàn âm',
+        }),
+      ).rejects.toMatchObject({
+        code: 'REFUND_AMOUNT_INVALID',
+        statusCode: 400,
+      });
+    });
+
+    it('handles concurrent refund requests using Promise.all without double refund exceeding total amount (F8 Concurrency)', async () => {
+      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-CRF`;
+      const start = new Date(Date.now() + 360 * 3600 * 1000);
+      const end = new Date(start.getTime() + 2 * 3600 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: code,
+          roomId: availableRoomId,
+          userId: testUserId,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('200000.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+          cancelledAt: new Date(),
+          cancelledBy: Role.CUSTOMER,
+        },
+      });
+
+      // Fire 2 concurrent refund requests for 150,000 VND each.
+      // Total = 300,000 VND > 200,000 VND. Only one must succeed!
+      const [res1, res2] = await Promise.all([
+        request(app)
+          .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            amount: 150000,
+            method: 'CASH',
+            reason: 'Concurrent refund request 1',
+          }),
+        request(app)
+          .post(`/api/v1/admin/bookings/${booking.id}/refund`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            amount: 150000,
+            method: 'CASH',
+            reason: 'Concurrent refund request 2',
+          }),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort();
+      expect(statuses[0]).toBe(200);
+      expect([400, 409]).toContain(statuses[1]);
+
+      // Check DB state: exactly 150,000 refunded, not 300,000
+      const updated = await prisma.booking.findUnique({
+        where: { id: booking.id },
+        include: { refunds: true },
+      });
+      expect(updated?.refundedAmount.toFixed(2)).toBe('150000.00');
+      expect(updated?.paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(updated?.refunds).toHaveLength(1);
+    });
+  });
+
 });

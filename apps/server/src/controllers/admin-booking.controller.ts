@@ -8,6 +8,8 @@ import {
   CreateGuestBookingInput,
   ConfirmPaymentParamsInput,
   ConfirmPaymentBodyInput,
+  RefundBookingParamsInput,
+  RefundBookingBodyInput,
   AdminCancelBookingParamsInput,
   AdminCancelBookingBodyInput,
   CompleteBookingParamsInput,
@@ -46,6 +48,18 @@ export class AdminBookingController {
         'Đặt phòng cho khách vãng lai thành công',
         idempotentReplay ? 200 : 201,
       );
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+
+  recordRefund = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params as unknown as RefundBookingParamsInput;
+      const body = req.body as RefundBookingBodyInput;
+      const data = await this.service.recordRefund(id, body, auditActorOf(req));
+      return sendSuccess(res, data, 'Ghi nhận hoàn tiền thành công', 200);
     } catch (err) {
       return next(err);
     }

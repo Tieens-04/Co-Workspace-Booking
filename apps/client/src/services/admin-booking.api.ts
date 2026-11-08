@@ -12,6 +12,8 @@ import {
   AdminNoShowBookingApiResponse,
   GetAdminRevenueParams,
   AdminRevenueApiResponse,
+  RefundBookingPayload,
+  AdminRefundBookingApiResponse,
 } from '../types/admin-booking';
 
 export const adminBookingApi = {
@@ -49,6 +51,19 @@ export const adminBookingApi = {
         signal,
         headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
       },
+    );
+    return response.data;
+  },
+
+  recordRefund: async (
+    bookingId: string,
+    payload: RefundBookingPayload,
+    signal?: AbortSignal,
+  ): Promise<AdminRefundBookingApiResponse> => {
+    const response = await apiClient.post<AdminRefundBookingApiResponse>(
+      `/admin/bookings/${bookingId}/refund`,
+      payload,
+      { signal },
     );
     return response.data;
   },

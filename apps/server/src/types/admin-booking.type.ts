@@ -1,6 +1,21 @@
 import { BookingStatus, PaymentMethod, PaymentStatus, Role } from '@prisma/client';
 import { BookingRoomDto } from './booking.type.js';
 
+export interface AdminRefundDto {
+  id: string;
+  amount: string;
+  method: PaymentMethod;
+  reason: string;
+  actorId: string;
+  createdAt: Date;
+}
+
+export interface RecordRefundRepoInput {
+  amount: number | string;
+  method: PaymentMethod;
+  reason: string;
+}
+
 export type AdminCustomerKind = 'USER' | 'GUEST';
 
 // Public admin projection: USER includes account email/id; GUEST omits both.
@@ -28,6 +43,8 @@ export interface AdminBookingResponseDto {
   cancellationReason?: string | null;
   cancelledAt?: Date | null;
   cancelledBy?: Role | null;
+  refundedAmount: string;
+  refunds?: AdminRefundDto[];
   isNewlyCancelled?: boolean;
   customer: AdminBookingCustomerDto;
 }

@@ -18,6 +18,8 @@ import {
   createGuestBookingSchema,
   confirmPaymentParamsSchema,
   confirmPaymentBodySchema,
+  refundBookingParamsSchema,
+  refundBookingBodySchema,
   adminCancelBookingParamsSchema,
   adminCancelBookingBodySchema,
   completeBookingParamsSchema,
@@ -77,6 +79,14 @@ router.post(
   validateBody(createGuestBookingSchema),
   adminBookingController.createGuestBooking,
 );
+router.post(
+  '/bookings/:id/refund',
+  validateParams(refundBookingParamsSchema),
+  validateQuery(adminBookingMutationQuerySchema),
+  validateBody(refundBookingBodySchema),
+  adminBookingController.recordRefund,
+);
+
 router.patch(
   '/bookings/:id/payment',
   validateParams(confirmPaymentParamsSchema),

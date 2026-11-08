@@ -33,6 +33,7 @@ describe('Booking notification triggers (outbox)', () => {
     startTime: new Date('2026-10-14T10:00:00Z'),
     endTime: new Date('2026-10-14T12:00:00Z'),
     totalAmount: '300000.00',
+    refundedAmount: '0.00',
     note: null,
     status: BookingStatus.CONFIRMED,
     paymentStatus: PaymentStatus.UNPAID,
@@ -42,19 +43,23 @@ describe('Booking notification triggers (outbox)', () => {
   };
   const adminCancelled = (
     overrides: Partial<AdminBookingResponseDto> = {},
-  ): AdminBookingResponseDto => ({
-    ...mockBooking,
-    status: BookingStatus.CANCELLED,
-    cancellationReason: 'Admin hủy theo yêu cầu',
-    customer: {
-      kind: 'USER',
-      id: userId,
-      name: 'Nguyen Thi B',
-      email: 'client@example.com',
-      phone: '0901234567',
-    },
-    ...overrides,
-  });
+  ): AdminBookingResponseDto => {
+    const { refundedAmount, ...rest } = overrides;
+    return {
+      ...mockBooking,
+      status: BookingStatus.CANCELLED,
+      cancellationReason: 'Admin hủy theo yêu cầu',
+      refundedAmount: refundedAmount ?? '0.00',
+      customer: {
+        kind: 'USER',
+        id: userId,
+        name: 'Nguyen Thi B',
+        email: 'client@example.com',
+        phone: '0901234567',
+      },
+      ...rest,
+    };
+  };
 
   beforeEach(() => {
     vi.restoreAllMocks();

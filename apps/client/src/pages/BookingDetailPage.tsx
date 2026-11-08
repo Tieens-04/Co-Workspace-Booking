@@ -495,6 +495,17 @@ export const BookingDetailPage: React.FC = () => {
                       {getPaymentMethodLabel(effectiveBooking.paymentMethod)}
                     </span>
                   </DetailRow>
+                  {effectiveBooking.refundedAmount &&
+                    Number(effectiveBooking.refundedAmount) > 0 && (
+                      <DetailRow label="Số tiền đã hoàn">
+                        <span
+                          className="font-semibold text-status-warning tabular-nums"
+                          data-testid="refunded-amount-value"
+                        >
+                          {formatCurrency(effectiveBooking.refundedAmount)}
+                        </span>
+                      </DetailRow>
+                    )}
                   <DetailRow label="Ghi chú" valueClassName="font-normal">
                     <span className="whitespace-pre-line" data-testid="booking-note-value">
                       {effectiveBooking.note && effectiveBooking.note.trim() !== ''
@@ -606,6 +617,14 @@ export const BookingDetailPage: React.FC = () => {
                         </strong>{' '}
                         · {effectiveBooking.room.name}
                       </p>
+
+                      {effectiveBooking.paymentStatus === 'PAID' && (
+                        <Notice tone="warning" data-testid="paid-cancel-warning">
+                          <strong>Lưu ý hoàn tiền:</strong> Đơn đặt phòng này đã được thanh toán.
+                          Sau khi hủy, tiền sẽ được hoàn trả theo chính sách hoàn tiền của Co-Space.
+                          Vui lòng liên hệ ban quản lý để được hỗ trợ nhận lại tiền hoàn.
+                        </Notice>
+                      )}
 
                       {isCancelDialogOpen && renderCancelFeedback()}
 

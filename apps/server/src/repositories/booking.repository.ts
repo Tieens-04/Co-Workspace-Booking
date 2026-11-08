@@ -13,6 +13,7 @@ import {
   FindAdminBookingsFilter,
   RevenuePeriodFilter,
   AdminRevenueResponseDto,
+  RecordRefundRepoInput,
 } from '../types/admin-booking.type.js';
 import {
   calculateBookingTotal,
@@ -151,6 +152,7 @@ export const bookingReadSelect = {
   cancellationReason: true,
   cancelledAt: true,
   cancelledBy: true,
+  refundedAmount: true,
 } satisfies Prisma.BookingSelect;
 
 export type BookingReadRecord = Prisma.BookingGetPayload<{
@@ -187,6 +189,7 @@ export function mapBookingRecordToDto(record: BookingReadRecord): BookingRespons
     cancellationReason: record.cancellationReason ?? null,
     cancelledAt: record.cancelledAt ?? null,
     cancelledBy: record.cancelledBy ?? null,
+    refundedAmount: formatAmount(record.refundedAmount),
   };
 }
 
@@ -211,6 +214,18 @@ export const adminBookingReadSelect = {
   cancellationReason: true,
   cancelledAt: true,
   cancelledBy: true,
+  refundedAmount: true,
+  refunds: {
+    select: {
+      id: true,
+      amount: true,
+      method: true,
+      reason: true,
+      actorId: true,
+      createdAt: true,
+    },
+    orderBy: { createdAt: 'desc' as const },
+  },
   guestName: true,
   guestPhone: true,
   user: {
@@ -301,6 +316,17 @@ export function mapAdminBookingRecordToDto(
     cancellationReason: record.cancellationReason ?? null,
     cancelledAt: record.cancelledAt ?? null,
     cancelledBy: record.cancelledBy ?? null,
+    refundedAmount: formatAmount(record.refundedAmount),
+    refunds: record.refunds
+      ? record.refunds.map((r) => ({
+          id: r.id,
+          amount: formatAmount(r.amount),
+          method: r.method,
+          reason: r.reason,
+          actorId: r.actorId,
+          createdAt: r.createdAt,
+        }))
+      : undefined,
     customer,
   };
 }
@@ -340,6 +366,11 @@ export interface AdminBookingRepositoryContract {
   confirmPaymentForAdmin(
     id: string,
     paymentMethod: PaymentMethod,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto>;
+  recordRefundForAdmin(
+    id: string,
+    input: RecordRefundRepoInput,
     actor?: AuditActor,
   ): Promise<AdminBookingResponseDto>;
   cancelBookingForAdmin(
@@ -856,6 +887,128 @@ export class BookingRepository
     return [total, records.map(mapAdminBookingRecordToDto)];
   }
 
+
+  async recordRefundForAdmin(
+    id: string,
+    input: RecordRefundRepoInput,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto> {
+    const refundAmount = new Prisma.Decimal(input.amount);
+    return prisma.$transaction(async (tx) => {
+      // 1. Lock booking row in MySQL with FOR UPDATE
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          status: BookingStatus;
+          payment_status: PaymentStatus;
+          total_amount: Prisma.Decimal;
+          refunded_amount: Prisma.Decimal;
+        }>
+      >(
+        Prisma.sql`SELECT id, status, payment_status, total_amount, refunded_amount FROM bookings WHERE id = ${id} FOR UPDATE`,
+      );
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đơn đặt phòng', 404);
+      }
+
+      const locked = rows[0];
+
+      // 2. Validate booking state: must be CANCELLED
+      if (locked.status !== BookingStatus.CANCELLED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể hoàn tiền cho đơn đặt phòng đã hủy',
+          409,
+        );
+      }
+
+      // 3. Validate payment status: cannot be UNPAID
+      if (locked.payment_status === PaymentStatus.UNPAID) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hoàn tiền cho đơn đặt phòng chưa thanh toán',
+          409,
+        );
+      }
+
+      const totalAmount = new Prisma.Decimal(locked.total_amount);
+      const currentRefunded = new Prisma.Decimal(locked.refunded_amount);
+      const remainingRefundable = totalAmount.sub(currentRefunded);
+
+      // 4. Validate refundable capacity
+      if (refundAmount.lte(0)) {
+        throw new AppError('REFUND_AMOUNT_INVALID', 'Số tiền hoàn phải lớn hơn 0', 400);
+      }
+
+      if (remainingRefundable.lte(0)) {
+        throw new AppError(
+          'BOOKING_ALREADY_FULLY_REFUNDED',
+          'Đơn đặt phòng đã được hoàn đủ tiền',
+          409,
+        );
+      }
+
+      if (refundAmount.gt(remainingRefundable)) {
+        throw new AppError(
+          'REFUND_AMOUNT_EXCEEDED',
+          'Số tiền hoàn vượt quá số tiền còn lại có thể hoàn',
+          400,
+        );
+      }
+
+      const newRefundedAmount = currentRefunded.add(refundAmount);
+      const isFullyRefunded = newRefundedAmount.equals(totalAmount);
+      const newPaymentStatus = isFullyRefunded
+        ? PaymentStatus.REFUNDED
+        : PaymentStatus.PARTIALLY_REFUNDED;
+
+      // 5. Create Refund record
+      await tx.refund.create({
+        data: {
+          bookingId: id,
+          amount: refundAmount,
+          method: input.method,
+          reason: input.reason,
+          actorId: actor?.id ?? 'system',
+        },
+      });
+
+      // 6. Update Booking
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          refundedAmount: newRefundedAmount,
+          paymentStatus: newPaymentStatus,
+        },
+        select: adminBookingReadSelect,
+      });
+
+      // 7. Audit log
+      if (actor) {
+        await recordAuditEvent(tx, {
+          actor,
+          action: 'BOOKING_REFUNDED',
+          entityType: 'BOOKING',
+          entityId: id,
+          before: {
+            paymentStatus: locked.payment_status,
+            refundedAmount: formatAmount(currentRefunded),
+          },
+          after: {
+            paymentStatus: newPaymentStatus,
+            refundedAmount: formatAmount(newRefundedAmount),
+            refundAmount: formatAmount(refundAmount),
+            method: input.method,
+            reason: input.reason,
+          },
+        });
+      }
+
+      return mapAdminBookingRecordToDto(updated);
+    });
+  }
+
   async confirmPaymentForAdmin(
     id: string,
     paymentMethod: PaymentMethod,
@@ -1327,7 +1480,7 @@ export class BookingRepository
       by: ['status', 'paymentStatus'],
       where,
       _count: { _all: true },
-      _sum: { totalAmount: true },
+      _sum: { totalAmount: true, refundedAmount: true },
     });
     const groups = toRevenueGroups(groupRows);
 

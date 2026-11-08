@@ -49,6 +49,8 @@ describe('status utilities', () => {
     it('returns correct meta for payment statuses', () => {
       expect(getStatusMeta('payment', 'PAID')).toEqual(PAYMENT_STATUS_META.PAID);
       expect(getStatusMeta('payment', 'UNPAID')).toEqual(PAYMENT_STATUS_META.UNPAID);
+      expect(getStatusMeta('payment', 'PARTIALLY_REFUNDED')).toEqual(PAYMENT_STATUS_META.PARTIALLY_REFUNDED);
+      expect(getStatusMeta('payment', 'REFUNDED')).toEqual(PAYMENT_STATUS_META.REFUNDED);
     });
 
     it('returns correct meta for room statuses', () => {

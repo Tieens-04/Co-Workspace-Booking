@@ -64,6 +64,7 @@ vi.mock('../services/admin-booking.api', () => ({
     checkInBooking: vi.fn(),
     markNoShow: vi.fn(),
     getRevenue: vi.fn(),
+    recordRefund: vi.fn(),
   },
 }));
 
@@ -85,6 +86,7 @@ const mockBookingsList: AdminBookingItem[] = [
     startTime: '2026-10-03T02:00:00.000Z',
     endTime: '2026-10-03T04:00:00.000Z',
     totalAmount: '400000.00',
+    refundedAmount: '0.00',
     checkedInAt: null,
     attendanceTrackingEnabled: false,
     note: 'Yêu cầu micro không dây',
@@ -107,6 +109,7 @@ const mockBookingsList: AdminBookingItem[] = [
     startTime: '2026-10-03T07:00:00.000Z',
     endTime: '2026-10-03T09:00:00.000Z',
     totalAmount: '300000.00',
+    refundedAmount: '0.00',
     checkedInAt: null,
     attendanceTrackingEnabled: false,
     note: null,
@@ -975,6 +978,171 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       expect(
         await screen.findByText('Đã đánh dấu không đến cho đơn CS-20261003-USER'),
       ).toBeInTheDocument();
+    });
+
+    describe('Refund Recording Action (CWB-83)', () => {
+      it('opens refund modal for cancelled paid booking, submits refund, and refetches bookings', async () => {
+        const user = userEvent.setup();
+        const cancelledPaidBooking: AdminBookingItem = {
+          id: 'booking-refund-test',
+          bookingCode: 'CS-20261003-RFND',
+          room: { id: 'room-1', name: 'Phòng Hội Thảo A' },
+          startTime: '2026-10-03T02:00:00.000Z',
+          endTime: '2026-10-03T04:00:00.000Z',
+          totalAmount: '400000.00',
+          refundedAmount: '0.00',
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
+          note: null,
+          status: 'CANCELLED',
+          paymentStatus: 'PAID',
+          paymentMethod: 'CASH',
+          customer: { kind: 'USER', name: 'Khách Hoàn Tiền', phone: '0901234567' },
+        };
+
+        vi.mocked(adminBookingApi.getBookings).mockResolvedValueOnce(
+          mockBookingsResponse([cancelledPaidBooking], 1, 1),
+        );
+        vi.mocked(adminBookingApi.recordRefund).mockResolvedValueOnce({
+          success: true,
+          message: 'Ghi nhận hoàn tiền thành công',
+          data: {
+            ...cancelledPaidBooking,
+            paymentStatus: 'REFUNDED',
+            refundedAmount: '400000.00',
+          },
+        });
+        vi.mocked(adminBookingApi.getBookings).mockResolvedValueOnce(
+          mockBookingsResponse([
+            {
+              ...cancelledPaidBooking,
+              paymentStatus: 'REFUNDED',
+              refundedAmount: '400000.00',
+            },
+          ], 1, 1),
+        );
+
+        renderComponent();
+
+        // Click refund button in row
+        const refundBtn = await screen.findByTestId('refund-booking-btn-booking-refund-test');
+        await user.click(refundBtn);
+
+        // Modal is open
+        expect(await screen.findByTestId('admin-refund-modal')).toBeInTheDocument();
+
+        // Enter reason and confirmation keyword
+        await user.type(screen.getByTestId('refund-reason-input'), 'Khách yêu cầu hủy hoàn tiền');
+        await user.type(screen.getByTestId('refund-confirm-keyword'), 'HOÀN TIỀN');
+
+        // Submit refund
+        const submitBtn = screen.getByTestId('submit-refund-btn');
+        expect(submitBtn).toBeEnabled();
+        await user.click(submitBtn);
+
+        await waitFor(() => {
+          expect(adminBookingApi.recordRefund).toHaveBeenCalledWith('booking-refund-test', {
+            amount: 400000,
+            method: 'CASH',
+            reason: 'Khách yêu cầu hủy hoàn tiền',
+          });
+        });
+
+        // Modal should close and success banner appears
+        await waitFor(() => {
+          expect(screen.queryByTestId('admin-refund-modal')).not.toBeInTheDocument();
+        });
+        expect(
+          await screen.findByText('Đã ghi nhận hoàn tiền cho đơn CS-20261003-RFND'),
+        ).toBeInTheDocument();
+      });
+
+      it('displays payment method badge for PARTIALLY_REFUNDED and REFUNDED bookings (F7 Regression)', async () => {
+        const partiallyRefundedBooking: AdminBookingItem = {
+          id: 'booking-partially-refunded',
+          bookingCode: 'CS-20261003-PART',
+          room: { id: 'room-1', name: 'Phòng Hội Thảo A' },
+          startTime: '2026-10-03T02:00:00.000Z',
+          endTime: '2026-10-03T04:00:00.000Z',
+          totalAmount: '400000.00',
+          refundedAmount: '100000.00',
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
+          note: null,
+          status: 'CANCELLED',
+          paymentStatus: 'PARTIALLY_REFUNDED',
+          paymentMethod: 'QR',
+          customer: { kind: 'USER', name: 'Khách Đã Hoàn Một Phần', phone: '0901234567' },
+        };
+
+        vi.mocked(adminBookingApi.getBookings).mockResolvedValueOnce(
+          mockBookingsResponse([partiallyRefundedBooking], 1, 1),
+        );
+
+        renderComponent();
+
+        const badge = await screen.findByTestId('paid-method-label-booking-partially-refunded');
+        expect(badge).toBeInTheDocument();
+        expect(badge).toHaveTextContent('QR');
+      });
+
+      it('sets pendingBookingId and blocks concurrent actions while refund is in-flight (F1 Regression)', async () => {
+        const user = userEvent.setup();
+        const cancelledPaidBooking: AdminBookingItem = {
+          id: 'booking-pending-test',
+          bookingCode: 'CS-20261003-PEND',
+          room: { id: 'room-1', name: 'Phòng Hội Thảo A' },
+          startTime: '2026-10-03T02:00:00.000Z',
+          endTime: '2026-10-03T04:00:00.000Z',
+          totalAmount: '400000.00',
+          refundedAmount: '0.00',
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
+          note: null,
+          status: 'CANCELLED',
+          paymentStatus: 'PAID',
+          paymentMethod: 'CASH',
+          customer: { kind: 'USER', name: 'Khách Pending Test', phone: '0901234567' },
+        };
+
+        vi.mocked(adminBookingApi.getBookings).mockResolvedValueOnce(
+          mockBookingsResponse([cancelledPaidBooking], 1, 1),
+        );
+
+        let resolveRefund!: (val: any) => void;
+        const refundPromise = new Promise<any>((resolve) => {
+          resolveRefund = resolve;
+        });
+        vi.mocked(adminBookingApi.recordRefund).mockReturnValueOnce(refundPromise);
+
+        renderComponent();
+
+        const refundBtn = await screen.findByTestId('refund-booking-btn-booking-pending-test');
+        await user.click(refundBtn);
+
+        expect(await screen.findByTestId('admin-refund-modal')).toBeInTheDocument();
+        await user.type(screen.getByTestId('refund-reason-input'), 'Khách yêu cầu hoàn');
+        await user.type(screen.getByTestId('refund-confirm-keyword'), 'HOÀN TIỀN');
+
+        const submitBtn = screen.getByTestId('submit-refund-btn');
+        await user.click(submitBtn);
+
+        // While request is in flight, refund button in row should be disabled due to pendingBookingId
+        await waitFor(() => {
+          expect(refundBtn).toBeDisabled();
+        });
+
+        // Resolve request
+        resolveRefund({
+          success: true,
+          message: 'Hoàn tiền thành công',
+          data: { ...cancelledPaidBooking, paymentStatus: 'REFUNDED', refundedAmount: '400000.00' },
+        });
+
+        await waitFor(() => {
+          expect(screen.queryByTestId('admin-refund-modal')).not.toBeInTheDocument();
+        });
+      });
     });
   });
 });

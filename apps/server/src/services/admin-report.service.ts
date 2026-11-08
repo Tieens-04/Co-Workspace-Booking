@@ -43,6 +43,7 @@ export class AdminReportService {
         paymentStatus: true,
         paymentMethod: true,
         totalAmount: true,
+        refundedAmount: true,
         guestName: true,
         room: { select: { name: true } },
         user: { select: { fullName: true } },
@@ -72,6 +73,7 @@ export class AdminReportService {
         'Thanh toán',
         'Phương thức',
         'Số tiền (VND)',
+        'Đã hoàn (VND)',
       ],
       ...rows.map((b) => [
         b.bookingCode,
@@ -84,6 +86,7 @@ export class AdminReportService {
         b.paymentStatus,
         b.paymentMethod ?? '',
         b.totalAmount.toFixed(2),
+        b.refundedAmount.toFixed(2),
       ]),
     ]);
   }

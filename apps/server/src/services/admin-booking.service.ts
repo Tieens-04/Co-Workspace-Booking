@@ -7,6 +7,7 @@ import {
 import { bookingService as defaultBookingService, BookingService } from './booking.service.js';
 import {
   AdminBookingListResponseData,
+  RecordRefundRepoInput,
   AdminBookingResponseDto,
   FindAdminBookingsFilter,
   RevenuePeriodFilter,
@@ -51,12 +52,22 @@ export class AdminBookingService {
     const booking = await this.bookingService.createGuestBooking(input, now, retry, actor);
     return {
       ...booking,
+      refundedAmount: booking.refundedAmount ?? '0.00',
       customer: {
         kind: 'GUEST',
         name: input.guestName,
         phone: input.guestPhone,
       },
     };
+  }
+
+
+  async recordRefund(
+    id: string,
+    input: RecordRefundRepoInput,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto> {
+    return this.adminBookingRepo.recordRefundForAdmin(id, input, actor);
   }
 
   async confirmPayment(

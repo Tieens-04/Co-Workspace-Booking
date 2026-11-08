@@ -199,3 +199,32 @@ export const exportReportQuerySchema = z
   );
 
 export type ExportReportQueryInput = z.infer<typeof exportReportQuerySchema>;
+
+export const refundBookingParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type RefundBookingParamsInput = z.infer<typeof refundBookingParamsSchema>;
+
+export const refundBookingBodySchema = z
+  .object({
+    amount: z
+      .union([
+        z.number().positive('Số tiền hoàn phải lớn hơn 0').refine((val) => Number.isFinite(val) && /^\d+(\.\d{1,2})?$/.test(val.toString()), 'Số tiền hoàn không hợp lệ (tối đa 2 chữ số thập phân)'),
+        z.string().regex(/^\d+(\.\d{1,2})?$/, 'Số tiền hoàn không hợp lệ'),
+      ])
+      .refine((val) => Number(val) > 0, 'Số tiền hoàn phải lớn hơn 0'),
+    method: z.nativeEnum(PaymentMethod, {
+      message: 'Phương thức hoàn tiền phải là CASH hoặc QR',
+    }),
+    reason: z
+      .string({ message: 'Lý do hoàn tiền không được để trống' })
+      .trim()
+      .min(1, 'Lý do hoàn tiền không được để trống')
+      .max(500, 'Lý do hoàn tiền không được vượt quá 500 ký tự'),
+  })
+  .strict();
+
+export type RefundBookingBodyInput = z.infer<typeof refundBookingBodySchema>;
