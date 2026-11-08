@@ -1015,4 +1015,46 @@ describe('BookingDetailPage', () => {
       expect(screen.getByTestId('reschedule-dialog-content')).toBeInTheDocument();
     });
   });
+
+  describe('Refund & Paid Cancellation Warning (CWB-83)', () => {
+    it('shows paid-cancel-warning when cancelling a PAID booking', async () => {
+      const futureStart = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: futureStart,
+          endTime: futureEnd,
+          paymentStatus: 'PAID',
+          paymentMethod: 'QR',
+        }),
+      );
+
+      renderComponent();
+
+      const user = userEvent.setup();
+      const cancelBtn = await screen.findByTestId('cancel-booking-init-btn');
+      await user.click(cancelBtn);
+
+      expect(await screen.findByTestId('cancellation-confirm-box')).toBeInTheDocument();
+      expect(screen.getByTestId('paid-cancel-warning')).toBeInTheDocument();
+      expect(screen.getByTestId('paid-cancel-warning')).toHaveTextContent(/chính sách hoàn tiền/i);
+    });
+
+    it('displays refunded amount when booking has refundedAmount > 0', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          status: 'CANCELLED',
+          paymentStatus: 'REFUNDED',
+          refundedAmount: '500000.00',
+        }),
+      );
+
+      renderComponent();
+
+      expect(await screen.findByTestId('refunded-amount-value')).toBeInTheDocument();
+      expect(screen.getByTestId('refunded-amount-value')).toHaveTextContent('500.000 đ');
+    });
+  });
 });

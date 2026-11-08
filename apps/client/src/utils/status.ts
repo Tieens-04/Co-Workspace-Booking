@@ -28,6 +28,8 @@ export const BOOKING_STATUS_META: Record<string, StatusMeta> = {
 export const PAYMENT_STATUS_META: Record<string, StatusMeta> = {
   UNPAID: { label: 'Chưa thanh toán', tone: 'unpaid' },
   PAID: { label: 'Đã thanh toán', tone: 'success' },
+  PARTIALLY_REFUNDED: { label: 'Đã hoàn một phần', tone: 'confirmed' },
+  REFUNDED: { label: 'Đã hoàn tiền', tone: 'neutral' },
 };
 
 export const ROOM_STATUS_META: Record<string, StatusMeta> = {

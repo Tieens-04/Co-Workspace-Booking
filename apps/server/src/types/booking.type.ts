@@ -25,6 +25,7 @@ export interface BookingResponseDto {
   cancellationReason?: string | null;
   cancelledAt?: Date | null;
   cancelledBy?: Role | null;
+  refundedAmount?: string;
   isNewlyCancelled?: boolean;
 }
 

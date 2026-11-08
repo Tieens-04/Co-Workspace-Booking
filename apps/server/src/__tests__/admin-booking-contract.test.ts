@@ -24,6 +24,8 @@ function fixture(): AdminBookingReadRecord {
     cancellationReason: null,
     cancelledAt: null,
     cancelledBy: null,
+    refundedAmount: new Prisma.Decimal('0.00'),
+    refunds: [],
     guestName: null,
     guestPhone: null,
     user: {
@@ -70,6 +72,8 @@ describe('Public admin booking customer contract (CWB-46)', () => {
         'status',
         'paymentStatus',
         'paymentMethod',
+        'refundedAmount',
+        'refunds',
         'cancellationReason',
         'cancelledAt',
         'cancelledBy',

@@ -90,7 +90,7 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
           by: ['status', 'paymentStatus'],
           where: periodWhere,
           _count: { _all: true },
-          _sum: { totalAmount: true },
+          _sum: { totalAmount: true, refundedAmount: true },
         });
         const groups = toRevenueGroups(groupRows);
         const revenue = summarizeRevenueGroups(groups);

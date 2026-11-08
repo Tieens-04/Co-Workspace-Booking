@@ -28,6 +28,7 @@ export interface BookingResult {
   cancellationReason?: string | null;
   cancelledAt?: string | null;
   cancelledBy?: 'CUSTOMER' | 'ADMIN' | null;
+  refundedAmount?: string;
 }
 
 export type CreateBookingResponse = ApiResponse<BookingResult>;

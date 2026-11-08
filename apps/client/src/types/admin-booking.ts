@@ -27,6 +27,8 @@ export interface AdminBookingItem {
   paymentStatus: string;
   paymentMethod: string | null;
   cancellationReason?: string | null;
+  refundedAmount?: string;
+  refunds?: AdminRefundItem[];
   customer: AdminBookingCustomer;
 }
 
@@ -90,3 +92,20 @@ export interface GetAdminRevenueParams {
 }
 
 export type AdminRevenueApiResponse = ApiResponse<AdminRevenueData>;
+
+export interface AdminRefundItem {
+  id: string;
+  amount: string;
+  method: 'CASH' | 'QR';
+  reason: string;
+  actorId: string;
+  createdAt: string;
+}
+
+export interface RefundBookingPayload {
+  amount: number | string;
+  method: 'CASH' | 'QR';
+  reason: string;
+}
+
+export type AdminRefundBookingApiResponse = ApiResponse<AdminBookingItem>;

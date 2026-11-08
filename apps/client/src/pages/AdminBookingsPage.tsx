@@ -14,6 +14,7 @@ import {
 } from '../components/admin/bookings/AdminBookingTable';
 import { ConfirmPaymentDialog } from '../components/admin/bookings/ConfirmPaymentDialog';
 import { CancelBookingDialog } from '../components/admin/bookings/CancelBookingDialog';
+import { RefundBookingDialog, RefundBookingSubmitData } from '../components/admin/bookings/RefundBookingDialog';
 import {
   LifecycleConfirmDialog,
   LifecycleConfirmTarget,
@@ -151,6 +152,10 @@ export const AdminBookingsPage: React.FC = () => {
   const [cancelValidationError, setCancelValidationError] = useState<string | null>(null);
   const [isCancelSubmitting, setIsCancelSubmitting] = useState<boolean>(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // Refund modal state (CWB-83)
+  const [refundModalTarget, setRefundModalTarget] = useState<AdminBookingItem | null>(null);
+  const [isRefundSubmitting, setIsRefundSubmitting] = useState<boolean>(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
 
   // Success message banner
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
@@ -223,6 +228,53 @@ export const AdminBookingsPage: React.FC = () => {
     setCancelModalTarget(null);
     setCancelValidationError(null);
     setCancelError(null);
+  };
+
+  const handleOpenRefundModal = (booking: AdminBookingItem) => {
+    if (pendingActionRef.current) return;
+    setRefundModalTarget(booking);
+    setRefundError(null);
+  };
+
+  const handleCloseRefundModal = () => {
+    if (isRefundSubmitting) return;
+    setRefundModalTarget(null);
+    setRefundError(null);
+  };
+
+  const handleSubmitRefund = async (data: RefundBookingSubmitData) => {
+    if (!refundModalTarget || pendingActionRef.current || isRefundSubmitting) return;
+    pendingActionRef.current = true;
+    setPendingBookingId(refundModalTarget.id);
+    setIsRefundSubmitting(true);
+    setRefundError(null);
+    setActionErrorMessage(null);
+    setActionSuccessMessage(null);
+    try {
+      const res = await adminBookingApi.recordRefund(refundModalTarget.id, data);
+      if (!res.success) {
+        const msg = res.message || 'Không thể ghi nhận hoàn tiền. Vui lòng thử lại.';
+        setRefundError(msg);
+        showToast(msg, 'error');
+        return;
+      }
+      const msg = `Đã ghi nhận hoàn tiền cho đơn ${refundModalTarget.bookingCode}`;
+      showToast(msg, 'success');
+      setActionSuccessMessage(msg);
+      setRefundModalTarget(null);
+      fetchAdminBookings(true);
+    } catch (err: any) {
+      const msg = err.response?.data?.message || 'Không thể ghi nhận hoàn tiền. Vui lòng thử lại.';
+      setRefundError(msg);
+      showToast(msg, 'error');
+      if (err.response?.status === 409) {
+        fetchAdminBookings(true);
+      }
+    } finally {
+      setIsRefundSubmitting(false);
+      pendingActionRef.current = false;
+      setPendingBookingId(null);
+    }
   };
 
   const handleSubmitCancel = async (e: React.FormEvent) => {
@@ -632,6 +684,7 @@ export const AdminBookingsPage: React.FC = () => {
               onNoShow={(booking) => handleRequestLifecycle(booking, 'no-show')}
               onCancel={handleOpenCancelModal}
               onCheckIn={handleCheckIn}
+              onRefund={handleOpenRefundModal}
               pendingBookingId={pendingBookingId}
             />
 
@@ -675,6 +728,15 @@ export const AdminBookingsPage: React.FC = () => {
         error={cancelError}
         onSubmit={handleSubmitCancel}
         onClose={handleCloseCancelModal}
+      />
+
+      {/* Refund Modal (CWB-83) */}
+      <RefundBookingDialog
+        booking={refundModalTarget}
+        isSubmitting={isRefundSubmitting}
+        error={refundError}
+        onClose={handleCloseRefundModal}
+        onSubmit={handleSubmitRefund}
       />
 
       {/* Complete / No-show confirmation */}

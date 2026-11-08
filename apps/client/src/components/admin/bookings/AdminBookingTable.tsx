@@ -171,6 +171,7 @@ interface AdminBookingTableProps {
   onNoShow: (booking: AdminBookingItem) => void;
   onCancel: (booking: AdminBookingItem) => void;
   onCheckIn: (booking: AdminBookingItem) => void;
+  onRefund?: (booking: AdminBookingItem) => void;
   pendingBookingId?: string | null;
 }
 
@@ -185,6 +186,7 @@ export function AdminBookingTable({
   onNoShow,
   onCancel,
   onCheckIn,
+  onRefund,
   pendingBookingId,
 }: AdminBookingTableProps) {
   const [now, setNow] = useState(Date.now);
@@ -240,6 +242,14 @@ export function AdminBookingTable({
                 now >= new Date(booking.startTime).getTime() &&
                 now < new Date(booking.endTime).getTime();
               const isPending = pendingBookingId === booking.id;
+              const totalNum = Number(booking.totalAmount || 0);
+              const refundedNum = Number(booking.refundedAmount || 0);
+              const remainingRefundable = Math.max(0, totalNum - refundedNum);
+              const canRefund =
+                booking.status === 'CANCELLED' &&
+                (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'PARTIALLY_REFUNDED') &&
+                remainingRefundable > 0;
+              const hasActions = canPay || isConfirmed || (canRefund && Boolean(onRefund));
 
               return (
                 <TableRow
@@ -318,7 +328,7 @@ export function AdminBookingTable({
                           status={booking.paymentStatus}
                           data-testid={`payment-status-${booking.id}`}
                         />
-                        {booking.paymentStatus === 'PAID' && booking.paymentMethod && (
+                        {(booking.paymentStatus === 'PAID' || booking.paymentStatus === 'PARTIALLY_REFUNDED' || booking.paymentStatus === 'REFUNDED') && booking.paymentMethod && (
                           <span
                             className="inline-flex items-center gap-1 text-xs font-semibold text-status-success"
                             data-testid={`paid-method-label-${booking.id}`}
@@ -347,6 +357,14 @@ export function AdminBookingTable({
                         Lý do: {booking.cancellationReason}
                       </div>
                     )}
+                    {booking.refundedAmount && Number(booking.refundedAmount) > 0 && (
+                      <p
+                        className="mt-1.5 text-xs font-medium text-status-warning tabular-nums"
+                        data-testid={`refunded-amount-${booking.id}`}
+                      >
+                        Đã hoàn: {formatCurrency(booking.refundedAmount)}
+                      </p>
+                    )}
                   </TableCell>
 
                   <TableCell
@@ -363,9 +381,9 @@ export function AdminBookingTable({
 
                   <TableCell
                     data-label={COLUMNS[6].label}
-                    className={cn(CELL_CLASS, st.full, !canPay && !isConfirmed && 'max-md:hidden')}
+                    className={cn(CELL_CLASS, st.full, !hasActions && 'max-md:hidden')}
                   >
-                    {(canPay || isConfirmed) && (
+                    {hasActions && (
                       <div
                         className={cn(
                           'grid gap-1.5 md:ml-auto',
@@ -432,6 +450,19 @@ export function AdminBookingTable({
                             disabled={isPending}
                           >
                             Hủy đơn
+                          </Button>
+                        )}
+                        {canRefund && onRefund && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="border-status-warning text-status-warning hover:bg-status-warning-bg hover:text-status-warning"
+                            data-testid={`refund-booking-btn-${booking.id}`}
+                            onClick={() => onRefund(booking)}
+                            disabled={isPending}
+                          >
+                            Hoàn tiền
                           </Button>
                         )}
                       </div>

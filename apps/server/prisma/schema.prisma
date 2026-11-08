@@ -32,6 +32,8 @@ enum BookingStatus {
 enum PaymentStatus {
   UNPAID
   PAID
+  PARTIALLY_REFUNDED
+  REFUNDED
 }
 
 enum EmailOutboxStatus {
@@ -181,6 +183,7 @@ model Booking {
   cancellationReason        String?        @map("cancellation_reason") @db.Text
   cancelledAt               DateTime?      @map("cancelled_at")
   cancelledBy               Role?          @map("cancelled_by")
+  refundedAmount            Decimal        @default(0.00) @map("refunded_amount") @db.Decimal(12, 2)
   createdAt                 DateTime       @default(now()) @map("created_at")
   updatedAt                 DateTime       @updatedAt @map("updated_at")
 
@@ -196,6 +199,7 @@ model Booking {
   user        User?         @relation(fields: [userId], references: [id], onDelete: Restrict)
   room        Room          @relation(fields: [roomId], references: [id], onDelete: Restrict)
   emailOutbox EmailOutbox[]
+  refunds                   Refund[]
 
   @@unique([idempotencyScope, idempotencyKey], map: "bookings_idempotency_scope_key_key")
   // Composite index cực kỳ quan trọng cho availability query (StartA < EndB AND EndA > StartB)
@@ -204,6 +208,22 @@ model Booking {
   @@index([startTime, id])
   @@index([status, attendanceTrackingEnabled, checkedInAt, endTime], map: "bookings_attendance_no_show_idx")
   @@map("bookings")
+}
+
+
+model Refund {
+  id        String        @id @default(uuid())
+  bookingId String        @map("booking_id")
+  amount    Decimal       @db.Decimal(12, 2)
+  method    PaymentMethod
+  reason    String        @db.VarChar(500)
+  actorId   String        @map("actor_id") @db.VarChar(191)
+  createdAt DateTime      @default(now()) @map("created_at")
+
+  booking   Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("refunds")
 }
 
 // CWB-67: append-only audit trail of important admin mutations, written in the same

@@ -42,6 +42,7 @@ const mockAdminBookingFixture = (
     startTime: slot.startDate,
     endTime: slot.endDate,
     totalAmount: '600000.00',
+    refundedAmount: '0.00',
     note: 'Khách VIP',
     status: BookingStatus.CONFIRMED,
     paymentStatus: PaymentStatus.UNPAID,
@@ -1046,4 +1047,187 @@ describe('Admin Booking Management API Unit Tests', () => {
       expect(res.body.data.actualRevenue).toBe('0.00');
     });
   });
+
+  describe('POST /api/v1/admin/bookings/:id/refund', () => {
+    const bookingId = '22222222-2222-4222-8222-222222222222';
+
+    it('returns 401 UNAUTHORIZED when no token is provided', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .send({ amount: 100000, method: 'CASH', reason: 'Hoàn tiền cho khách' });
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it('returns 403 FORBIDDEN when CUSTOMER attempts to record a refund', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({ amount: 100000, method: 'CASH', reason: 'Hoàn tiền cho khách' });
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    });
+
+    it('returns 400 VALIDATION_ERROR for invalid UUID', async () => {
+      const res = await request(app)
+        .post('/api/v1/admin/bookings/not-a-uuid/refund')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 100000, method: 'CASH', reason: 'Hoàn tiền cho khách' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 400 VALIDATION_ERROR when amount <= 0', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 0, method: 'CASH', reason: 'Hoàn tiền' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 400 VALIDATION_ERROR when amount has more than 2 decimal places as number (F2 Regression)', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 100.555, method: 'CASH', reason: 'Hoàn tiền' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+
+      const resSmall = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 0.001, method: 'CASH', reason: 'Hoàn tiền' });
+      expect(resSmall.status).toBe(400);
+      expect(resSmall.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 400 VALIDATION_ERROR when amount has more than 2 decimal places as string (F2 Regression)', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: '50000.123', method: 'CASH', reason: 'Hoàn tiền' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 400 VALIDATION_ERROR when method is invalid', async () => {
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 50000, method: 'BITCOIN', reason: 'Hoàn tiền' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 400 VALIDATION_ERROR when reason is empty or exceeds 500 characters', async () => {
+      const emptyRes = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 50000, method: 'CASH', reason: '   ' });
+      expect(emptyRes.status).toBe(400);
+      expect(emptyRes.body.code).toBe('VALIDATION_ERROR');
+
+      const longRes = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 50000, method: 'CASH', reason: 'a'.repeat(501) });
+      expect(longRes.status).toBe(400);
+      expect(longRes.body.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('returns 404 BOOKING_NOT_FOUND when booking does not exist', async () => {
+      vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
+        new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đơn đặt phòng', 404),
+      );
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 50000, method: 'CASH', reason: 'Khách hủy' });
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('BOOKING_NOT_FOUND');
+    });
+
+    it('returns 409 BOOKING_STATE_CONFLICT when booking is not CANCELLED', async () => {
+      vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
+        new AppError('BOOKING_STATE_CONFLICT', 'Chỉ có thể hoàn tiền cho đơn đặt phòng đã hủy', 409),
+      );
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 50000, method: 'CASH', reason: 'Khách hủy' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('returns 409 BOOKING_STATE_CONFLICT when booking is UNPAID', async () => {
+      vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
+        new AppError('BOOKING_STATE_CONFLICT', 'Không thể hoàn tiền cho đơn đặt phòng chưa thanh toán', 409),
+      );
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 50000, method: 'CASH', reason: 'Khách hủy' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_STATE_CONFLICT');
+    });
+
+    it('returns 409 BOOKING_ALREADY_FULLY_REFUNDED when booking is already fully refunded', async () => {
+      vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
+        new AppError('BOOKING_ALREADY_FULLY_REFUNDED', 'Đơn đặt phòng đã được hoàn đủ tiền', 409),
+      );
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 50000, method: 'CASH', reason: 'Khách hủy' });
+      expect(res.status).toBe(409);
+      expect(res.body.code).toBe('BOOKING_ALREADY_FULLY_REFUNDED');
+    });
+
+    it('returns 400 REFUND_AMOUNT_EXCEEDED when refund amount exceeds remaining refundable amount', async () => {
+      vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
+        new AppError('REFUND_AMOUNT_EXCEEDED', 'Số tiền hoàn vượt quá số tiền còn lại có thể hoàn', 400),
+      );
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 700000, method: 'CASH', reason: 'Khách hủy' });
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('REFUND_AMOUNT_EXCEEDED');
+    });
+
+    it('returns 200 OK and updated booking on successful refund', async () => {
+      const updatedBooking = mockAdminBookingFixture({
+        id: bookingId,
+        status: BookingStatus.CANCELLED,
+        paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+        totalAmount: '600000.00',
+        refundedAmount: '200000.00',
+      });
+      const spy = vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockResolvedValue(updatedBooking);
+
+      const res = await request(app)
+        .post(`/api/v1/admin/bookings/${bookingId}/refund`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ amount: 200000, method: 'QR', reason: 'Chuyển khoản hoàn tiền phòng' });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.paymentStatus).toBe(PaymentStatus.PARTIALLY_REFUNDED);
+      expect(res.body.data.refundedAmount).toBe('200000.00');
+      expect(spy).toHaveBeenCalledWith(
+        bookingId,
+        expect.objectContaining({
+          amount: 200000,
+          method: 'QR',
+          reason: 'Chuyển khoản hoàn tiền phòng',
+        }),
+        expect.objectContaining({
+          id: 'admin-uuid-1',
+          role: Role.ADMIN,
+        }),
+      );
+    });
+  });
+
 });

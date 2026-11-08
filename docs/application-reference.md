@@ -694,18 +694,28 @@ Hệ thống cho phép khách hàng (`CUSTOMER`) chủ động tự hủy đơn 
   - Khóa nút và hiển thị trạng thái đang xử lý (`isCancelling`), cập nhật trực tiếp huy hiệu trạng thái sang _"Đã hủy"_ khi thành công mà không cần tải lại toàn trang, đồng thời hiển thị banner thông báo chi tiết hủy (`cancellation-info-banner`).
   - Hiển thị banner thông báo lỗi chính sách (`role="alert"`) hoặc lỗi xung đột trạng thái (kèm nút tải lại dữ liệu).
 
-#### Doanh thu khi hủy booking (CWB-40)
+#### Doanh thu khi hủy booking (CWB-40) và Ghi nhận hoàn tiền (CWB-83)
 
-Hủy booking của CUSTOMER hoặc ADMIN không hoàn tiền và giữ nguyên `paymentStatus`,
-`paymentMethod`, `totalAmount`. Hệ thống hiện chưa hỗ trợ ghi nhận hoàn tiền.
+Khi hủy booking của CUSTOMER hoặc ADMIN, `paymentStatus`, `paymentMethod`, `totalAmount` ban đầu được giữ nguyên (CWB-40). Hệ thống hỗ trợ Admin ghi nhận hoàn tiền cho các booking đã thanh toán bị hủy (`CANCELLED` + `PAID`/`PARTIALLY_REFUNDED`) qua endpoint `POST /api/v1/admin/bookings/:id/refund` (CWB-83):
+
+- **Quy tắc hoàn tiền (`POST /api/v1/admin/bookings/:id/refund`)**:
+  - Yêu cầu xác thực JWT với vai trò `ADMIN`. Thiếu token → `401 UNAUTHORIZED`; vai trò `CUSTOMER` → `403 FORBIDDEN`.
+  - Body: `{ amount: number | string, method: "CASH" | "QR", reason: string }` (lý do 1–500 ký tự).
+  - Khóa dòng booking bằng `SELECT ... FOR UPDATE` trong transaction.
+  - Điều kiện: booking phải ở trạng thái `CANCELLED` và `paymentStatus` khác `UNPAID` (ngược lại → `409 BOOKING_STATE_CONFLICT`).
+  - Booking đã hoàn đủ 100% (`refundedAmount >= totalAmount`) → `409 BOOKING_ALREADY_FULLY_REFUNDED`.
+  - Số tiền hoàn phải lớn hơn 0 và không vượt quá số dư có thể hoàn (`amount <= totalAmount - refundedAmount`); nếu vượt → `400 REFUND_AMOUNT_EXCEEDED`.
+  - Cập nhật `refundedAmount = refundedAmount + amount`. Nếu hoàn đủ 100% → `paymentStatus = REFUNDED`, nếu hoàn một phần → `paymentStatus = PARTIALLY_REFUNDED`.
+  - Tạo bản ghi trong bảng `Refund` và lưu `AuditEvent` (`action = 'BOOKING_REFUNDED'`) trong cùng transaction.
+
 
 Revenue API (`GET /api/v1/admin/revenue`, alias `/admin/bookings/revenue`) và KPI
 (`/admin/dashboard/kpi`) dùng chung quy tắc tính tiền bằng Decimal:
 
-- `actualRevenue`: tổng tiền mọi booking `PAID`, bao gồm `CANCELLED`.
+- `actualRevenue`: tổng doanh thu thực tế từ mọi booking đã thanh toán (`PAID`, `PARTIALLY_REFUNDED`, `REFUNDED`), tính bằng `totalAmount - refundedAmount`.
 - `unpaidRevenue`: tổng tiền booking `UNPAID` chưa bị hủy; đơn `CANCELLED + UNPAID` không đóng góp.
 - `potentialRevenue = actualRevenue + unpaidRevenue`.
-- `paidBookings`/`paidBookingsCount` đếm mọi booking PAID; `unpaidBookings`/`unpaidBookingsCount`
+- `paidBookings`/`paidBookingsCount` đếm mọi booking đã thanh toán có doanh thu thực > 0 (`totalAmount - refundedAmount > 0`); booking đã hoàn 100% (`REFUNDED`) không tính vào `paidBookings`. `unpaidBookings`/`unpaidBookingsCount`
   chỉ đếm UNPAID chưa bị hủy. Số đơn hủy đếm độc lập và có thể đồng thời thuộc nhóm PAID;
   không cộng các nhóm này để suy ra tổng số booking.
 - Tiền và số lượng được tổng hợp ngay trong MySQL bằng `groupBy (status, paymentStatus)` với
