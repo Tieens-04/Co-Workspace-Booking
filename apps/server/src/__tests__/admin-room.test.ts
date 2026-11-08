@@ -150,6 +150,7 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
         page: 1,
         limit: 10,
+        sort: 'newest',
       });
     });
   });

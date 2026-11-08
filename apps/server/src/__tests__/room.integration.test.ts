@@ -1,12 +1,13 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
-import { RoomStatus } from '@prisma/client';
+import { RoomStatus, BookingStatus, PaymentStatus } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 
 describe('Room API Integration Tests (Real MySQL Database)', () => {
   const testPrefix = `test_${randomUUID()}`;
+  let testUserId: string;
   let amenityAId: string;
   let amenityBId: string;
   let amenityCId: string;
@@ -15,6 +16,8 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
   let roomPartialId: string;
   let roomNoneId: string;
   let roomNoImageId: string;
+  let bookingConfirmedId: string;
+  let bookingCancelledId: string;
 
   beforeAll(async () => {
     // 1. Create unique test amenities
@@ -129,9 +132,63 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
       },
     });
     roomNoImageId = roomNoImage.id;
+
+    // 6. Create test user and bookings for availability testing
+    const testUser = await prisma.user.create({
+      data: {
+        email: `${testPrefix}_user@example.com`,
+        passwordHash: '$2a$10$abcdefghijklmnopqrstuvwxyz123456',
+        fullName: 'Test Room User',
+      },
+    });
+    testUserId = testUser.id;
+
+    // Confirmed booking on roomAll: 2026-11-25 10:00 - 12:00 VN (03:00 - 05:00 UTC)
+    const bookingConfirmed = await prisma.booking.create({
+      data: {
+        bookingCode: `CS-20261125-${randomUUID().slice(0, 4).toUpperCase()}`,
+        userId: testUserId,
+        roomId: roomAllId,
+        startTime: new Date('2026-11-25T03:00:00.000Z'),
+        endTime: new Date('2026-11-25T05:00:00.000Z'),
+        totalAmount: 400.0,
+        status: BookingStatus.CONFIRMED,
+        paymentStatus: PaymentStatus.PAID,
+      },
+    });
+    bookingConfirmedId = bookingConfirmed.id;
+
+    // Cancelled booking on roomPartial: 2026-11-25 10:00 - 12:00 VN (03:00 - 05:00 UTC)
+    const bookingCancelled = await prisma.booking.create({
+      data: {
+        bookingCode: `CS-20261125-${randomUUID().slice(0, 4).toUpperCase()}`,
+        userId: testUserId,
+        roomId: roomPartialId,
+        startTime: new Date('2026-11-25T03:00:00.000Z'),
+        endTime: new Date('2026-11-25T05:00:00.000Z'),
+        totalAmount: 200.0,
+        status: BookingStatus.CANCELLED,
+        paymentStatus: PaymentStatus.REFUNDED,
+      },
+    });
+    bookingCancelledId = bookingCancelled.id;
   });
 
   afterAll(async () => {
+    // Delete created bookings first
+    await prisma.booking.deleteMany({
+      where: {
+        id: { in: [bookingConfirmedId, bookingCancelledId] },
+      },
+    });
+
+    // Delete created user
+    if (testUserId) {
+      await prisma.user.delete({
+        where: { id: testUserId },
+      });
+    }
+
     // Delete created rooms (cascades to room_images and room_amenities)
     await prisma.room.deleteMany({
       where: {
@@ -259,6 +316,166 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
       const noImageRoom = items.find((r) => r.id === roomNoImageId);
       expect(noImageRoom).toBeDefined();
       expect(noImageRoom!.coverImage).toBeNull();
+    });
+
+    describe('Search by Keyword (q)', () => {
+      it('filters rooms by name containing the search keyword (case-insensitive)', async () => {
+        const res = await request(app).get(`/api/v1/rooms?q=${testPrefix}_Room_All`);
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).toEqual([roomAllId]);
+      });
+
+      it('returns all matching rooms for partial substring in name', async () => {
+        const res = await request(app).get(`/api/v1/rooms?q=${testPrefix}&limit=100`);
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).toEqual(
+          expect.arrayContaining([roomAllId, roomPartialId, roomNoneId, roomNoImageId]),
+        );
+      });
+    });
+
+    describe('Sort Options (sort)', () => {
+      it('sorts rooms by price ascending (price_asc)', async () => {
+        const res = await request(app).get(`/api/v1/rooms?q=${testPrefix}&sort=price_asc&limit=100`);
+
+        expect(res.status).toBe(200);
+        const items = res.body.data.items;
+        const prices = items.map((r: { pricePerHour: string }) => Number(r.pricePerHour));
+        for (let i = 0; i < prices.length - 1; i++) {
+          expect(prices[i]).toBeLessThanOrEqual(prices[i + 1]);
+        }
+        // First should be roomNone (50.00), last roomAll (200.00)
+        expect(items[0].id).toBe(roomNoneId);
+        expect(items[items.length - 1].id).toBe(roomAllId);
+      });
+
+      it('sorts rooms by price descending (price_desc)', async () => {
+        const res = await request(app).get(`/api/v1/rooms?q=${testPrefix}&sort=price_desc&limit=100`);
+
+        expect(res.status).toBe(200);
+        const items = res.body.data.items;
+        const prices = items.map((r: { pricePerHour: string }) => Number(r.pricePerHour));
+        for (let i = 0; i < prices.length - 1; i++) {
+          expect(prices[i]).toBeGreaterThanOrEqual(prices[i + 1]);
+        }
+        expect(items[0].id).toBe(roomAllId);
+        expect(items[items.length - 1].id).toBe(roomNoneId);
+      });
+
+      it('sorts rooms by capacity ascending (capacity_asc)', async () => {
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&sort=capacity_asc&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const items = res.body.data.items;
+        const capacities = items.map((r: { capacity: number }) => r.capacity);
+        for (let i = 0; i < capacities.length - 1; i++) {
+          expect(capacities[i]).toBeLessThanOrEqual(capacities[i + 1]);
+        }
+        expect(items[0].id).toBe(roomNoneId); // capacity 2
+        expect(items[items.length - 1].id).toBe(roomAllId); // capacity 10
+      });
+
+      it('sorts rooms by capacity descending (capacity_desc)', async () => {
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&sort=capacity_desc&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const items = res.body.data.items;
+        const capacities = items.map((r: { capacity: number }) => r.capacity);
+        for (let i = 0; i < capacities.length - 1; i++) {
+          expect(capacities[i]).toBeGreaterThanOrEqual(capacities[i + 1]);
+        }
+        expect(items[0].id).toBe(roomAllId); // capacity 10
+        expect(items[items.length - 1].id).toBe(roomNoneId); // capacity 2
+      });
+    });
+
+    describe('Availability Slot Filtering (date + startTime + endTime)', () => {
+      // Existing confirmed booking on roomAll is 2026-11-25 10:00 - 12:00 VN
+      const testDate = '2026-11-25';
+
+      it('excludes room with overlapping booking (fully inside requested slot)', async () => {
+        // Requested 10:30 - 11:30 is inside existing 10:00 - 12:00
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&date=${testDate}&startTime=10:30&endTime=11:30&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).not.toContain(roomAllId);
+        // roomPartial has a CANCELLED booking at the same time, so it must be available
+        expect(ids).toContain(roomPartialId);
+        // roomNone is MAINTENANCE, so it must be excluded
+        expect(ids).not.toContain(roomNoneId);
+      });
+
+      it('excludes room with partial overlap at start', async () => {
+        // Requested 09:30 - 10:30 overlaps 10:00 - 12:00
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&date=${testDate}&startTime=09:30&endTime=10:30&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).not.toContain(roomAllId);
+      });
+
+      it('excludes room with partial overlap at end', async () => {
+        // Requested 11:30 - 12:30 overlaps 10:00 - 12:00
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&date=${testDate}&startTime=11:30&endTime=12:30&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).not.toContain(roomAllId);
+      });
+
+      it('excludes room when requested slot completely encloses existing booking', async () => {
+        // Requested 09:00 - 13:00 encloses 10:00 - 12:00
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&date=${testDate}&startTime=09:00&endTime=13:00&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).not.toContain(roomAllId);
+      });
+
+      it('includes room when slot boundary touches existing booking end (existing 10-12, requested 12-14)', async () => {
+        // Boundary touching after: requested start 12:00 == existing end 12:00
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&date=${testDate}&startTime=12:00&endTime=14:00&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).toContain(roomAllId);
+        expect(ids).toContain(roomPartialId);
+        expect(ids).toContain(roomNoImageId);
+        expect(ids).not.toContain(roomNoneId); // MAINTENANCE excluded
+      });
+
+      it('includes room when slot boundary touches existing booking start (requested 08-10, existing 10-12)', async () => {
+        // Boundary touching before: requested end 10:00 == existing start 10:00
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&date=${testDate}&startTime=08:00&endTime=10:00&limit=100`,
+        );
+
+        expect(res.status).toBe(200);
+        const ids = res.body.data.items.map((r: { id: string }) => r.id);
+        expect(ids).toContain(roomAllId);
+        expect(ids).toContain(roomPartialId);
+        expect(ids).toContain(roomNoImageId);
+        expect(ids).not.toContain(roomNoneId); // MAINTENANCE excluded
+      });
     });
   });
 

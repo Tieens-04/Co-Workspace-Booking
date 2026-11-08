@@ -4,7 +4,11 @@ import type { Amenity } from '../../types/room';
 import { formatCurrency } from '../../utils/format';
 
 export type RemovableFilter =
-  { kind: 'capacity' } | { kind: 'price' } | { kind: 'amenity'; id: string };
+  | { kind: 'capacity' }
+  | { kind: 'price' }
+  | { kind: 'amenity'; id: string }
+  | { kind: 'q' }
+  | { kind: 'slot' };
 
 interface ActiveFiltersProps {
   /** Committed (URL) values, not the in-progress input text. */
@@ -13,6 +17,10 @@ interface ActiveFiltersProps {
   maxPrice: string;
   amenityIds: string[];
   amenities: Amenity[];
+  q?: string;
+  date?: string;
+  startTime?: string;
+  endTime?: string;
   onRemove: (filter: RemovableFilter) => void;
   onClearAll: () => void;
   /** The empty state carries its own "Xóa bộ lọc" CTA, so the summary can drop its copy. */
@@ -32,11 +40,25 @@ export function ActiveFilters({
   maxPrice,
   amenityIds,
   amenities,
+  q,
+  date,
+  startTime,
+  endTime,
   onRemove,
   onClearAll,
   showClearAll = true,
 }: ActiveFiltersProps) {
   const chips: { key: string; label: string; filter: RemovableFilter }[] = [];
+  if (q) {
+    chips.push({ key: 'q', label: `Từ khóa: "${q}"`, filter: { kind: 'q' } });
+  }
+  if (date && startTime && endTime) {
+    chips.push({
+      key: 'slot',
+      label: `Khung giờ: ${date} (${startTime} - ${endTime})`,
+      filter: { kind: 'slot' },
+    });
+  }
   if (capacity) {
     chips.push({ key: 'capacity', label: `Từ ${capacity} người`, filter: { kind: 'capacity' } });
   }

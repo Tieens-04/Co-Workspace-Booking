@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useSearchParams, useLocation } from 'react-router-dom';
-import { LoaderCircle, SearchX, SlidersHorizontal } from 'lucide-react';
+import { LoaderCircle, Search, SearchX, SlidersHorizontal, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { NativeSelect } from '@/components/common/NativeSelect';
 import {
   Sheet,
   SheetClose,
@@ -26,7 +28,7 @@ import { useSmoothScroll } from '../components/editorial/useSmoothScroll';
 import { SwapValue } from '../components/motion/SwapValue';
 import { MOBILE_FILTERS_QUERY, useMediaQuery } from '../components/rooms/useMediaQuery';
 import { roomApi } from '../services/room.api';
-import { RoomListItem, Amenity, PaginationMeta } from '../types/room';
+import { RoomListItem, Amenity, PaginationMeta, RoomSortOption, GetRoomsParams } from '../types/room';
 import { useDebounce } from '../hooks/useDebounce';
 import {
   normalizeRoomSearchParams,
@@ -55,6 +57,11 @@ export const RoomsPage: React.FC = () => {
   const urlMaxPrice = normalizedSearch.maxPrice ?? '';
   const urlAmenityIds = normalizedSearch.amenityIds;
   const urlAmenityIdsParam = urlAmenityIds.join(',');
+  const urlQ = normalizedSearch.q ?? '';
+  const urlSort: RoomSortOption = normalizedSearch.sort ?? 'newest';
+  const urlDate = normalizedSearch.date ?? '';
+  const urlStartTime = normalizedSearch.startTime ?? '';
+  const urlEndTime = normalizedSearch.endTime ?? '';
 
   useEffect(() => {
     if (normalizedSearch.changed) {
@@ -66,6 +73,10 @@ export const RoomsPage: React.FC = () => {
   const [capacityInput, setCapacityInput] = useState<string>(urlCapacity);
   const [minPriceInput, setMinPriceInput] = useState<string>(urlMinPrice);
   const [maxPriceInput, setMaxPriceInput] = useState<string>(urlMaxPrice);
+  const [qInput, setQInput] = useState<string>(urlQ);
+  const [dateInput, setDateInput] = useState<string>(urlDate);
+  const [startTimeInput, setStartTimeInput] = useState<string>(urlStartTime);
+  const [endTimeInput, setEndTimeInput] = useState<string>(urlEndTime);
 
   // Sync inputs when URL changes from browser back/forward
   useEffect(() => {
@@ -80,19 +91,43 @@ export const RoomsPage: React.FC = () => {
     setMaxPriceInput(urlMaxPrice);
   }, [urlMaxPrice]);
 
+  useEffect(() => {
+    setQInput(urlQ);
+  }, [urlQ]);
+
+  useEffect(() => {
+    setDateInput(urlDate);
+  }, [urlDate]);
+
+  useEffect(() => {
+    setStartTimeInput(urlStartTime);
+  }, [urlStartTime]);
+
+  useEffect(() => {
+    setEndTimeInput(urlEndTime);
+  }, [urlEndTime]);
+
   // Debounced input values
   const debouncedCapacity = useDebounce(capacityInput, 300);
   const debouncedMinPrice = useDebounce(minPriceInput, 300);
   const debouncedMaxPrice = useDebounce(maxPriceInput, 300);
+  const debouncedQ = useDebounce(qInput, 300);
 
   // --- Validation State ---
   const [errors, setErrors] = useState<RoomFilterFieldErrors>({});
 
   // Run validation whenever inputs change
   useEffect(() => {
-    const currentErrors = validateRoomFilterInputs(capacityInput, minPriceInput, maxPriceInput);
+    const currentErrors = validateRoomFilterInputs(
+      capacityInput,
+      minPriceInput,
+      maxPriceInput,
+      dateInput,
+      startTimeInput,
+      endTimeInput,
+    );
     setErrors(currentErrors);
-  }, [capacityInput, minPriceInput, maxPriceInput]);
+  }, [capacityInput, minPriceInput, maxPriceInput, dateInput, startTimeInput, endTimeInput]);
 
   // Refs let this effect react only to debounced input, not to browser navigation.
   const searchParamsRef = useRef(searchParams);
@@ -102,6 +137,7 @@ export const RoomsPage: React.FC = () => {
     minPrice: urlMinPrice,
     maxPrice: urlMaxPrice,
   });
+  const committedQRef = useRef(urlQ);
   searchParamsRef.current = searchParams;
   setSearchParamsRef.current = setSearchParams;
   committedNumericFiltersRef.current = {
@@ -109,6 +145,7 @@ export const RoomsPage: React.FC = () => {
     minPrice: urlMinPrice,
     maxPrice: urlMaxPrice,
   };
+  committedQRef.current = urlQ;
 
   // Update URL searchParams when debounced local input changes (if valid).
   useEffect(() => {
@@ -151,6 +188,58 @@ export const RoomsPage: React.FC = () => {
       setSearchParamsRef.current(nextParams, { replace: true });
     }
   }, [debouncedCapacity, debouncedMinPrice, debouncedMaxPrice]);
+
+  // Sync debounced search keyword to URL
+  useEffect(() => {
+    const trimmedQ = debouncedQ.trim();
+    if (trimmedQ !== committedQRef.current) {
+      const nextParams = new URLSearchParams(searchParamsRef.current);
+      if (trimmedQ) nextParams.set('q', trimmedQ);
+      else nextParams.delete('q');
+      nextParams.delete('page');
+      setSearchParamsRef.current(nextParams, { replace: true });
+    }
+  }, [debouncedQ]);
+
+  // Sync slot filters (date, startTime, endTime) to URL
+  useEffect(() => {
+    const hasAnySlot = Boolean(dateInput || startTimeInput || endTimeInput);
+    if (!hasAnySlot) {
+      if (urlDate || urlStartTime || urlEndTime) {
+        const nextParams = new URLSearchParams(searchParamsRef.current);
+        nextParams.delete('date');
+        nextParams.delete('startTime');
+        nextParams.delete('endTime');
+        nextParams.delete('page');
+        setSearchParamsRef.current(nextParams, { replace: true });
+      }
+      return;
+    }
+
+    const currentErrors = validateRoomFilterInputs(
+      '',
+      '',
+      '',
+      dateInput,
+      startTimeInput,
+      endTimeInput,
+    );
+
+    if (!currentErrors.slot && dateInput && startTimeInput && endTimeInput) {
+      if (
+        dateInput !== urlDate ||
+        startTimeInput !== urlStartTime ||
+        endTimeInput !== urlEndTime
+      ) {
+        const nextParams = new URLSearchParams(searchParamsRef.current);
+        nextParams.set('date', dateInput);
+        nextParams.set('startTime', startTimeInput);
+        nextParams.set('endTime', endTimeInput);
+        nextParams.delete('page');
+        setSearchParamsRef.current(nextParams, { replace: true });
+      }
+    }
+  }, [dateInput, startTimeInput, endTimeInput, urlDate, urlStartTime, urlEndTime]);
 
   // --- Amenities State & Independent Fetching ---
   const [amenities, setAmenities] = useState<Amenity[]>([]);
@@ -215,14 +304,7 @@ export const RoomsPage: React.FC = () => {
     }
     setRoomsError(null);
 
-    const params: {
-      page: number;
-      limit: number;
-      capacity?: number;
-      minPrice?: string;
-      maxPrice?: string;
-      amenityIds?: string;
-    } = {
+    const params: GetRoomsParams = {
       page: urlPage,
       limit: PAGE_LIMIT,
     };
@@ -231,10 +313,18 @@ export const RoomsPage: React.FC = () => {
     if (urlMinPrice) params.minPrice = urlMinPrice;
     if (urlMaxPrice) params.maxPrice = urlMaxPrice;
     if (urlAmenityIdsParam) params.amenityIds = urlAmenityIdsParam;
+    if (urlQ) params.q = urlQ;
+    if (urlSort && urlSort !== 'newest') params.sort = urlSort;
+    if (urlDate && urlStartTime && urlEndTime) {
+      params.date = urlDate;
+      params.startTime = urlStartTime;
+      params.endTime = urlEndTime;
+    }
 
     roomApi
       .getRooms(params, controller.signal)
       .then((res) => {
+        if (controller.signal.aborted) return;
         hasLoadedOnceRef.current = true;
         setRooms(res.data.items);
         setPagination(res.data.pagination);
@@ -249,7 +339,18 @@ export const RoomsPage: React.FC = () => {
         setIsInitialLoading(false);
         setIsFetching(false);
       });
-  }, [urlPage, urlCapacity, urlMinPrice, urlMaxPrice, urlAmenityIdsParam]);
+  }, [
+    urlPage,
+    urlCapacity,
+    urlMinPrice,
+    urlMaxPrice,
+    urlAmenityIdsParam,
+    urlQ,
+    urlSort,
+    urlDate,
+    urlStartTime,
+    urlEndTime,
+  ]);
 
   useEffect(() => {
     fetchRooms();
@@ -306,6 +407,29 @@ export const RoomsPage: React.FC = () => {
     results.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
   };
 
+  const handleSortChange = (newSort: RoomSortOption) => {
+    const nextParams = new URLSearchParams(searchParams);
+    if (newSort && newSort !== 'newest') {
+      nextParams.set('sort', newSort);
+    } else {
+      nextParams.delete('sort');
+    }
+    nextParams.delete('page');
+    setSearchParams(nextParams);
+  };
+
+  const handleClearSlot = () => {
+    setDateInput('');
+    setStartTimeInput('');
+    setEndTimeInput('');
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('date');
+    nextParams.delete('startTime');
+    nextParams.delete('endTime');
+    nextParams.delete('page');
+    setSearchParams(nextParams);
+  };
+
   const handleRemoveFilter = (filter: RemovableFilter) => {
     if (filter.kind === 'amenity') {
       handleAmenityToggle(filter.id);
@@ -315,9 +439,19 @@ export const RoomsPage: React.FC = () => {
     const nextParams = new URLSearchParams(searchParams);
     if (filter.kind === 'capacity') {
       nextParams.delete('capacity');
-    } else {
+    } else if (filter.kind === 'price') {
       nextParams.delete('minPrice');
       nextParams.delete('maxPrice');
+    } else if (filter.kind === 'q') {
+      setQInput('');
+      nextParams.delete('q');
+    } else if (filter.kind === 'slot') {
+      setDateInput('');
+      setStartTimeInput('');
+      setEndTimeInput('');
+      nextParams.delete('date');
+      nextParams.delete('startTime');
+      nextParams.delete('endTime');
     }
     nextParams.delete('page');
     setSearchParams(nextParams);
@@ -327,6 +461,10 @@ export const RoomsPage: React.FC = () => {
     setCapacityInput('');
     setMinPriceInput('');
     setMaxPriceInput('');
+    setQInput('');
+    setDateInput('');
+    setStartTimeInput('');
+    setEndTimeInput('');
     setErrors({});
     setSearchParams(new URLSearchParams());
   };
@@ -336,10 +474,19 @@ export const RoomsPage: React.FC = () => {
   }, []);
 
   const hasActiveFilters = Boolean(
-    urlCapacity || urlMinPrice || urlMaxPrice || urlAmenityIds.length > 0,
+    urlCapacity ||
+      urlMinPrice ||
+      urlMaxPrice ||
+      urlAmenityIds.length > 0 ||
+      urlQ ||
+      (urlDate && urlStartTime && urlEndTime),
   );
   const activeFilterCount =
-    (urlCapacity ? 1 : 0) + (urlMinPrice || urlMaxPrice ? 1 : 0) + urlAmenityIds.length;
+    (urlCapacity ? 1 : 0) +
+    (urlMinPrice || urlMaxPrice ? 1 : 0) +
+    urlAmenityIds.length +
+    (urlQ ? 1 : 0) +
+    (urlDate && urlStartTime && urlEndTime ? 1 : 0);
   const listUrl = location.pathname + location.search;
 
   const filters = (
@@ -350,6 +497,13 @@ export const RoomsPage: React.FC = () => {
       onCapacityChange={setCapacityInput}
       onMinPriceChange={setMinPriceInput}
       onMaxPriceChange={setMaxPriceInput}
+      date={dateInput}
+      startTime={startTimeInput}
+      endTime={endTimeInput}
+      onDateChange={setDateInput}
+      onStartTimeChange={setStartTimeInput}
+      onEndTimeChange={setEndTimeInput}
+      onClearSlot={handleClearSlot}
       errors={errors}
       amenities={amenities}
       loadingAmenities={loadingAmenities}
@@ -366,7 +520,7 @@ export const RoomsPage: React.FC = () => {
 
   const showResults = !isInitialLoading && !roomsError;
   const isEmpty = showResults && rooms !== null && rooms.length === 0;
-  const showToolbar = isMobile || isFetching || hasActiveFilters;
+  const showToolbar = true;
 
   return (
     <div className="container-page pt-10 pb-16 md:pt-14 md:pb-24">
@@ -423,52 +577,110 @@ export const RoomsPage: React.FC = () => {
         >
           <h2 className="sr-only">Không gian làm việc</h2>
 
-          {showToolbar && (
-            <div className="mb-6 flex min-h-9 flex-wrap items-center gap-3">
-              {isMobile && (
-                <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
-                  <SheetTrigger asChild>
-                    <Button type="button" variant="outline" size="sm">
-                      <SlidersHorizontal aria-hidden="true" />
-                      Bộ lọc
-                      {activeFilterCount > 0 && (
-                        <span className="tabular-nums">({activeFilterCount})</span>
-                      )}
-                    </Button>
-                  </SheetTrigger>
-                  <SheetContent side="left" className="w-[88vw] gap-0 overflow-y-auto">
-                    <SheetHeader className="border-b px-5 py-4">
-                      <SheetTitle>Bộ lọc tìm kiếm</SheetTitle>
-                      <SheetDescription>Lọc phòng theo sức chứa, giá và tiện ích.</SheetDescription>
-                    </SheetHeader>
-                    <div className="px-5 py-5">{filters}</div>
-                    <SheetFooter className="border-t px-5 py-4">
-                      <SheetClose asChild>
-                        <Button type="button" className="w-full">
-                          Xem kết quả
-                        </Button>
-                      </SheetClose>
-                    </SheetFooter>
-                  </SheetContent>
-                </Sheet>
-              )}
+          {/* Search bar */}
+          <div className="relative mb-6">
+            <Search
+              className="pointer-events-none absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground"
+              aria-hidden="true"
+            />
+            <Input
+              type="search"
+              role="searchbox"
+              aria-label="Tìm kiếm phòng theo tên"
+              placeholder="Tìm kiếm phòng theo tên..."
+              value={qInput}
+              maxLength={100}
+              onChange={(e) => setQInput(e.target.value)}
+              className="h-10 pl-10 pr-9 text-sm"
+            />
+            {qInput && (
+              <button
+                type="button"
+                onClick={() => setQInput('')}
+                aria-label="Xóa từ khóa tìm kiếm"
+                className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <X aria-hidden="true" className="size-4" />
+              </button>
+            )}
+          </div>
 
-              {hasActiveFilters && (
-                <ActiveFilters
-                  capacity={urlCapacity}
-                  minPrice={urlMinPrice}
-                  maxPrice={urlMaxPrice}
-                  amenityIds={urlAmenityIds}
-                  amenities={amenities}
-                  onRemove={handleRemoveFilter}
-                  onClearAll={handleClearFilters}
-                  showClearAll={!isEmpty}
-                />
-              )}
+          {showToolbar && (
+            <div className="mb-6 flex min-h-9 flex-wrap items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3">
+                {isMobile && (
+                  <Sheet open={filtersOpen} onOpenChange={setFiltersOpen}>
+                    <SheetTrigger asChild>
+                      <Button type="button" variant="outline" size="sm">
+                        <SlidersHorizontal aria-hidden="true" />
+                        Bộ lọc
+                        {activeFilterCount > 0 && (
+                          <span className="tabular-nums">({activeFilterCount})</span>
+                        )}
+                      </Button>
+                    </SheetTrigger>
+                    <SheetContent side="left" className="w-[88vw] gap-0 overflow-y-auto">
+                      <SheetHeader className="border-b px-5 py-4">
+                        <SheetTitle>Bộ lọc tìm kiếm</SheetTitle>
+                        <SheetDescription>
+                          Lọc phòng theo khung giờ, sức chứa, giá và tiện ích.
+                        </SheetDescription>
+                      </SheetHeader>
+                      <div className="px-5 py-5">{filters}</div>
+                      <SheetFooter className="border-t px-5 py-4">
+                        <SheetClose asChild>
+                          <Button type="button" className="w-full">
+                            Xem kết quả
+                          </Button>
+                        </SheetClose>
+                      </SheetFooter>
+                    </SheetContent>
+                  </Sheet>
+                )}
+
+                {hasActiveFilters && (
+                  <ActiveFilters
+                    capacity={urlCapacity}
+                    minPrice={urlMinPrice}
+                    maxPrice={urlMaxPrice}
+                    amenityIds={urlAmenityIds}
+                    amenities={amenities}
+                    q={urlQ}
+                    date={urlDate}
+                    startTime={urlStartTime}
+                    endTime={urlEndTime}
+                    onRemove={handleRemoveFilter}
+                    onClearAll={handleClearFilters}
+                    showClearAll={!isEmpty}
+                  />
+                )}
+              </div>
+
+              <div className="ml-auto flex items-center gap-2">
+                <label
+                  htmlFor="room-sort-select"
+                  className="shrink-0 text-sm font-medium text-muted-foreground"
+                >
+                  Sắp xếp:
+                </label>
+                <NativeSelect
+                  id="room-sort-select"
+                  aria-label="Sắp xếp danh sách phòng"
+                  value={urlSort}
+                  onChange={(e) => handleSortChange(e.target.value as RoomSortOption)}
+                  className="h-9 w-auto text-sm"
+                >
+                  <option value="newest">Mới nhất</option>
+                  <option value="price_asc">Giá: Thấp đến cao</option>
+                  <option value="price_desc">Giá: Cao đến thấp</option>
+                  <option value="capacity_asc">Sức chứa: Tăng dần</option>
+                  <option value="capacity_desc">Sức chứa: Giảm dần</option>
+                </NativeSelect>
+              </div>
 
               {isFetching && (
                 <p
-                  className="ml-auto inline-flex items-center gap-1.5 text-sm text-muted-foreground"
+                  className="inline-flex w-full items-center gap-1.5 text-sm text-muted-foreground sm:w-auto"
                   role="status"
                   aria-live="polite"
                 >

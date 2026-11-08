@@ -3,6 +3,7 @@ import request from 'supertest';
 import { Prisma, RoomStatus } from '@prisma/client';
 import app from '../app.js';
 import { roomRepository, RoomDetailRecord } from '../repositories/room.repository.js';
+import { RoomService } from '../services/room.service.js';
 
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
 
@@ -79,6 +80,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
         page: 1,
         limit: 10,
+        sort: 'newest',
       });
     });
 
@@ -133,6 +135,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
         page: 1,
         limit: 10,
+        sort: 'newest',
         amenityIds: [validUuid1, validUuid2],
       });
     });
@@ -146,6 +149,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
         page: 2,
         limit: 20,
+        sort: 'newest',
         capacity: 6,
         minPrice: '50.00',
         maxPrice: '250.75',
@@ -159,8 +163,62 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
         page: 1,
         limit: 10,
+        sort: 'newest',
         minPrice: '0.00',
         maxPrice: '0.00',
+      });
+    });
+
+    it('parses q search keyword, trims whitespace, and ignores empty q', async () => {
+      const res = await request(app).get('/api/v1/rooms?q=%20Focus%20Room%20');
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
+        page: 1,
+        limit: 10,
+        sort: 'newest',
+        q: 'Focus Room',
+      });
+
+      const resEmpty = await request(app).get('/api/v1/rooms?q=%20%20');
+      expect(resEmpty.status).toBe(200);
+      expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
+        page: 1,
+        limit: 10,
+        sort: 'newest',
+      });
+    });
+
+    it.each([
+      { sort: 'price_asc' as const },
+      { sort: 'price_desc' as const },
+      { sort: 'capacity_asc' as const },
+      { sort: 'capacity_desc' as const },
+      { sort: 'newest' as const },
+    ])('accepts valid sort option: $sort', async ({ sort }) => {
+      const res = await request(app).get(`/api/v1/rooms?sort=${sort}`);
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
+        page: 1,
+        limit: 10,
+        sort,
+      });
+    });
+
+    it('parses valid date, startTime, and endTime into UTC start/end dates', async () => {
+      // Future date e.g. 2026-11-20
+      const res = await request(app).get(
+        '/api/v1/rooms?date=2026-11-20&startTime=09:00&endTime=11:30',
+      );
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
+        page: 1,
+        limit: 10,
+        sort: 'newest',
+        startDate: new Date('2026-11-20T09:00:00.000+07:00'),
+        endDate: new Date('2026-11-20T11:30:00.000+07:00'),
       });
     });
   });
@@ -194,7 +252,24 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       { query: '?amenityIds=not-a-uuid', desc: 'malformed amenity UUID' },
       { query: '?amenityIds=', desc: 'empty amenityIds string' },
       { query: `?amenityIds=${validUuid1},,${validUuid2}`, desc: 'empty slot in CSV' },
-      { query: '?sort=asc', desc: 'unwhitelisted query key (sort)' },
+      { query: '?sort=asc', desc: 'invalid sort value (sort=asc)' },
+      { query: '?sort=price', desc: 'invalid sort value (sort=price)' },
+      { query: `?q=${'a'.repeat(101)}`, desc: 'q exceeds 100 characters' },
+      { query: '?date=2026-11-20', desc: 'date provided without startTime and endTime' },
+      { query: '?startTime=09:00', desc: 'startTime provided without date and endTime' },
+      { query: '?endTime=11:00', desc: 'endTime provided without date and startTime' },
+      { query: '?date=2026-11-20&startTime=09:00', desc: 'missing endTime' },
+      { query: '?date=2026-11-20&endTime=11:00', desc: 'missing startTime' },
+      { query: '?date=not-a-date&startTime=09:00&endTime=11:00', desc: 'malformed date' },
+      { query: '?date=2026-02-30&startTime=09:00&endTime=11:00', desc: 'invalid calendar date' },
+      { query: '?date=2026-11-20&startTime=25:00&endTime=11:00', desc: 'malformed startTime' },
+      { query: '?date=2026-11-20&startTime=09:15&endTime=11:00', desc: 'unaligned 30-min slot' },
+      { query: '?date=2026-11-20&startTime=09:00&endTime=09:30', desc: 'duration under 1 hour' },
+      { query: '?date=2026-11-20&startTime=09:00&endTime=18:00', desc: 'duration over 8 hours' },
+      { query: '?date=2026-11-20&startTime=11:00&endTime=09:00', desc: 'endTime before startTime' },
+      { query: '?date=2020-01-01&startTime=09:00&endTime=10:00', desc: 'date in the past' },
+      { query: '?date=2026-11-20&startTime=06:00&endTime=08:00', desc: 'before opening hour 07:00' },
+      { query: '?date=2026-11-20&startTime=21:00&endTime=23:00', desc: 'after closing hour 22:00' },
       { query: '?order=desc', desc: 'unwhitelisted query key (order)' },
       { query: '?unknownParam=foo', desc: 'unwhitelisted query key (unknownParam)' },
     ])('rejects invalid query before database access: $desc', async ({ query }) => {
@@ -213,6 +288,44 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('VALIDATION_ERROR');
       expect(roomRepository.findById).not.toHaveBeenCalled();
+    });
+
+    it('accurately maps error path to endTime when error is related to end time or duration (Finding 11 Regression)', async () => {
+      // End time before start time -> path: endTime
+      const res1 = await request(app).get(
+        '/api/v1/rooms?date=2026-11-20&startTime=11:00&endTime=09:00',
+      );
+      expect(res1.status).toBe(400);
+      expect(res1.body.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'endTime' })]),
+      );
+
+      // Duration under 1h -> path: endTime
+      const res2 = await request(app).get(
+        '/api/v1/rooms?date=2026-11-20&startTime=09:00&endTime=09:30',
+      );
+      expect(res2.status).toBe(400);
+      expect(res2.body.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'endTime' })]),
+      );
+
+      // Exceeds closing hour (after 22:00) -> path: endTime
+      const res3 = await request(app).get(
+        '/api/v1/rooms?date=2026-11-20&startTime=21:00&endTime=23:00',
+      );
+      expect(res3.status).toBe(400);
+      expect(res3.body.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'endTime' })]),
+      );
+
+      // Before opening hour (before 07:00) -> path: startTime
+      const res4 = await request(app).get(
+        '/api/v1/rooms?date=2026-11-20&startTime=06:00&endTime=08:00',
+      );
+      expect(res4.status).toBe(400);
+      expect(res4.body.details).toEqual(
+        expect.arrayContaining([expect.objectContaining({ field: 'startTime' })]),
+      );
     });
   });
 
@@ -352,6 +465,28 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(where.capacity).toBeUndefined();
       expect(where.pricePerHour).toBeUndefined();
       expect(where.AND).toBeUndefined();
+    });
+  });
+
+  describe('RoomService Defense-in-depth (Finding 5 Regression)', () => {
+    it('throws VALIDATION_ERROR 400 when startDate is provided without endDate or vice versa', async () => {
+      const service = new RoomService(roomRepository);
+
+      await expect(
+        service.getRooms({
+          page: 1,
+          limit: 10,
+          startDate: new Date('2026-11-20T09:00:00.000+07:00'),
+        }),
+      ).rejects.toThrow('startDate và endDate phải đi cùng nhau');
+
+      await expect(
+        service.getRooms({
+          page: 1,
+          limit: 10,
+          endDate: new Date('2026-11-20T11:00:00.000+07:00'),
+        }),
+      ).rejects.toThrow('startDate và endDate phải đi cùng nhau');
     });
   });
 });

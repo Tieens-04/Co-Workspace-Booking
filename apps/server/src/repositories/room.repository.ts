@@ -1,6 +1,6 @@
 import { Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
-import { FindRoomsFilter } from '../types/room.type.js';
+import { FindRoomsFilter, RoomSortOption } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
 import { BLOCKING_BOOKING_STATUSES } from '../types/booking.type.js';
 import { AuditActor, recordAuditEvent } from './audit.repository.js';
@@ -184,9 +184,23 @@ export function isRoomNameConflictError(err: unknown): boolean {
   return false;
 }
 
+const SORT_ORDER_MAP: Record<RoomSortOption, Prisma.RoomOrderByWithRelationInput[]> = {
+  price_asc: [{ pricePerHour: 'asc' }, { id: 'asc' }],
+  price_desc: [{ pricePerHour: 'desc' }, { id: 'asc' }],
+  capacity_asc: [{ capacity: 'asc' }, { id: 'asc' }],
+  capacity_desc: [{ capacity: 'desc' }, { id: 'asc' }],
+  newest: [{ createdAt: 'desc' }, { id: 'asc' }],
+};
+
 export class RoomRepository implements RoomRepositoryContract {
   buildWhere(filter: FindRoomsFilter): Prisma.RoomWhereInput {
     const where: Prisma.RoomWhereInput = {};
+
+    if (filter.q) {
+      where.name = {
+        contains: filter.q,
+      };
+    }
 
     if (filter.capacity !== undefined) {
       where.capacity = { gte: filter.capacity };
@@ -209,6 +223,17 @@ export class RoomRepository implements RoomRepositoryContract {
       }));
     }
 
+    if (filter.startDate && filter.endDate) {
+      where.status = RoomStatus.AVAILABLE;
+      where.bookings = {
+        none: {
+          status: { in: [...BLOCKING_BOOKING_STATUSES] },
+          startTime: { lt: filter.endDate },
+          endTime: { gt: filter.startDate },
+        },
+      };
+    }
+
     return where;
   }
 
@@ -217,13 +242,15 @@ export class RoomRepository implements RoomRepositoryContract {
     const skip = (filter.page - 1) * filter.limit;
     const take = filter.limit;
 
+    const orderBy = (filter.sort && SORT_ORDER_MAP[filter.sort]) || SORT_ORDER_MAP.newest;
+
     return Promise.all([
       prisma.room.count({ where }),
       prisma.room.findMany({
         where,
         skip,
         take,
-        orderBy: [{ createdAt: 'desc' }, { id: 'asc' }],
+        orderBy,
         select: roomListSelect,
       }),
     ]);
