@@ -110,9 +110,23 @@ describe('BookingHistoryPage', () => {
         },
         {
           ...mockBookings[0],
+          id: 'b-legacy-admin-cancel',
+          status: 'CANCELLED',
+          cancelledBy: null,
+          cancellationReason: 'Bảo trì hệ thống',
+        },
+        {
+          ...mockBookings[0],
           id: 'b-legacy-cancel',
           status: 'CANCELLED',
           cancelledBy: null,
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-unknown-role-cancel',
+          status: 'CANCELLED',
+          cancelledBy: 'UNKNOWN_ROLE' as any,
+          cancellationReason: null,
         },
         {
           ...mockBookings[0],
@@ -121,7 +135,7 @@ describe('BookingHistoryPage', () => {
         },
       ];
 
-      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(items, 4, 1));
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(items, 6, 1));
 
       renderComponent();
 
@@ -135,9 +149,19 @@ describe('BookingHistoryPage', () => {
         'Bạn đã hủy',
       );
 
+      const rowLegacyAdmin = screen.getByTestId('booking-item-b-legacy-admin-cancel');
+      expect(
+        within(rowLegacyAdmin).getByTestId('booking-cancellation-indicator'),
+      ).toHaveTextContent('Đã hủy bởi Co-Space');
+
       const rowLegacy = screen.getByTestId('booking-item-b-legacy-cancel');
       expect(
         within(rowLegacy).queryByTestId('booking-cancellation-indicator'),
+      ).not.toBeInTheDocument();
+
+      const rowUnknownRole = screen.getByTestId('booking-item-b-unknown-role-cancel');
+      expect(
+        within(rowUnknownRole).queryByTestId('booking-cancellation-indicator'),
       ).not.toBeInTheDocument();
 
       const rowConfirmed = screen.getByTestId('booking-item-b-confirmed');

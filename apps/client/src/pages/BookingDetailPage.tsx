@@ -5,7 +5,7 @@ import { useToast } from '../hooks/useToast';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult } from '../types/booking';
 import { formatCurrency } from '../utils/format';
-import { getPaymentMethodLabel } from '../utils/status';
+import { getCancellationActorLabel, getPaymentMethodLabel } from '../utils/status';
 import { ArrowLeft, Banknote, LoaderCircle, RotateCw, SearchX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -282,6 +282,14 @@ export const BookingDetailPage: React.FC = () => {
     };
   }, [fetchDetail]);
 
+  const cancellationActorLabel =
+    effectiveBooking?.status === 'CANCELLED'
+      ? getCancellationActorLabel(
+          effectiveBooking.cancelledBy,
+          effectiveBooking.cancellationReason,
+        )
+      : null;
+
   const isCancelDialogOpen = Boolean(
     state.showCancelConfirm && effectiveBooking && effectiveBooking.status === 'CONFIRMED',
   );
@@ -446,55 +454,27 @@ export const BookingDetailPage: React.FC = () => {
 
               {effectiveBooking.status === 'CANCELLED' && (
                 <Notice tone="error" data-testid="cancellation-info-banner" role="status">
-                  {effectiveBooking.cancelledBy === 'ADMIN' ? (
-                    <span>
-                      <strong>Đã hủy bởi Co-Space</strong>
-                      {effectiveBooking.cancelledAt ? (
-                        <>
-                          {' '}
-                          lúc{' '}
-                          <span className="tabular-nums">
-                            {formatVietnamDateTime(effectiveBooking.cancelledAt)}
-                          </span>
-                        </>
-                      ) : null}
-                      {effectiveBooking.cancellationReason ? (
-                        <>
-                          {' '}
-                          – Lý do:{' '}
-                          <span className="wrap-anywhere">
-                            {effectiveBooking.cancellationReason}
-                          </span>
-                        </>
-                      ) : null}
-                    </span>
-                  ) : effectiveBooking.cancelledBy === 'CUSTOMER' ? (
-                    <span>
-                      <strong>Bạn đã hủy</strong>
-                      {effectiveBooking.cancelledAt ? (
-                        <>
-                          {' '}
-                          lúc{' '}
-                          <span className="tabular-nums">
-                            {formatVietnamDateTime(effectiveBooking.cancelledAt)}
-                          </span>
-                        </>
-                      ) : null}
-                    </span>
-                  ) : (
-                    <span>
-                      <strong>Đã hủy</strong>
-                      {effectiveBooking.cancellationReason ? (
-                        <>
-                          {' '}
-                          – Lý do:{' '}
-                          <span className="wrap-anywhere">
-                            {effectiveBooking.cancellationReason}
-                          </span>
-                        </>
-                      ) : null}
-                    </span>
-                  )}
+                  <span>
+                    <strong>{cancellationActorLabel ?? 'Đơn đặt phòng này đã bị hủy'}</strong>
+                    {effectiveBooking.cancelledAt ? (
+                      <>
+                        {' '}
+                        lúc{' '}
+                        <span className="tabular-nums">
+                          {formatVietnamDateTime(effectiveBooking.cancelledAt)}
+                        </span>
+                      </>
+                    ) : null}
+                    {effectiveBooking.cancellationReason ? (
+                      <>
+                        {' '}
+                        – Lý do:{' '}
+                        <span className="wrap-anywhere">
+                          {effectiveBooking.cancellationReason}
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
                 </Notice>
               )}
 

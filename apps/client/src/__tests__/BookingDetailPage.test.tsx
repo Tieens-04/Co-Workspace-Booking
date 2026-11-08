@@ -450,21 +450,63 @@ describe('BookingDetailPage', () => {
       expect(document.getElementById('injected-tag')).toBeNull();
     });
 
-    it('handles legacy data fallback gracefully when cancelledBy is null (AC2)', async () => {
-      const legacyBooking: BookingResult = {
+    it('identifies legacy admin cancellation from cancellationReason when cancelledBy is null (AC2)', async () => {
+      const legacyAdminBooking: BookingResult = {
         ...mockDetailData,
         status: 'CANCELLED',
         cancelledBy: null,
         cancelledAt: null,
         cancellationReason: 'Lý do cũ',
       };
-      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(mockDetailResponse(legacyBooking));
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(legacyAdminBooking),
+      );
 
       renderComponent();
 
       const banner = await screen.findByTestId('cancellation-info-banner');
       expect(banner).toBeInTheDocument();
-      expect(banner).toHaveTextContent('Đã hủy – Lý do: Lý do cũ');
+      expect(banner).toHaveTextContent('Đã hủy bởi Co-Space');
+      expect(banner).toHaveTextContent('– Lý do: Lý do cũ');
+    });
+
+    it('renders non-redundant fallback message when legacy booking has no cancelledBy and no reason (AC2)', async () => {
+      const legacyCustBooking: BookingResult = {
+        ...mockDetailData,
+        status: 'CANCELLED',
+        cancelledBy: null,
+        cancelledAt: null,
+        cancellationReason: null,
+      };
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(legacyCustBooking),
+      );
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('cancellation-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Đơn đặt phòng này đã bị hủy');
+      expect(banner).not.toHaveTextContent('Lý do');
+    });
+
+    it('renders timestamp in fallback message when legacy booking has cancelledAt but no actor and no reason', async () => {
+      const legacyBookingWithTime: BookingResult = {
+        ...mockDetailData,
+        status: 'CANCELLED',
+        cancelledBy: null,
+        cancelledAt: '2026-10-25T07:00:00.000Z',
+        cancellationReason: null,
+      };
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(legacyBookingWithTime),
+      );
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('cancellation-info-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Đơn đặt phòng này đã bị hủy lúc 14:00 25/10/2026');
     });
   });
 
