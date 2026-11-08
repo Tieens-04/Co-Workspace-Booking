@@ -3,7 +3,13 @@
  * Tones map to the --status-* design tokens (see StatusBadge / DESIGN.md).
  */
 export type StatusTone =
-  'confirmed' | 'success' | 'cancelled' | 'noshow' | 'unpaid' | 'maintenance' | 'neutral';
+  | 'confirmed'
+  | 'success'
+  | 'cancelled'
+  | 'noshow'
+  | 'unpaid'
+  | 'maintenance'
+  | 'neutral';
 
 export type StatusKind = 'booking' | 'payment' | 'room';
 
@@ -45,4 +51,23 @@ export function getPaymentMethodLabel(method: string | null): string {
   if (method === 'CASH') return 'Tiền mặt';
   if (method === 'QR') return 'Chuyển khoản QR';
   return method;
+}
+
+/**
+ * Resolves the cancellation actor label for customer-facing display.
+ * - 'ADMIN' or legacy cancellations where cancellationReason is present -> 'Đã hủy bởi Co-Space'
+ * - 'CUSTOMER' -> 'Bạn đã hủy'
+ * - Others / unknown -> null
+ */
+export function getCancellationActorLabel(
+  cancelledBy?: string | null,
+  cancellationReason?: string | null,
+): 'Đã hủy bởi Co-Space' | 'Bạn đã hủy' | null {
+  if (cancelledBy === 'ADMIN' || (!cancelledBy && Boolean(cancellationReason?.trim()))) {
+    return 'Đã hủy bởi Co-Space';
+  }
+  if (cancelledBy === 'CUSTOMER') {
+    return 'Bạn đã hủy';
+  }
+  return null;
 }

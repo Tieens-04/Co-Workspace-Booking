@@ -246,6 +246,30 @@ describe('Booking History & Detail Unit Tests (/api/v1/bookings)', () => {
       expect(bookingRepository.findByIdForUser).toHaveBeenCalledWith(customerSub, validBookingId);
     });
 
+    it('returns cancelledAt, cancelledBy and cancellationReason for CANCELLED booking detail without admin identity leak', async () => {
+      const cancelTime = new Date('2026-10-25T02:30:00.000Z');
+      const fixture = mockBookingFixture({
+        status: BookingStatus.CANCELLED,
+        cancellationReason: 'Đột xuất có sự cố điện',
+        cancelledAt: cancelTime,
+        cancelledBy: Role.ADMIN,
+      });
+      vi.spyOn(bookingRepository, 'findByIdForUser').mockResolvedValue(fixture);
+
+      const res = await request(app)
+        .get(`/api/v1/bookings/${validBookingId}`)
+        .set('Authorization', `Bearer ${customerToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.data.status).toBe('CANCELLED');
+      expect(res.body.data.cancellationReason).toBe('Đột xuất có sự cố điện');
+      expect(res.body.data.cancelledAt).toBe(cancelTime.toISOString());
+      expect(res.body.data.cancelledBy).toBe('ADMIN');
+      expect(res.body.data.adminId).toBeUndefined();
+      expect(res.body.data.adminEmail).toBeUndefined();
+      expect(res.body.data.user).toBeUndefined();
+    });
+
     it('returns 404 BOOKING_NOT_FOUND when booking does not exist or belongs to another customer', async () => {
       vi.spyOn(bookingRepository, 'findByIdForUser').mockResolvedValue(null);
 

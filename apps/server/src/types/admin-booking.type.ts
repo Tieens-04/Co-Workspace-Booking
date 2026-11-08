@@ -1,4 +1,4 @@
-import { BookingStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
+import { BookingStatus, PaymentMethod, PaymentStatus, Role } from '@prisma/client';
 import { BookingRoomDto } from './booking.type.js';
 
 export type AdminCustomerKind = 'USER' | 'GUEST';
@@ -26,6 +26,8 @@ export interface AdminBookingResponseDto {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
   cancellationReason?: string | null;
+  cancelledAt?: Date | null;
+  cancelledBy?: Role | null;
   isNewlyCancelled?: boolean;
   customer: AdminBookingCustomerDto;
 }

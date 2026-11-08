@@ -112,6 +112,8 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
       expect(res.body.data.totalAmount).toBe('400.00');
       expect(res.body.data.paymentStatus).toBe('UNPAID');
       expect(res.body.data.note).toBe('Ghi chú ban đầu');
+      expect(res.body.data.cancelledAt).toBeDefined();
+      expect(res.body.data.cancelledBy).toBe('CUSTOMER');
 
       // Verify in DB
       const dbBooking = await prisma.booking.findUnique({
@@ -122,6 +124,38 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
       expect(dbBooking!.totalAmount.toFixed(2)).toBe('400.00');
       expect(dbBooking!.paymentStatus).toBe(PaymentStatus.UNPAID);
       expect(dbBooking!.note).toBe('Ghi chú ban đầu');
+      expect(dbBooking!.cancelledAt).not.toBeNull();
+      expect(dbBooking!.cancelledBy).toBe(Role.CUSTOMER);
+    });
+
+    it('AC4/Security: does not leak admin identity or private fields in customer cancel response', async () => {
+      const start = new Date(Date.now() + 4 * 60 * 60 * 1000);
+      const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          roomId: availableRoomId,
+          userId: testUser1Id,
+          startTime: start,
+          endTime: end,
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      const res = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}/cancel`)
+        .set('Authorization', `Bearer ${customer1Token}`);
+
+      expect(res.status).toBe(200);
+      const data = res.body.data;
+      expect(data.cancelledBy).toBe('CUSTOMER');
+      expect(data.adminId).toBeUndefined();
+      expect(data.adminEmail).toBeUndefined();
+      expect(data.adminName).toBeUndefined();
+      expect(data.user).toBeUndefined();
     });
 
     it('cancels CONFIRMED booking at exactly 60 minutes before start', async () => {

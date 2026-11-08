@@ -5,7 +5,7 @@ import { useToast } from '../hooks/useToast';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult } from '../types/booking';
 import { formatCurrency } from '../utils/format';
-import { getPaymentMethodLabel } from '../utils/status';
+import { getCancellationActorLabel, getPaymentMethodLabel } from '../utils/status';
 import { ArrowLeft, Banknote, LoaderCircle, RotateCw, SearchX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -282,6 +282,14 @@ export const BookingDetailPage: React.FC = () => {
     };
   }, [fetchDetail]);
 
+  const cancellationActorLabel =
+    effectiveBooking?.status === 'CANCELLED'
+      ? getCancellationActorLabel(
+          effectiveBooking.cancelledBy,
+          effectiveBooking.cancellationReason,
+        )
+      : null;
+
   const isCancelDialogOpen = Boolean(
     state.showCancelConfirm && effectiveBooking && effectiveBooking.status === 'CONFIRMED',
   );
@@ -444,6 +452,32 @@ export const BookingDetailPage: React.FC = () => {
 
               {!isCancelDialogOpen && renderCancelFeedback()}
 
+              {effectiveBooking.status === 'CANCELLED' && (
+                <Notice tone="error" data-testid="cancellation-info-banner" role="status">
+                  <span>
+                    <strong>{cancellationActorLabel ?? 'Đơn đặt phòng này đã bị hủy'}</strong>
+                    {effectiveBooking.cancelledAt ? (
+                      <>
+                        {' '}
+                        lúc{' '}
+                        <span className="tabular-nums">
+                          {formatVietnamDateTime(effectiveBooking.cancelledAt)}
+                        </span>
+                      </>
+                    ) : null}
+                    {effectiveBooking.cancellationReason ? (
+                      <>
+                        {' '}
+                        – Lý do:{' '}
+                        <span className="wrap-anywhere">
+                          {effectiveBooking.cancellationReason}
+                        </span>
+                      </>
+                    ) : null}
+                  </span>
+                </Notice>
+              )}
+
               <section aria-labelledby="payment-heading" className="grid gap-4">
                 <h2 id="payment-heading" className="text-h3 font-bold">
                   Thanh toán và ghi chú
@@ -532,7 +566,8 @@ export const BookingDetailPage: React.FC = () => {
 
                   {effectiveBooking.paymentStatus === 'PAID' && (
                     <p className="text-xs text-muted-foreground" data-testid="reschedule-paid-note">
-                      * Đơn đặt phòng đã thanh toán không thể tự đổi lịch trực tuyến. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.
+                      * Đơn đặt phòng đã thanh toán không thể tự đổi lịch trực tuyến. Vui lòng liên
+                      hệ quầy lễ tân để được hỗ trợ.
                     </p>
                   )}
 

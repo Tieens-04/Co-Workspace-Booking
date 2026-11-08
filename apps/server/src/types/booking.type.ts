@@ -1,4 +1,4 @@
-import { BookingStatus, PaymentStatus, PaymentMethod } from '@prisma/client';
+import { BookingStatus, PaymentStatus, PaymentMethod, Role } from '@prisma/client';
 
 export const BLOCKING_BOOKING_STATUSES: readonly BookingStatus[] = [
   BookingStatus.CONFIRMED,
@@ -23,6 +23,8 @@ export interface BookingResponseDto {
   paymentStatus: PaymentStatus;
   paymentMethod: PaymentMethod | null;
   cancellationReason?: string | null;
+  cancelledAt?: Date | null;
+  cancelledBy?: Role | null;
   isNewlyCancelled?: boolean;
 }
 

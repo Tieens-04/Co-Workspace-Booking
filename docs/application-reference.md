@@ -654,19 +654,22 @@ Hệ thống cung cấp tính năng theo dõi lịch sử và mở xem chi tiế
     - `UPCOMING`: Chỉ các đơn `status = CONFIRMED` và có `startTime >= now` theo giờ server, sắp xếp theo `startTime asc, id asc`.
     - `COMPLETED`: Chỉ các đơn `status = COMPLETED`, sắp xếp theo `startTime desc, id desc`.
   - Nghiêm cấm nhận các tham số ngoài allowlist (từ chối query lạ bằng `400 VALIDATION_ERROR`).
+  - Mỗi phần tử booking trả về kèm thông tin chi tiết hủy: `cancellationReason` (`string | null`), `cancelledAt` (`string | null` thời điểm ISO) và `cancelledBy` (`'CUSTOMER' | 'ADMIN' | null`).
 - **API Lấy chi tiết đặt phòng (`GET /api/v1/bookings/:id`)**:
   - Nhận `id` là UUID của đơn đặt phòng.
   - Nếu ID không tồn tại hoặc thuộc về khách hàng khác, API trả về mã lỗi `404 BOOKING_NOT_FOUND` kèm thông báo _"Không tìm thấy đặt phòng"_ để bảo vệ quyền riêng tư và chống tấn công dò quét IDOR.
-  - Trả về đầy đủ: mã đơn `bookingCode`, thông tin phòng (`id`, `name`), thời gian bắt đầu/kết thúc (ISO), số tiền đã lưu `totalAmount`, ghi chú, trạng thái đơn, trạng thái thanh toán và phương thức thanh toán.
+  - Trả về đầy đủ: mã đơn `bookingCode`, thông tin phòng (`id`, `name`), thời gian bắt đầu/kết thúc (ISO), số tiền đã lưu `totalAmount`, ghi chú, trạng thái đơn, trạng thái thanh toán, phương thức thanh toán, thông tin hủy đơn (`cancellationReason`, `cancelledAt`, `cancelledBy`). Đảm bảo nguyên tắc bảo mật và quyền riêng tư: chỉ trả về vai trò enum của người hủy (`CUSTOMER` hoặc `ADMIN`), tuyệt đối không để lộ danh tính hay tài khoản của admin cho khách hàng.
 - **Giao diện Lịch sử đặt phòng (`/bookings`)**:
   - Đồng bộ trạng thái URL (`?view=...&page=...`), tự động chuẩn hóa query không hợp lệ.
   - 3 tab chọn bộ lọc ("Tất cả", "Sắp tới", "Đã hoàn tất") với thuộc tính `aria-pressed`. Đổi bộ lọc tự động quay về trang 1.
   - Trình bày thông tin rõ ràng bằng `BookingSummary`: mã đơn, tên phòng, ngày giờ (Việt Nam `Asia/Ho_Chi_Minh`), tổng tiền (`formatCurrency`), nhãn trạng thái và badge màu riêng biệt.
   - Cung cấp nút _"Xem chi tiết →"_ cho từng đơn.
+  - Chỉ báo bên hủy đơn (`booking-cancellation-indicator`): Đối với đơn `CANCELLED`, hiển thị "Đã hủy bởi Co-Space" (khi `cancelledBy = ADMIN` hoặc có `cancellationReason`) hoặc "Bạn đã hủy" (khi `cancelledBy = CUSTOMER`).
   - Cơ chế chống stale response và hủy request bằng `AbortController` khi chuyển trang/bộ lọc hoặc đăng xuất.
 - **Giao diện Chi tiết đặt phòng (`/bookings/:id`)**:
   - Tải dữ liệu độc lập từ API server theo UUID trên URL; hoạt động ổn định khi truy cập trực tiếp, refresh trình duyệt hoặc qua deep link.
   - Xử lý đầy đủ các trạng thái loading (skeleton), lỗi mạng (kèm nút thử lại), và lỗi không tìm thấy (404/IDOR) với các liên kết quay lại lịch sử và danh sách phòng.
+  - Hiển thị banner chi tiết hủy (`cancellation-info-banner`): Khi đơn ở trạng thái `CANCELLED`, hiển thị banner notice tông lỗi (`tone="error"`) ghi rõ bên hủy ("Đã hủy bởi Co-Space" / "Bạn đã hủy"), thời điểm hủy theo giờ Việt Nam, và lý do hủy nếu do Co-Space hủy (nội dung lý do được render dạng text an toàn chống XSS, hỗ trợ ngắt dòng text dài).
 
 ### 5. Chính Sách & Quy Trình Hủy Đặt Phòng Phía Khách Hàng (CWB-26)
 
@@ -684,10 +687,11 @@ Hệ thống cho phép khách hàng (`CUSTOMER`) chủ động tự hủy đơn 
   - Chỉ đơn ở trạng thái `CONFIRMED` mới được phép hủy. Đơn ở trạng thái khác (`COMPLETED`, `NO_SHOW`) trả về `409 BOOKING_STATE_CONFLICT`.
   - Cơ chế Idempotent: Đơn đã ở trạng thái `CANCELLED` khi gọi lại sẽ trả về thành công `200 OK` với dữ liệu hiện tại, không gây lỗi và không tạo side effect lặp.
   - Khi đơn chuyển sang `CANCELLED`, khung giờ đặt phòng được giải phóng ngay lập tức khỏi availability để người dùng khác có thể đặt chỗ.
+  - Khi khách hàng hủy đơn thành công, hệ thống cập nhật `status = CANCELLED`, đồng thời ghi nhận `cancelledAt` bằng thời điểm server hiện tại và `cancelledBy = 'CUSTOMER'`. Response DTO phản hồi trả về đầy đủ các trường này.
 - **Trải nghiệm người dùng (Frontend Cancellation UI)**:
   - Tại trang chi tiết đặt phòng (`/bookings/:id`), hiển thị nút _"Hủy đặt phòng"_ cùng thông tin chính sách hủy trước 1 giờ dành cho đơn `CONFIRMED`.
   - Hộp thoại xác nhận thao tác rõ ràng để tránh người dùng bấm nhầm.
-  - Khóa nút và hiển thị trạng thái đang xử lý (`isCancelling`), cập nhật trực tiếp huy hiệu trạng thái sang _"Đã hủy"_ khi thành công mà không cần tải lại toàn trang.
+  - Khóa nút và hiển thị trạng thái đang xử lý (`isCancelling`), cập nhật trực tiếp huy hiệu trạng thái sang _"Đã hủy"_ khi thành công mà không cần tải lại toàn trang, đồng thời hiển thị banner thông báo chi tiết hủy (`cancellation-info-banner`).
   - Hiển thị banner thông báo lỗi chính sách (`role="alert"`) hoặc lỗi xung đột trạng thái (kèm nút tải lại dữ liệu).
 
 #### Doanh thu khi hủy booking (CWB-40)
