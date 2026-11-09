@@ -147,4 +147,27 @@ describe('Dashboard occupancy with real MySQL inventory', () => {
     expect(result.bookedMinutes).toBe(0);
     expect(result.totalPeriodRoomMinutes).toBe(0);
   });
+
+  it('excludes room from totalRooms and excludes archived interval from occupancy (AC5)', async () => {
+    const baseline = await read();
+
+    // Create room archived at hour 6 (available hours 0-6 = 360 mins)
+    const room = await createRoom(RoomStatus.ARCHIVED, start, [
+      { status: RoomStatus.AVAILABLE, effectiveAt: start },
+      { status: RoomStatus.ARCHIVED, effectiveAt: at(6) },
+    ]);
+    // Booking within the available window (hours 2 to 4 = 120 mins)
+    await createBooking(room.id, 2, 4);
+
+    const result = await read();
+
+    // Denominator should only grow by 360 minutes (the 18 hours when ARCHIVED are excluded)
+    expect(result.totalPeriodRoomMinutes - baseline.totalPeriodRoomMinutes).toBe(360);
+    // Booked minutes should grow by 120 minutes
+    expect(result.bookedMinutes - baseline.bookedMinutes).toBe(120);
+    // Revenue is still counted
+    expect(Number(result.actualRevenue) - Number(baseline.actualRevenue)).toBe(100);
+    // Total rooms count in KPI excludes ARCHIVED room
+    expect(result.totalRooms).toBe(baseline.totalRooms);
+  });
 });

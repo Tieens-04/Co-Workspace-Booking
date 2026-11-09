@@ -224,7 +224,19 @@ export class RoomRepository implements RoomRepositoryContract {
     }
 
     if (filter.startDate && filter.endDate) {
-      where.status = RoomStatus.AVAILABLE;
+      if (filter.status !== undefined && filter.status !== RoomStatus.AVAILABLE) {
+        // Non-AVAILABLE rooms can never satisfy a slot availability search
+        where.id = { in: [] };
+      } else {
+        where.status = RoomStatus.AVAILABLE;
+      }
+    } else if (filter.status !== undefined) {
+      where.status = filter.status;
+    } else if (!filter.includeArchived) {
+      where.status = { not: RoomStatus.ARCHIVED };
+    }
+
+    if (filter.startDate && filter.endDate) {
       where.bookings = {
         none: {
           status: { in: [...BLOCKING_BOOKING_STATUSES] },
@@ -358,11 +370,13 @@ export class RoomRepository implements RoomRepositoryContract {
       const lockedRoom = await lockRoomRow(tx, id);
       const capturedNow = new Date();
 
-      // Include ongoing and upcoming blocking bookings when switching to maintenance.
+      // Include ongoing and upcoming blocking bookings when switching to maintenance or archived.
       const isTransitionToMaintenance =
         data.status === RoomStatus.MAINTENANCE && lockedRoom.status !== RoomStatus.MAINTENANCE;
+      const isTransitionToArchived =
+        data.status === RoomStatus.ARCHIVED && lockedRoom.status !== RoomStatus.ARCHIVED;
 
-      if (isTransitionToMaintenance) {
+      if (isTransitionToMaintenance || isTransitionToArchived) {
         const affectedBookings = await tx.booking.findMany({
           where: {
             roomId: id,

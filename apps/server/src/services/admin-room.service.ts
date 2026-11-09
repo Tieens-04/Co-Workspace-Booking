@@ -2,31 +2,28 @@ import type { AuditActor } from '../repositories/audit.repository.js';
 import {
   RoomRepositoryContract,
   roomRepository,
-  RoomDetailRecord,
 } from '../repositories/room.repository.js';
 import { MediaStorageServiceContract, cloudinaryMediaService } from './cloudinary-media.service.js';
 import { CreateRoomInput, UpdateRoomInput } from '../validators/admin-room.validator.js';
 import { RoomDetail } from '../types/room.type.js';
-import { formatPrice, mapAmenities, mapImages } from './room.service.js';
+import { AppError } from '../utils/error.util.js';
+import { toRoomDetailDto } from './room.service.js';
 
-export function toRoomDetailDto(record: RoomDetailRecord): RoomDetail {
-  return {
-    id: record.id,
-    name: record.name,
-    description: record.description,
-    capacity: record.capacity,
-    pricePerHour: formatPrice(record.pricePerHour),
-    status: record.status,
-    images: mapImages(record.images),
-    amenities: mapAmenities(record.amenities),
-  };
-}
+export { toRoomDetailDto };
 
 export class AdminRoomService {
   constructor(
     private readonly roomRepo: RoomRepositoryContract = roomRepository,
     private readonly mediaStorage: MediaStorageServiceContract = cloudinaryMediaService,
   ) {}
+
+  async getRoomById(id: string): Promise<RoomDetail> {
+    const room = await this.roomRepo.findById(id);
+    if (!room) {
+      throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
+    }
+    return toRoomDetailDto(room);
+  }
 
   async createRoom(data: CreateRoomInput): Promise<RoomDetail> {
     const created = await this.roomRepo.createWithRelations({

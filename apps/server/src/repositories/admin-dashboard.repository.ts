@@ -64,9 +64,9 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
     // One repeatable-read snapshot keeps bookings and inventory consistent during room updates.
     return prisma.$transaction(
       async (tx) => {
-        // 1. Count rooms
+        // 1. Count rooms (exclude ARCHIVED rooms from active inventory)
         const [totalRooms, totalAvailableRooms] = await Promise.all([
-          tx.room.count(),
+          tx.room.count({ where: { status: { not: RoomStatus.ARCHIVED } } }),
           tx.room.count({ where: { status: RoomStatus.AVAILABLE } }),
         ]);
 
@@ -159,11 +159,16 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
     const { dayStart, dayEnd } = getDayBounds(dateStr);
 
     // Whole-catalog counts for the KPI card; the room list itself is paginated.
-    const statusCounts = await prisma.room.groupBy({ by: ['status'], _count: { _all: true } });
+    const statusCounts = await prisma.room.groupBy({
+      by: ['status'],
+      where: { status: { not: RoomStatus.ARCHIVED } },
+      _count: { _all: true },
+    });
     const countOf = (status: RoomStatus) =>
       statusCounts.find((row) => row.status === status)?._count._all ?? 0;
     const total = statusCounts.reduce((sum, row) => sum + row._count._all, 0);
     const rooms = await prisma.room.findMany({
+      where: { status: { not: RoomStatus.ARCHIVED } },
       skip: (page - 1) * limit,
       take: limit,
       select: {

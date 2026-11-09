@@ -15,8 +15,18 @@ export class AdminRoomController {
   getRooms = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const filter = req.query as unknown as FindRoomsFilter;
-      const result = await this.publicService.getRooms(filter);
+      const result = await this.publicService.getRooms({ ...filter, includeArchived: true });
       return sendSuccess(res, result, 'Lấy danh sách phòng thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  getRoomById = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params;
+      const result = await this.adminService.getRoomById(id);
+      return sendSuccess(res, result, 'Lấy thông tin phòng thành công', 200);
     } catch (err) {
       return next(err);
     }

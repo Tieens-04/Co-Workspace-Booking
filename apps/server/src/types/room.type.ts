@@ -64,6 +64,8 @@ export interface FindRoomsFilter {
   sort?: RoomSortOption;
   startDate?: Date;
   endDate?: Date;
+  status?: RoomStatus;
+  includeArchived?: boolean;
 }
 
 export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';

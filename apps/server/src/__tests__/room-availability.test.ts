@@ -400,6 +400,21 @@ describe('Room Availability Unit & API Tests', () => {
       expect(res.body.code).toBe('ROOM_NOT_AVAILABLE');
     });
 
+    it('returns 404 ROOM_NOT_FOUND when room status is ARCHIVED (AC2)', async () => {
+      vi.mocked(roomRepository.findAvailabilityById).mockResolvedValue(
+        mockAvailabilityFixture({
+          status: RoomStatus.ARCHIVED,
+        }),
+      );
+
+      const res = await request(app).get(`/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.message).toBe('Không tìm thấy phòng');
+    });
+
     it('returns 400 VALIDATION_ERROR when room ID is not a valid UUID', async () => {
       const res = await request(app).get('/api/v1/rooms/not-a-uuid/availability?date=2026-09-21');
 

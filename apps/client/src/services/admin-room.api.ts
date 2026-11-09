@@ -14,6 +14,16 @@ export const adminRoomApi = {
     return response.data;
   },
 
+  getAdminRoomById: async (
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ApiResponse<RoomDetail>> => {
+    const response = await apiClient.get<ApiResponse<RoomDetail>>(`/admin/rooms/${id}`, {
+      signal,
+    });
+    return response.data;
+  },
+
   createRoom: async (payload: CreateRoomPayload): Promise<ApiResponse<RoomDetail>> => {
     const response = await apiClient.post<ApiResponse<RoomDetail>>('/admin/rooms', payload);
     return response.data;

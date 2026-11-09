@@ -98,6 +98,20 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       expect(res.body.code).toBe('UNAUTHORIZED');
     });
 
+    it('returns 401 UNAUTHORIZED when no token is provided to GET /api/v1/admin/rooms/:id (AC4)', async () => {
+      const res = await request(app).get(`/api/v1/admin/rooms/${roomId1}`);
+      expect(res.status).toBe(401);
+      expect(res.body.code).toBe('UNAUTHORIZED');
+    });
+
+    it('returns 403 FORBIDDEN when CUSTOMER accesses GET /api/v1/admin/rooms/:id (AC4)', async () => {
+      const res = await request(app)
+        .get(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('FORBIDDEN');
+    });
+
     it('returns 403 FORBIDDEN when CUSTOMER accesses GET /api/v1/admin/rooms', async () => {
       const res = await request(app)
         .get('/api/v1/admin/rooms')
@@ -151,7 +165,71 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
         page: 1,
         limit: 10,
         sort: 'newest',
+        includeArchived: true,
       });
+    });
+
+    it('supports status query filter including ARCHIVED (AC2)', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/rooms?status=ARCHIVED')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(roomRepository.findManyAndCount).toHaveBeenCalledWith({
+        page: 1,
+        limit: 10,
+        sort: 'newest',
+        status: RoomStatus.ARCHIVED,
+        includeArchived: true,
+      });
+    });
+
+    it('rejects invalid status filter on GET /api/v1/admin/rooms', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/rooms?status=UNKNOWN')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
+    });
+  });
+
+  describe('GET /api/v1/admin/rooms/:id (Admin Detail Access - AC4)', () => {
+    it('returns 200 and room detail for ADMIN even when room is ARCHIVED', async () => {
+      vi.mocked(roomRepository.findById).mockResolvedValue(
+        mockRoomFixture({ status: RoomStatus.ARCHIVED }),
+      );
+
+      const res = await request(app)
+        .get(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(res.body.data.id).toBe(roomId1);
+      expect(res.body.data.status).toBe('ARCHIVED');
+      expect(roomRepository.findById).toHaveBeenCalledWith(roomId1);
+    });
+
+    it('returns 404 ROOM_NOT_FOUND when room does not exist', async () => {
+      vi.mocked(roomRepository.findById).mockResolvedValue(null);
+
+      const res = await request(app)
+        .get(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+    });
+
+    it('rejects invalid UUID format for room id', async () => {
+      const res = await request(app)
+        .get('/api/v1/admin/rooms/not-a-uuid')
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('VALIDATION_ERROR');
     });
   });
 
@@ -651,6 +729,19 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       );
     });
 
+    it('updates room status to ARCHIVED and passes it to repository (AC1/AC2)', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'ARCHIVED' });
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(
+        roomId1,
+        expect.objectContaining({ status: RoomStatus.ARCHIVED }),
+      );
+    });
+
     it('accepts acknowledgeFutureBookings along with status MAINTENANCE', async () => {
       const res = await request(app)
         .patch(`/api/v1/admin/rooms/${roomId1}`)
@@ -667,7 +758,23 @@ describe('Admin Room Management API (/api/v1/admin/rooms)', () => {
       );
     });
 
-    it('rejects acknowledgeFutureBookings when status is not MAINTENANCE', async () => {
+    it('accepts acknowledgeFutureBookings along with status ARCHIVED (AC3)', async () => {
+      const res = await request(app)
+        .patch(`/api/v1/admin/rooms/${roomId1}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: 'ARCHIVED', acknowledgeFutureBookings: true });
+
+      expect(res.status).toBe(200);
+      expect(roomRepository.updateWithRelations).toHaveBeenCalledWith(
+        roomId1,
+        expect.objectContaining({
+          status: RoomStatus.ARCHIVED,
+          acknowledgeFutureBookings: true,
+        }),
+      );
+    });
+
+    it('rejects acknowledgeFutureBookings when status is neither MAINTENANCE nor ARCHIVED', async () => {
       const res = await request(app)
         .patch(`/api/v1/admin/rooms/${roomId1}`)
         .set('Authorization', `Bearer ${adminToken}`)

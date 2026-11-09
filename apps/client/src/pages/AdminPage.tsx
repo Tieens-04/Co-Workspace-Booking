@@ -20,6 +20,7 @@ import { EmptyState, ErrorState } from '@/components/common/EmptyState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Pagination } from '@/components/common/Pagination';
 import { cn } from '@/lib/utils';
+import { NativeSelect } from '@/components/common/NativeSelect';
 import { RoomTable } from '../components/admin/rooms/RoomTable';
 import { RoomForm } from '../components/admin/rooms/RoomForm';
 import { RoomNotice } from '../components/admin/rooms/RoomNotice';
@@ -58,6 +59,7 @@ export const AdminPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalPages, setTotalPages] = useState<number>(1);
   const [totalRooms, setTotalRooms] = useState<number>(0);
+  const [statusFilter, setStatusFilter] = useState<'ALL' | RoomStatus>('ALL');
   const [isLoadingRooms, setIsLoadingRooms] = useState<boolean>(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -150,42 +152,49 @@ export const AdminPage: React.FC = () => {
   }, [isFormOpen]);
 
   // Fetch rooms; only the latest request for the current session may update the list.
-  const fetchRooms = useCallback(async (pageToLoad: number) => {
-    roomsRequestRef.current?.abort();
-    const controller = new AbortController();
-    roomsRequestRef.current = controller;
-    const requestingPrincipal = activePrincipalRef.current;
-    const isStale = () =>
-      controller.signal.aborted ||
-      roomsRequestRef.current !== controller ||
-      activePrincipalRef.current !== requestingPrincipal;
+  const fetchRooms = useCallback(
+    async (pageToLoad: number, activeFilter: 'ALL' | RoomStatus = statusFilter) => {
+      roomsRequestRef.current?.abort();
+      const controller = new AbortController();
+      roomsRequestRef.current = controller;
+      const requestingPrincipal = activePrincipalRef.current;
+      const isStale = () =>
+        controller.signal.aborted ||
+        roomsRequestRef.current !== controller ||
+        activePrincipalRef.current !== requestingPrincipal;
 
-    setIsLoadingRooms(true);
-    setLoadError(null);
-    try {
-      const res = await adminRoomApi.getAdminRooms(
-        { page: pageToLoad, limit: 10 },
-        controller.signal,
-      );
-      if (isStale()) return;
-      if (res.success) {
-        setRooms(res.data.items);
-        setCurrentPage(res.data.pagination.page);
-        setTotalPages(res.data.pagination.totalPages);
-        setTotalRooms(res.data.pagination.total);
+      setIsLoadingRooms(true);
+      setLoadError(null);
+      try {
+        const res = await adminRoomApi.getAdminRooms(
+          {
+            page: pageToLoad,
+            limit: 10,
+            status: activeFilter === 'ALL' ? undefined : activeFilter,
+          },
+          controller.signal,
+        );
+        if (isStale()) return;
+        if (res.success) {
+          setRooms(res.data.items);
+          setCurrentPage(res.data.pagination.page);
+          setTotalPages(res.data.pagination.totalPages);
+          setTotalRooms(res.data.pagination.total);
+        }
+      } catch (err: any) {
+        if (isStale()) return;
+        setLoadError(
+          err.response?.data?.message || 'Không thể tải danh sách phòng. Vui lòng thử lại.',
+        );
+      } finally {
+        if (roomsRequestRef.current === controller) {
+          roomsRequestRef.current = null;
+          setIsLoadingRooms(false);
+        }
       }
-    } catch (err: any) {
-      if (isStale()) return;
-      setLoadError(
-        err.response?.data?.message || 'Không thể tải danh sách phòng. Vui lòng thử lại.',
-      );
-    } finally {
-      if (roomsRequestRef.current === controller) {
-        roomsRequestRef.current = null;
-        setIsLoadingRooms(false);
-      }
-    }
-  }, []);
+    },
+    [statusFilter],
+  );
 
   // Drop rooms loaded for a previous session before refetching for the new one.
   const [roomsSessionId, setRoomsSessionId] = useState<string | undefined>(principalId);
@@ -200,8 +209,8 @@ export const AdminPage: React.FC = () => {
   }
 
   useEffect(() => {
-    fetchRooms(currentPage);
-  }, [fetchRooms, currentPage, roomsSessionId]);
+    fetchRooms(currentPage, statusFilter);
+  }, [fetchRooms, currentPage, statusFilter, roomsSessionId]);
 
   // Open Create Form
   const handleOpenCreate = (trigger: HTMLButtonElement) => {
@@ -249,7 +258,7 @@ export const AdminPage: React.FC = () => {
     setFrozenUpdatePayload(null);
     setIsConfirmingMaintenance(false);
     try {
-      const res = await roomApi.getRoomById(roomId, controller.signal);
+      const res = await adminRoomApi.getAdminRoomById(roomId, controller.signal);
       if (res.success && !controller.signal.aborted && detailRequestRef.current === controller) {
         const room = res.data;
         setEditingRoomId(room.id);
@@ -584,8 +593,9 @@ export const AdminPage: React.FC = () => {
       );
       handleCloseForm();
       if (isCreateFlow) {
+        setStatusFilter('ALL');
         setCurrentPage(1);
-        fetchRooms(1);
+        fetchRooms(1, 'ALL');
       } else {
         fetchRooms(currentPage);
       }
@@ -608,8 +618,9 @@ export const AdminPage: React.FC = () => {
       );
       handleCloseForm();
       if (isCreateFlow) {
+        setStatusFilter('ALL');
         setCurrentPage(1);
-        fetchRooms(1);
+        fetchRooms(1, 'ALL');
       } else {
         fetchRooms(currentPage);
       }
@@ -650,8 +661,13 @@ export const AdminPage: React.FC = () => {
       setFrozenUpdatePayload(null);
     } catch (err: any) {
       setIsConfirmingMaintenance(false);
+      const isArchived = frozenUpdatePayload?.status === 'ARCHIVED';
       setFormErrors({
-        general: err.response?.data?.message || 'Không thể chuyển phòng sang bảo trì.',
+        general:
+          err.response?.data?.message ||
+          (isArchived
+            ? 'Không thể chuyển phòng sang ngừng kinh doanh.'
+            : 'Không thể chuyển phòng sang bảo trì.'),
       });
       return;
     } finally {
@@ -762,13 +778,37 @@ export const AdminPage: React.FC = () => {
           className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-4"
           aria-labelledby="admin-room-list-title"
         >
-          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <h2 id="admin-room-list-title" className="text-h3">
               Danh sách phòng làm việc{' '}
               <span className="text-sm font-medium text-muted-foreground tabular-nums">
                 ({totalRooms} phòng)
               </span>
             </h2>
+            <div className="flex items-center gap-2">
+              <label
+                htmlFor="admin-room-status-filter"
+                className="whitespace-nowrap text-sm font-medium text-muted-foreground"
+              >
+                Trạng thái:
+              </label>
+              <NativeSelect
+                id="admin-room-status-filter"
+                value={statusFilter}
+                onChange={(e) => {
+                  const newFilter = e.target.value as 'ALL' | RoomStatus;
+                  setStatusFilter(newFilter);
+                  setCurrentPage(1);
+                }}
+                data-testid="admin-room-status-filter"
+                className="w-44 text-sm"
+              >
+                <option value="ALL">Tất cả trạng thái</option>
+                <option value="AVAILABLE">AVAILABLE (Sẵn sàng)</option>
+                <option value="MAINTENANCE">MAINTENANCE (Bảo trì)</option>
+                <option value="ARCHIVED">ARCHIVED (Ngừng kinh doanh)</option>
+              </NativeSelect>
+            </div>
           </div>
 
           {isLoadingRooms && (
@@ -796,8 +836,16 @@ export const AdminPage: React.FC = () => {
           {showRoomList && rooms.length === 0 && (
             <EmptyState
               icon={DoorOpen}
-              title="Chưa có phòng nào"
-              description='Hệ thống hiện tại chưa có phòng nào. Nhấn vào nút "+ Thêm phòng mới" ở trên để tạo phòng đầu tiên.'
+              title={
+                statusFilter !== 'ALL'
+                  ? 'Không tìm thấy phòng nào'
+                  : 'Chưa có phòng nào'
+              }
+              description={
+                statusFilter !== 'ALL'
+                  ? `Không có phòng nào phù hợp với bộ lọc trạng thái "${statusFilter}". Thử chọn bộ lọc khác.`
+                  : 'Hệ thống hiện tại chưa có phòng nào. Nhấn vào nút "+ Thêm phòng mới" ở trên để tạo phòng đầu tiên.'
+              }
               data-testid="admin-empty-state"
             />
           )}

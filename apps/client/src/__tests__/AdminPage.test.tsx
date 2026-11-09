@@ -36,6 +36,7 @@ vi.mock('../services/room.api', () => ({
 vi.mock('../services/admin-room.api', () => ({
   adminRoomApi: {
     getAdminRooms: vi.fn(),
+    getAdminRoomById: vi.fn(),
     createRoom: vi.fn(),
     updateRoom: vi.fn(),
     uploadRoomImages: vi.fn(),
@@ -128,6 +129,11 @@ describe('AdminPage - Room Management & Form', () => {
       data: mockAmenities,
     });
     vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValue(mockRoomsResponse());
+    vi.mocked(adminRoomApi.getAdminRoomById).mockResolvedValue({
+      success: true,
+      message: 'OK',
+      data: mockRoomDetail,
+    });
     vi.mocked(roomApi.getRoomById).mockResolvedValue({
       success: true,
       message: 'OK',
@@ -266,7 +272,7 @@ describe('AdminPage - Room Management & Form', () => {
       expect(deleteButtons).toHaveLength(0);
 
       // Verify status cannot be toggled/edited from table (no select/dropdown for status)
-      expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
+      expect(within(screen.getByRole('table')).queryByRole('combobox')).not.toBeInTheDocument();
     });
   });
 
@@ -476,7 +482,7 @@ describe('AdminPage - Room Management & Form', () => {
       const pendingDetail = new Promise<ApiResponse<RoomDetail>>((resolve) => {
         resolveDetail = resolve;
       });
-      vi.mocked(roomApi.getRoomById).mockReturnValueOnce(pendingDetail);
+      vi.mocked(adminRoomApi.getAdminRoomById).mockReturnValueOnce(pendingDetail);
 
       renderComponent();
 
@@ -495,7 +501,7 @@ describe('AdminPage - Room Management & Form', () => {
       });
     });
 
-    it('preloads room details from roomApi.getRoomById and opens the edit form', async () => {
+    it('preloads room details from adminRoomApi.getAdminRoomById and opens the edit form', async () => {
       renderComponent();
 
       await waitFor(() => {
@@ -506,7 +512,10 @@ describe('AdminPage - Room Management & Form', () => {
       fireEvent.click(editBtn);
 
       await waitFor(() => {
-        expect(roomApi.getRoomById).toHaveBeenCalledWith('room-uuid-1', expect.any(AbortSignal));
+        expect(adminRoomApi.getAdminRoomById).toHaveBeenCalledWith(
+          'room-uuid-1',
+          expect.any(AbortSignal),
+        );
         expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
       });
 
@@ -1326,6 +1335,397 @@ describe('AdminPage - Room Management & Form', () => {
         // MUST display edit success message, NEVER create success!
         expect(screen.getByText('Cập nhật thông tin phòng thành công!')).toBeInTheDocument();
       });
+    });
+  });
+
+  describe('Room Archiving & Filtering (CWB-85)', () => {
+    it('filters room list by status when user selects ARCHIVED (AC2)', async () => {
+      render(
+        <MemoryRouter>
+          <AdminPage />
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      const filterSelect = screen.getByTestId('admin-room-status-filter');
+      expect(filterSelect).toHaveValue('ALL');
+
+      fireEvent.change(filterSelect, { target: { value: 'ARCHIVED' } });
+
+      await waitFor(() => {
+        expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith(
+          expect.objectContaining({
+            page: 1,
+            limit: 10,
+            status: 'ARCHIVED',
+          }),
+          expect.any(AbortSignal),
+        );
+      });
+    });
+
+    it('loads room details via getAdminRoomById and unarchives an ARCHIVED room (AC4)', async () => {
+      const archivedRoomDetail: RoomDetail = {
+        ...mockRoomDetail,
+        id: 'room-archived-1',
+        name: 'Archived Studio Room',
+        status: 'ARCHIVED',
+      };
+
+      vi.mocked(adminRoomApi.getAdminRoomById).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: archivedRoomDetail,
+      });
+
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
+        mockRoomsResponse([
+          {
+            id: 'room-archived-1',
+            name: 'Archived Studio Room',
+            capacity: 6,
+            pricePerHour: '200000.00',
+            status: 'ARCHIVED',
+            coverImage: null,
+            amenities: [],
+          },
+        ]),
+      );
+
+      vi.mocked(adminRoomApi.updateRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Cập nhật thành công',
+        data: { ...archivedRoomDetail, status: 'AVAILABLE' },
+      });
+
+      render(
+        <MemoryRouter>
+          <AdminPage />
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Archived Studio Room')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-archived-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      expect(adminRoomApi.getAdminRoomById).toHaveBeenCalledWith(
+        'room-archived-1',
+        expect.any(AbortSignal),
+      );
+
+      const statusSelect = screen.getByTestId('admin-room-status-select');
+      expect(statusSelect).toHaveValue('ARCHIVED');
+
+      fireEvent.change(statusSelect, { target: { value: 'AVAILABLE' } });
+      expect(statusSelect).toHaveValue('AVAILABLE');
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(adminRoomApi.updateRoom).toHaveBeenCalledWith('room-archived-1', {
+          name: 'Archived Studio Room',
+          description: 'Phòng họp tiêu chuẩn cao cấp',
+          capacity: 10,
+          pricePerHour: '250000.00',
+          amenityIds: ['amenity-uuid-1', 'amenity-uuid-2'],
+          images: [
+            { imageUrl: 'https://images.example.com/cover1.jpg', isPrimary: true },
+            { imageUrl: 'https://images.example.com/side1.jpg', isPrimary: false },
+          ],
+          status: 'AVAILABLE',
+        });
+      });
+    });
+
+    it('handles future booking conflict warning when archiving room and confirms with acknowledgement (AC3)', async () => {
+      vi.mocked(adminRoomApi.getAdminRoomById).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: mockRoomDetail,
+      });
+
+      const conflictWarning = {
+        futureBookingCount: 1,
+        bookings: [
+          {
+            bookingCode: 'CS-20261220-ABCD',
+            startTime: '2026-12-20T09:00:00.000Z',
+            endTime: '2026-12-20T11:00:00.000Z',
+          },
+        ],
+      };
+
+      vi.mocked(adminRoomApi.updateRoom).mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            code: 'ROOM_HAS_FUTURE_BOOKINGS',
+            message: 'Phòng có booking sắp tới',
+            details: conflictWarning,
+          },
+        },
+      });
+
+      render(
+        <MemoryRouter>
+          <AdminPage />
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-uuid-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      const statusSelect = screen.getByTestId('admin-room-status-select');
+      fireEvent.change(statusSelect, { target: { value: 'ARCHIVED' } });
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('admin-future-booking-warning')).toBeInTheDocument();
+      });
+
+      expect(screen.getByText('CS-20261220-ABCD')).toBeInTheDocument();
+
+      vi.mocked(adminRoomApi.updateRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Cập nhật thành công',
+        data: { ...mockRoomDetail, status: 'ARCHIVED' },
+      });
+
+      fireEvent.click(screen.getByTestId('admin-warning-confirm-btn'));
+
+      await waitFor(() => {
+        expect(adminRoomApi.updateRoom).toHaveBeenCalledWith('room-uuid-1', {
+          name: 'Phòng Họp Ban Giám Đốc',
+          description: 'Phòng họp tiêu chuẩn cao cấp',
+          capacity: 10,
+          pricePerHour: '250000.00',
+          amenityIds: ['amenity-uuid-1', 'amenity-uuid-2'],
+          images: [
+            { imageUrl: 'https://images.example.com/cover1.jpg', isPrimary: true },
+            { imageUrl: 'https://images.example.com/side1.jpg', isPrimary: false },
+          ],
+          status: 'ARCHIVED',
+          acknowledgeFutureBookings: true,
+        });
+      });
+    });
+
+    it('does not fire duplicate getAdminRooms requests when changing status filter (Finding 1 Regression)', async () => {
+      vi.mocked(adminRoomApi.getAdminRooms).mockClear();
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
+        mockRoomsResponse([mockRoomsList[0]]),
+      );
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
+        mockRoomsResponse([]),
+      );
+
+      render(
+        <MemoryRouter>
+          <AdminPage />
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+      expect(adminRoomApi.getAdminRooms).toHaveBeenCalledTimes(1);
+
+      const filterSelect = screen.getByTestId('admin-room-status-filter');
+      fireEvent.change(filterSelect, { target: { value: 'ARCHIVED' } });
+
+      await waitFor(() => {
+        expect(adminRoomApi.getAdminRooms).toHaveBeenCalledTimes(2);
+      });
+      expect(adminRoomApi.getAdminRooms).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          page: 1,
+          limit: 10,
+          status: 'ARCHIVED',
+        }),
+        expect.any(AbortSignal),
+      );
+    });
+
+    it('shows contextual empty state when statusFilter is active and list is empty (Finding 6 Regression)', async () => {
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
+        mockRoomsResponse([mockRoomsList[0]]),
+      );
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
+        mockRoomsResponse([]),
+      );
+
+      render(
+        <MemoryRouter>
+          <AdminPage />
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      const filterSelect = screen.getByTestId('admin-room-status-filter');
+      fireEvent.change(filterSelect, { target: { value: 'ARCHIVED' } });
+
+      await waitFor(() => {
+        expect(screen.getByText('Không tìm thấy phòng nào')).toBeInTheDocument();
+        expect(
+          screen.getByText(
+            'Không có phòng nào phù hợp với bộ lọc trạng thái "ARCHIVED". Thử chọn bộ lọc khác.',
+          ),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('shows contextual fallback error when confirming archival fails without response message (Finding 4 Regression)', async () => {
+      vi.mocked(adminRoomApi.getAdminRoomById).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: mockRoomDetail,
+      });
+
+      vi.mocked(adminRoomApi.updateRoom).mockRejectedValueOnce({
+        response: {
+          status: 409,
+          data: {
+            code: 'ROOM_HAS_FUTURE_BOOKINGS',
+            message: 'Phòng có booking sắp tới',
+            details: {
+              futureBookingCount: 1,
+              bookings: [
+                {
+                  bookingCode: 'CS-20261220-ABCD',
+                  startTime: '2026-12-20T09:00:00.000Z',
+                  endTime: '2026-12-20T11:00:00.000Z',
+                },
+              ],
+            },
+          },
+        },
+      });
+
+      render(
+        <MemoryRouter>
+          <AdminPage />
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByTestId('admin-edit-btn-room-uuid-1'));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Chỉnh Sửa Phòng' })).toBeInTheDocument();
+      });
+
+      const statusSelect = screen.getByTestId('admin-room-status-select');
+      fireEvent.change(statusSelect, { target: { value: 'ARCHIVED' } });
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('admin-future-booking-warning')).toBeInTheDocument();
+      });
+
+      // Second attempt fails with generic network error (no response.data.message)
+      vi.mocked(adminRoomApi.updateRoom).mockRejectedValueOnce(new Error('Network error'));
+
+      fireEvent.click(screen.getByTestId('admin-warning-confirm-btn'));
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Không thể chuyển phòng sang ngừng kinh doanh.'),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it('resets statusFilter to ALL after creating a room so the new room is visible (Finding 6 Regression)', async () => {
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
+        mockRoomsResponse([mockRoomsList[0]]),
+      );
+
+      render(
+        <MemoryRouter>
+          <AdminPage />
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(screen.getByText('Phòng Họp Ban Giám Đốc')).toBeInTheDocument();
+      });
+
+      const filterSelect = screen.getByTestId('admin-room-status-filter');
+      fireEvent.change(filterSelect, { target: { value: 'ARCHIVED' } });
+
+      await waitFor(() => {
+        expect(adminRoomApi.getAdminRooms).toHaveBeenCalledTimes(2);
+      });
+
+      // Open create form
+      fireEvent.click(screen.getByTestId('admin-add-room-btn'));
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: 'Thêm Phòng Mới' })).toBeInTheDocument();
+      });
+
+      // Fill form
+      fireEvent.change(screen.getByLabelText(/Tên phòng/i), { target: { value: 'Phòng Mới Tạo' } });
+      fireEvent.change(screen.getByLabelText(/Sức chứa/i), { target: { value: '8' } });
+      fireEvent.change(screen.getByLabelText(/Đơn giá mỗi giờ/i), { target: { value: '150000' } });
+
+      vi.mocked(adminRoomApi.createRoom).mockResolvedValueOnce({
+        success: true,
+        message: 'Tạo thành công',
+        data: {
+          id: 'new-room-1',
+          name: 'Phòng Mới Tạo',
+          description: null,
+          capacity: 8,
+          pricePerHour: '150000.00',
+          status: 'AVAILABLE',
+          images: [],
+          amenities: [],
+        },
+      });
+
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
+        mockRoomsResponse([
+          {
+            id: 'new-room-1',
+            name: 'Phòng Mới Tạo',
+            capacity: 8,
+            pricePerHour: '150000.00',
+            status: 'AVAILABLE',
+            coverImage: null,
+            amenities: [],
+          },
+        ]),
+      );
+
+      fireEvent.click(screen.getByTestId('admin-submit-room-btn'));
+
+      await waitFor(() => {
+        expect(screen.getByText('Tạo phòng mới thành công!')).toBeInTheDocument();
+      });
+
+      expect(filterSelect).toHaveValue('ALL');
     });
   });
 });

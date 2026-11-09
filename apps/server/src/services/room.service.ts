@@ -3,6 +3,7 @@ import {
   RoomRepositoryContract,
   roomRepository,
   RoomListRecord,
+  RoomDetailRecord,
   SelectedRoomImage,
   SelectedRoomAmenity,
 } from '../repositories/room.repository.js';
@@ -88,6 +89,19 @@ export function mapImages(rawImages: SelectedRoomImage[]): RoomImageDto[] {
   }));
 }
 
+export function toRoomDetailDto(room: RoomDetailRecord): RoomDetail {
+  return {
+    id: room.id,
+    name: room.name,
+    description: room.description,
+    capacity: room.capacity,
+    pricePerHour: formatPrice(room.pricePerHour),
+    status: room.status,
+    images: mapImages(room.images),
+    amenities: mapAmenities(room.amenities),
+  };
+}
+
 export class RoomService {
   constructor(private readonly roomRepo: RoomRepositoryContract = roomRepository) {}
 
@@ -122,22 +136,17 @@ export class RoomService {
     };
   }
 
+  mapToRoomDetail(room: RoomDetailRecord): RoomDetail {
+    return toRoomDetailDto(room);
+  }
+
   async getRoomById(id: string): Promise<RoomDetail> {
     const room = await this.roomRepo.findById(id);
-    if (!room) {
+    if (!room || room.status === RoomStatus.ARCHIVED) {
       throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
     }
 
-    return {
-      id: room.id,
-      name: room.name,
-      description: room.description,
-      capacity: room.capacity,
-      pricePerHour: formatPrice(room.pricePerHour),
-      status: room.status,
-      images: mapImages(room.images),
-      amenities: mapAmenities(room.amenities),
-    };
+    return toRoomDetailDto(room);
   }
 
   async getAvailability(
@@ -154,7 +163,7 @@ export class RoomService {
     }
 
     const room = await this.roomRepo.findAvailabilityById(id, dayStart, dayEnd);
-    if (!room) {
+    if (!room || room.status === RoomStatus.ARCHIVED) {
       throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
     }
 
