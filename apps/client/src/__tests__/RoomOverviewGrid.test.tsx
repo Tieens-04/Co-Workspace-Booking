@@ -28,4 +28,24 @@ describe('RoomOverviewGrid operating hours', () => {
     expect(screen.getByTitle(/Đã đặt:/)).toBeInTheDocument();
     expect(screen.queryByTestId('toggle-full-day-btn')).not.toBeInTheDocument();
   });
+
+  it('displays CLOSED slots with closed legend item and tooltip (CWB-86)', () => {
+    const dayStart = new Date('2026-10-25T00:00:00+07:00').getTime();
+    const room: DashboardRoomSchedule = {
+      id: 'room-1',
+      name: 'Alpha',
+      capacity: 8,
+      pricePerHour: '200000.00',
+      status: 'AVAILABLE',
+      bookings: [],
+      slots: Array.from({ length: 48 }, (_, i) => ({
+        startTime: new Date(dayStart + i * 30 * 60 * 1000).toISOString(),
+        endTime: new Date(dayStart + (i + 1) * 30 * 60 * 1000).toISOString(),
+        status: i === 18 ? 'CLOSED' : 'AVAILABLE',
+      })),
+    };
+    render(<RoomOverviewGrid rooms={[room]} date="2026-10-25" />);
+    expect(screen.getByText('Đóng cửa')).toBeInTheDocument();
+    expect(screen.getByTitle(/Đóng cửa: 09:00 - 09:30/)).toBeInTheDocument();
+  });
 });

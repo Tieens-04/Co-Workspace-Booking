@@ -36,6 +36,7 @@ describe('TimeGrid component', () => {
 
     expect(screen.getAllByText('Trống')[0]).toBeInTheDocument();
     expect(screen.getByText('Đã đặt (không thể chọn)')).toBeInTheDocument();
+    expect(screen.getByText('Đóng cửa / Nghỉ lễ')).toBeInTheDocument();
     expect(screen.getByText('Đang chọn / Đã chọn')).toBeInTheDocument();
     expect(screen.getAllByText('Đã qua giờ')[0]).toBeInTheDocument();
 
@@ -523,6 +524,69 @@ describe('TimeGrid component', () => {
       expect(onSelectRange).toHaveBeenCalledWith(
         startIso,
         new Date('2026-10-25T11:30:00.000+07:00').toISOString(),
+      );
+    });
+  });
+
+  describe('CWB-86: Closed / holiday slots', () => {
+    it('renders closed slots as disabled with reason in aria-label and summary count', () => {
+      const slots = createMockDaySlots('2026-10-25');
+      // Mark 10:00 - 12:00 as CLOSED (4 slots: 10:00, 10:30, 11:00, 11:30)
+      for (let i = 20; i < 24; i++) {
+        slots[i].status = 'CLOSED';
+        slots[i].reason = 'Nghỉ lễ 2/9';
+      }
+
+      render(<TimeGrid {...defaultProps} slots={slots} />);
+
+      const slot10 = screen.getByTestId('time-slot-10:00');
+      expect(slot10).toBeDisabled();
+      expect(slot10).toHaveAttribute('data-slot-state', 'closed');
+      expect(slot10).toHaveAccessibleName('10:00 - 10:30: Đóng cửa (Nghỉ lễ 2/9)');
+
+      expect(screen.getByTestId('time-grid-summary')).toHaveTextContent('4 khung đóng cửa');
+    });
+
+    it('does not trigger onSelectStart when clicking closed slot', () => {
+      const onSelectStart = vi.fn();
+      const slots = createMockDaySlots('2026-10-25');
+      slots[20].status = 'CLOSED';
+      slots[20].reason = 'Bảo trì hệ thống';
+
+      render(<TimeGrid {...defaultProps} slots={slots} onSelectStart={onSelectStart} />);
+
+      const slot10 = screen.getByTestId('time-slot-10:00');
+      expect(slot10).toBeDisabled();
+      fireEvent.click(slot10);
+
+      expect(onSelectStart).not.toHaveBeenCalled();
+    });
+
+    it('rejects range selection that crosses a closed slot', async () => {
+      const onSelectRange = vi.fn();
+      const slots = createMockDaySlots('2026-10-25');
+      // 10:30 is CLOSED
+      slots[21].status = 'CLOSED';
+      slots[21].reason = 'Sửa điện';
+
+      const startIso = new Date('2026-10-25T09:30:00.000+07:00').toISOString();
+
+      render(
+        <TimeGrid
+          {...defaultProps}
+          slots={slots}
+          selectingStartTime={startIso}
+          onSelectRange={onSelectRange}
+        />,
+      );
+
+      // Try to select end at 11:30 (crosses 10:30 closed slot)
+      const endSlot = screen.getByTestId('time-slot-11:30');
+      fireEvent.click(endSlot);
+
+      expect(onSelectRange).not.toHaveBeenCalled();
+      expect(screen.getByTestId('time-grid-error')).toHaveTextContent(
+        'Khoảng thời gian đã chọn đi qua khung giờ đóng cửa (Sửa điện)',
       );
     });
   });

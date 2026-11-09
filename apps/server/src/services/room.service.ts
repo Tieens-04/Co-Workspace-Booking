@@ -175,7 +175,7 @@ export class RoomService {
       );
     }
 
-    const slots = generateAvailabilitySlots(dayStart, dayEnd, room.bookings);
+    const slots = generateAvailabilitySlots(dayStart, dayEnd, room.bookings, room.closures ?? []);
 
     return {
       roomId: room.id,

@@ -16,6 +16,7 @@
 | `/admin`                | Trang quản trị phòng làm việc dành cho vai trò `ADMIN`: danh sách phòng phân trang, xem tiện ích/ảnh, form inline tạo và chỉnh sửa phòng dùng chung, quản lý danh sách URL ảnh thủ công.            | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
 | `/admin/bookings`       | Trang quản trị đặt phòng dành cho vai trò `ADMIN`: tra cứu đơn theo mã, lọc theo ngày sử dụng phòng (giờ VN), lọc theo trạng thái (kết hợp logic AND); form đặt phòng trực tiếp cho khách vãng lai. | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
 | `/admin/audit`          | Lịch sử thao tác (CWB-67) dành cho `ADMIN`: lọc theo đối tượng, thao tác, ID; phân trang 20 sự kiện/trang; hiển thị trường thay đổi trước → sau.                                                    | Như `/admin`: chưa đăng nhập → `/login`; `CUSTOMER` → giao diện 403.                                                                                                                                                                                                                              |
+| `/admin/closures`       | Quản lý khung đóng cửa (CWB-86) dành cho `ADMIN`: danh sách lịch nghỉ lễ/bảo trì toàn cơ sở hoặc theo phòng, lọc theo phòng và khung sắp tới, thêm/sửa/xóa và cảnh báo xung đột với booking hiện có. | Như `/admin`: chưa đăng nhập → `/login`; `CUSTOMER` → giao diện 403.                                                                                                                                                                                                                              |
 | `/admin/emails`         | Email thông báo (CWB-68) dành cho `ADMIN`: trạng thái gửi email xác nhận/hủy, lọc theo trạng thái, nút gửi lại cho email `FAILED`/`SKIPPED`.                                                        | Như `/admin`: chưa đăng nhập → `/login`; `CUSTOMER` → giao diện 403.                                                                                                                                                                                                                              |
 | `/booking-confirmation` | Màn hình xác nhận đặt phòng thành công: hiển thị mã đặt phòng, thông tin phòng, thời gian, trạng thái, liên kết xem chi tiết/lịch sử và hướng dẫn thanh toán tại quầy.                              | Nhận dữ liệu đặt phòng qua router state sau khi tạo thành công. Truy cập trực tiếp không có state sẽ hiển thị giao diện fallback thông báo thân thiện và nút quay lại danh sách phòng.                                                                                                            |
 | `/bookings`             | Trang lịch sử đặt phòng dành cho vai trò `CUSTOMER`: danh sách đơn phân trang (10 đơn/trang), 3 bộ lọc (Tất cả, Sắp tới, Đã hoàn tất), hiển thị rõ mã đơn, ngày giờ, số tiền và trạng thái.         | Khách chưa đăng nhập → chuyển hướng sang `/login`. Vai trò `ADMIN` truy cập → chuyển về trang chủ `/`. Đổi tài khoản tự động làm mới dữ liệu, không rò rỉ đơn của phiên cũ.                                                                                                                       |
@@ -280,8 +281,8 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
   - `date` (bắt buộc): Chuỗi ngày theo định dạng `YYYY-MM-DD`. Bắt buộc phải là ngày lịch thực tế hợp lệ (bao gồm kiểm tra năm nhuận). Bất kỳ query parameter nào ngoài danh sách cho phép đều bị từ chối với `400 VALIDATION_ERROR`.
 - **Hành vi & Dữ liệu trả về**:
   - Trả về danh sách **48 slot 30 phút liên tiếp**, bao phủ trọn vẹn 24 giờ của ngày yêu cầu theo múi giờ nghiệp vụ `Asia/Ho_Chi_Minh` (`+07:00`) từ `00:00` đến `24:00` (ngày kế tiếp).
-  - Trạng thái từng slot là `AVAILABLE` hoặc `BOOKED`.
-  - **Ý nghĩa trạng thái**: Trạng thái `AVAILABLE` thể hiện slot hiện tại chưa có booking blocking tại thời điểm truy vấn. Trạng thái này không đóng vai trò khóa giữ chỗ (lock/reservation) và không đồng nghĩa với việc một slot 30 phút đơn lẻ có thể tạo booking độc lập (các quy tắc nghiệp vụ khi đặt phòng như thời lượng tối thiểu 1 giờ, tối đa 8 giờ, lead time tối thiểu 30 phút vẫn do API tạo booking kiểm soát và quyết định).
+  - Trạng thái từng slot là `AVAILABLE`, `BOOKED` hoặc `CLOSED` (kèm `closureReason` tùy chọn khi `status === "CLOSED"`, CWB-86).
+  - **Ý nghĩa trạng thái**: Trạng thái `AVAILABLE` thể hiện slot hiện tại chưa có booking blocking hay khung đóng cửa tại thời điểm truy vấn. Trạng thái này không đóng vai trò khóa giữ chỗ (lock/reservation) và không đồng nghĩa với việc một slot 30 phút đơn lẻ có thể tạo booking độc lập (các quy tắc nghiệp vụ khi đặt phòng như thời lượng tối thiểu 1 giờ, tối đa 8 giờ, lead time tối thiểu 30 phút vẫn do API tạo booking kiểm soát và quyết định). Trạng thái `CLOSED` thể hiện slot giao với khung đóng cửa của phòng hoặc toàn cơ sở (`Closure`) và không có booking `CONFIRMED` ưu tiên hiển thị trước.
   - **Thuật toán Overlap**: Một slot mang trạng thái `BOOKED` khi tồn tại booking có trạng thái thuộc danh sách chặn (`CONFIRMED`) giao với slot:
     $$\text{existing.startTime} < \text{slot.endTime} \quad\land\quad \text{existing.endTime} > \text{slot.startTime}$$
   - **Quy tắc chạm biên (Boundary Touching)**: Không bị tính là trùng lặp. Ví dụ booking kết thúc lúc `10:00` và slot bắt đầu lúc `10:00` thì slot đó vẫn là `AVAILABLE`.
@@ -558,6 +559,7 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - `403 FORBIDDEN`: Đăng nhập với vai trò không phải `CUSTOMER` (ví dụ `ADMIN`).
   - `404 ROOM_NOT_FOUND`: Phòng không tồn tại trong hệ thống.
   - `409 ROOM_NOT_AVAILABLE`: Phòng đang ở trạng thái `MAINTENANCE`.
+  - `409 ROOM_CLOSED`: Khoảng thời gian yêu cầu giao với khung đóng cửa của phòng hoặc toàn cơ sở (CWB-86).
   - `409 BOOKING_CONFLICT`: Khung giờ yêu cầu đã bị trùng lặp với lịch đặt phòng khác.
   - `409 BOOKING_CODE_CONFLICT`: Xung đột mã đặt phòng sau số lần thử tối đa.
   - `409 ACTIVE_BOOKING_LIMIT`: Customer đã có đủ số booking sắp tới tối đa (CWB-78).
@@ -896,12 +898,12 @@ npm run test --workspace=apps/client -- src/__tests__/AdminBookingsPage.test.tsx
 ### 7. Nhật Ký Thao Tác Quản Trị (Audit Log, CWB-67)
 
 - **Ghi nhận**: bảng `audit_events` (append-only, không FK để sự kiện vẫn còn khi bản ghi gốc bị xóa). Mỗi sự kiện được ghi **trong cùng transaction** với thay đổi nghiệp vụ: rollback thì không có sự kiện.
-- **Các thao tác được ghi**: `BOOKING_GUEST_CREATED`, `BOOKING_PAYMENT_CONFIRMED`, `BOOKING_CANCELLED_BY_ADMIN`, `BOOKING_CHECKED_IN`, `BOOKING_COMPLETED`, `BOOKING_MARKED_NO_SHOW`, `ROOM_STATUS_CHANGED` (chỉ khi trạng thái phòng thực sự đổi), `USER_LOCKED`, `USER_UNLOCKED` (CWB-79, `entityType = USER`, `after` chứa trạng thái mới và lý do).
+- **Các thao tác được ghi**: `BOOKING_GUEST_CREATED`, `BOOKING_PAYMENT_CONFIRMED`, `BOOKING_CANCELLED_BY_ADMIN`, `BOOKING_CHECKED_IN`, `BOOKING_COMPLETED`, `BOOKING_MARKED_NO_SHOW`, `BOOKING_RESCHEDULED`, `BOOKING_REFUNDED`, `ROOM_STATUS_CHANGED` (chỉ khi trạng thái phòng thực sự đổi), `ROOM_ARCHIVED`, `ROOM_RESTORED`, `USER_LOCKED`, `USER_UNLOCKED` (CWB-79, `entityType = USER`, `after` chứa trạng thái mới và lý do), `CLOSURE_CREATED`, `CLOSURE_UPDATED`, `CLOSURE_DELETED` (CWB-86, `entityType = CLOSURE`, lưu `roomId`, `startTime`, `endTime`, `reason` và `acknowledgeConflictingBookings`).
 - **Người thực hiện** lấy từ JWT đã xác thực (`sub`, `role`), không bao giờ lấy từ body.
-- **Không ghi trùng**: retry idempotent (đã PAID, đã CANCELLED, đã check-in, replay `Idempotency-Key`) và request bị từ chối (`400/401/403/404/409`) không tạo sự kiện. Các xác nhận thanh toán đồng thời chỉ tạo 1 sự kiện nhờ khóa dòng.
-- **Dữ liệu**: `before`/`after` chỉ chứa trường trạng thái (mã đơn, status, paymentStatus, paymentMethod, checkedInAt, cancellationReason; với phòng là status). Sự kiện tạo đơn khách vãng lai **không** lưu tên/SĐT khách.
+- **Không ghi trùng**: retry idempotent (đã PAID, đã CANCELLED, đã check-in, replay `Idempotency-Key`), cập nhật không làm thay đổi trường nào và request bị từ chối (`400/401/403/404/409`) không tạo sự kiện. Các xác nhận thanh toán đồng thời chỉ tạo 1 sự kiện nhờ khóa dòng.
+- **Dữ liệu**: `before`/`after` chỉ chứa trường trạng thái (mã đơn, status, paymentStatus, paymentMethod, checkedInAt, cancellationReason; với phòng là status; với khung đóng cửa là roomId, startTime, endTime, reason). Sự kiện tạo đơn khách vãng lai **không** lưu tên/SĐT khách.
 - **Thứ tự**: cột `sequence` (AUTO_INCREMENT) quyết định thứ tự đọc, tránh trùng mili-giây của `created_at`.
-- **Đọc**: `GET /api/v1/admin/audit-events?page=&limit=&entityType=&entityId=&action=` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`). `limit` 1–100 (mặc định 20), `entityType` ∈ `BOOKING|ROOM|USER`, `action` thuộc danh sách trên, trường lạ → `400`. Trả `{ items, pagination }`, mới nhất trước.
+- **Đọc**: `GET /api/v1/admin/audit-events?page=&limit=&entityType=&entityId=&action=` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`). `limit` 1–100 (mặc định 20), `entityType` ∈ `BOOKING|ROOM|USER|CLOSURE`, `action` thuộc danh sách trên, trường lạ → `400`. Trả `{ items, pagination }`, mới nhất trước.
 - **Lưu trữ (retention)**: chưa có job tự xóa. Đề xuất vận hành định kỳ xóa sự kiện cũ hơn khoảng thời gian chính sách quy định (ví dụ 12 tháng) bằng `DELETE FROM audit_events WHERE created_at < ?` (có index `created_at`).
 
 ```bash
@@ -942,6 +944,29 @@ npm run test --workspace=apps/client -- src/__tests__/AdminEmailsPage.test.tsx
 ```bash
 npm run test:integration --workspace=apps/server -- src/__tests__/admin-users.integration.test.ts
 npm run test --workspace=apps/client -- src/__tests__/AdminUsersPage.test.tsx
+```
+
+### 10. Quản Lý Ngày Nghỉ Lễ & Khung Đóng Cửa (Closures, CWB-86)
+
+- **Dữ liệu**: bảng `closures` (`id`, `room_id` nullable FK tới `rooms`, `start_time`, `end_time`, `reason` tối đa 500 ký tự, `created_by` FK tới `users`, `created_at`, `updated_at`), có index `(room_id, start_time, end_time)` và `(start_time, end_time)`. `room_id = NULL` biểu thị đóng cửa **toàn bộ cơ sở**.
+- **API ADMIN** (`/api/v1/admin/closures`, yêu cầu `ADMIN`; thiếu token → `401`, `CUSTOMER` → `403`):
+  - `GET /api/v1/admin/closures?page=&limit=&roomId=&from=&to=&upcoming=`: phân trang có giới hạn (`page >= 1`, `limit` 1–100, kiểm tra tràn offset MySQL `INT`), `roomId` là UUID phòng (lọc các khung đóng cửa của phòng đó **kèm** các khung đóng cửa toàn cơ sở `roomId = null`), `from`/`to` là chuỗi ISO 8601 (`from < to`), `upcoming=true|false` lọc các khung có `endTime >= now` (kết hợp an toàn với `from` theo mốc lớn hơn).
+  - `GET /api/v1/admin/closures/:id`: lấy chi tiết khung đóng cửa theo UUID; không tồn tại → `404 CLOSURE_NOT_FOUND`.
+  - `POST /api/v1/admin/closures`: body `{ roomId?: string | null, startTime, endTime, reason, acknowledgeConflictingBookings?: boolean }`. Kiểm tra `endTime > startTime`, `reason` 1–500 ký tự (sau trim), phòng tồn tại và chưa bị `ARCHIVED`.
+  - `PATCH /api/v1/admin/closures/:id`: cập nhật một phần (`roomId`, `startTime`, `endTime`, `reason`, `acknowledgeConflictingBookings`); từ chối body rỗng `{}` với `400 VALIDATION_ERROR`. Khóa dòng `closures` và các dòng `rooms` liên quan bằng `SELECT ... FOR UPDATE`. Nếu dữ liệu thực tế không đổi thì không ghi audit event thừa.
+  - `DELETE /api/v1/admin/closures/:id`: xóa khung đóng cửa và ghi `AuditEvent` `CLOSURE_DELETED` trong cùng transaction.
+- **Cảnh báo xung đột & Bảo toàn booking**:
+  - Khi tạo/sửa `Closure`, hệ thống khóa dòng phòng mục tiêu (hoặc tất cả phòng chưa lưu trữ nếu `roomId = null`) bằng `SELECT ... FOR UPDATE` rồi kiểm tra các booking `CONFIRMED` giao với `[startTime, endTime)`.
+  - Nếu có booking trùng và `acknowledgeConflictingBookings !== true`, trả về `409 CLOSURE_HAS_CONFLICTING_BOOKINGS` kèm `{ conflictingBookingCount, bookings }`.
+  - Khi `acknowledgeConflictingBookings === true`, lưu `Closure` thành công, giữ nguyên trạng thái `CONFIRMED` của các booking hiện có và ghi nhận cờ xác nhận vào `AuditEvent` (`CLOSURE_CREATED` / `CLOSURE_UPDATED`).
+- **Giao diện**:
+  - `/admin/closures`: bảng danh sách khung đóng cửa, lọc theo phòng và khung sắp tới, modal tạo/sửa (hỗ trợ cả phòng đã lưu trữ khi sửa), hộp thoại cảnh báo danh sách booking trùng khi nhận `409 CLOSURE_HAS_CONFLICTING_BOOKINGS`, và hộp thoại xác nhận xóa.
+  - `TimeGrid` (đặt phòng khách hàng, đặt phòng khách vãng lai, hộp thoại dời lịch) và `RoomOverviewGrid` trên Dashboard hiển thị rõ các slot `CLOSED` kèm lý do đóng cửa.
+
+```bash
+npm run test --workspace=apps/server -- src/__tests__/admin-closure.validator.test.ts src/__tests__/closure.service.test.ts
+npm run test:integration --workspace=apps/server -- src/__tests__/closure.integration.test.ts
+npm run test --workspace=apps/client -- src/__tests__/AdminClosuresPage.test.tsx
 ```
 
 ---

@@ -1,3 +1,5 @@
+import { RoomSlotStatus } from './room';
+
 export type DashboardPeriodType = 'day' | 'week';
 
 export interface DashboardKpiPeriodInfo {
@@ -32,7 +34,7 @@ export interface DashboardKpiData {
 export interface DashboardScheduleSlot {
   startTime: string;
   endTime: string;
-  status: 'AVAILABLE' | 'BOOKED';
+  status: RoomSlotStatus;
 }
 
 export interface DashboardScheduleBooking {

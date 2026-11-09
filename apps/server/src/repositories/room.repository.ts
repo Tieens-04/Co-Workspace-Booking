@@ -149,6 +149,11 @@ export interface RoomAvailabilityRecord {
     startTime: Date;
     endTime: Date;
   }>;
+  closures?: Array<{
+    startTime: Date;
+    endTime: Date;
+    reason: string;
+  }>;
 }
 
 export interface RoomRepositoryContract {
@@ -244,12 +249,34 @@ export class RoomRepository implements RoomRepositoryContract {
           endTime: { gt: filter.startDate },
         },
       };
+      where.closures = {
+        none: {
+          startTime: { lt: filter.endDate },
+          endTime: { gt: filter.startDate },
+        },
+      };
     }
 
     return where;
   }
 
   async findManyAndCount(filter: FindRoomsFilter): Promise<[number, RoomListRecord[]]> {
+    if (filter.startDate && filter.endDate) {
+      const facilityWideClosure = prisma.closure?.findFirst
+        ? await prisma.closure.findFirst({
+            where: {
+              roomId: null,
+              startTime: { lt: filter.endDate },
+              endTime: { gt: filter.startDate },
+            },
+            select: { id: true },
+          })
+        : null;
+      if (facilityWideClosure) {
+        return [0, []];
+      }
+    }
+
     const where = this.buildWhere(filter);
     const skip = (filter.page - 1) * filter.limit;
     const take = filter.limit;
@@ -280,24 +307,49 @@ export class RoomRepository implements RoomRepositoryContract {
     dayStart: Date,
     dayEnd: Date,
   ): Promise<RoomAvailabilityRecord | null> {
-    return prisma.room.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        status: true,
-        bookings: {
-          where: {
-            status: { in: [...BLOCKING_BOOKING_STATUSES] },
-            startTime: { lt: dayEnd },
-            endTime: { gt: dayStart },
-          },
-          select: {
-            startTime: true,
-            endTime: true,
+    const [room, closures] = await Promise.all([
+      prisma.room.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          bookings: {
+            where: {
+              status: { in: [...BLOCKING_BOOKING_STATUSES] },
+              startTime: { lt: dayEnd },
+              endTime: { gt: dayStart },
+            },
+            select: {
+              startTime: true,
+              endTime: true,
+            },
           },
         },
-      },
-    });
+      }),
+      prisma.closure?.findMany
+        ? prisma.closure.findMany({
+            where: {
+              OR: [{ roomId: null }, { roomId: id }],
+              startTime: { lt: dayEnd },
+              endTime: { gt: dayStart },
+            },
+            select: {
+              startTime: true,
+              endTime: true,
+              reason: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    if (!room) return null;
+
+    return {
+      id: room.id,
+      status: room.status,
+      bookings: room.bookings,
+      closures,
+    };
   }
 
   async createWithRelations(data: CreateRoomRepoInput): Promise<RoomDetailRecord> {

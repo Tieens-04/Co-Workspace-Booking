@@ -68,12 +68,13 @@ export interface FindRoomsFilter {
   includeArchived?: boolean;
 }
 
-export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';
+export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED' | 'CLOSED';
 
 export interface RoomAvailabilitySlotDto {
   startTime: string;
   endTime: string;
   status: RoomSlotStatus;
+  reason?: string;
 }
 
 export interface RoomAvailabilityResponseData {

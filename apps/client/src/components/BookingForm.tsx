@@ -364,10 +364,16 @@ export const BookingForm: React.FC<BookingFormProps> = ({
     const currentRangeCheck = checkRangeAvailability(startUtc!, endUtc!, allLoadedCoveredSlots);
     if (!currentRangeCheck.isAvailable) {
       setHasBookingConflict(true);
-      setErrors({
-        general:
-          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
-      });
+      if (currentRangeCheck.reason === 'CLOSED_SLOT') {
+        setErrors({
+          general: `Khoảng thời gian đã chọn có chứa khung giờ đóng cửa${currentRangeCheck.conflictingSlot?.reason ? ` (${currentRangeCheck.conflictingSlot.reason})` : ''}. Vui lòng chọn khung giờ khác.`,
+        });
+      } else {
+        setErrors({
+          general:
+            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+        });
+      }
       return;
     }
 
@@ -435,11 +441,17 @@ export const BookingForm: React.FC<BookingFormProps> = ({
 
       if (!rangeCheck.isAvailable) {
         setHasBookingConflict(true);
-        setSlotJustTaken(true);
-        setErrors({
-          general:
-            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
-        });
+        if (rangeCheck.reason === 'CLOSED_SLOT') {
+          setErrors({
+            general: `Khoảng thời gian đã chọn có chứa khung giờ đóng cửa${rangeCheck.conflictingSlot?.reason ? ` (${rangeCheck.conflictingSlot.reason})` : ''}. Vui lòng chọn khung giờ khác.`,
+          });
+        } else {
+          setSlotJustTaken(true);
+          setErrors({
+            general:
+              'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+          });
+        }
         return;
       }
 
@@ -482,6 +494,21 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           general: msg,
         });
         showToast(msg, 'error');
+      } else if (code === 'ROOM_CLOSED') {
+        setHasBookingConflict(true);
+        const msg =
+          message ||
+          'Phòng hoặc cơ sở đang đóng cửa trong khoảng thời gian này. Vui lòng chọn khung giờ khác.';
+        setErrors({ general: msg });
+        showToast(msg, 'error');
+        availability
+          .refresh()
+          .then((res) => {
+            if (res.success) {
+              setHasBookingConflict(false);
+            }
+          })
+          .catch(() => {});
       } else if (code === 'BOOKING_CONFLICT') {
         setHasBookingConflict(true);
         setSlotJustTaken(true);

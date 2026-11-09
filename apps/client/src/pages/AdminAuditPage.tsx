@@ -30,6 +30,7 @@ const ENTITY_LABELS: Record<string, string> = {
   BOOKING: 'Đặt phòng',
   ROOM: 'Phòng',
   USER: 'Tài khoản',
+  CLOSURE: 'Khung đóng cửa',
 };
 
 /** ADMIN read-only trail of admin booking and room status changes (CWB-67). */
@@ -112,6 +113,7 @@ export const AdminAuditPage: React.FC = () => {
               <option value="BOOKING">Đặt phòng</option>
               <option value="ROOM">Phòng</option>
               <option value="USER">Tài khoản</option>
+              <option value="CLOSURE">Khung đóng cửa</option>
             </NativeSelect>
           </Field>
           <Field id="audit-action" label="Thao tác">

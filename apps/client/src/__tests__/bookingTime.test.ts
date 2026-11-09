@@ -241,6 +241,25 @@ describe('bookingTime utility', () => {
       expect(res.isAvailable).toBe(false);
       expect(res.reason).toBe('MISSING_SLOT');
     });
+
+    it('returns CLOSED_SLOT when a slot within range is CLOSED', () => {
+      const closedSlots: RoomAvailabilitySlot[] = [
+        ...slots,
+        {
+          startTime: '2026-10-25T05:00:00.000Z',
+          endTime: '2026-10-25T05:30:00.000Z',
+          status: 'CLOSED',
+          reason: 'Bảo trì',
+        },
+      ];
+      const start = new Date('2026-10-25T04:30:00.000Z');
+      const end = new Date('2026-10-25T05:30:00.000Z');
+      const res = checkRangeAvailability(start, end, closedSlots);
+      expect(res.isAvailable).toBe(false);
+      expect(res.reason).toBe('CLOSED_SLOT');
+      expect(res.conflictingSlot?.status).toBe('CLOSED');
+      expect(res.conflictingSlot?.reason).toBe('Bảo trì');
+    });
   });
   describe('booking horizon (CWB-75)', () => {
     const now = new Date('2026-11-04T02:00:00.000Z'); // 09:00 Vietnam

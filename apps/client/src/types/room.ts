@@ -1,5 +1,5 @@
 export type RoomStatus = 'AVAILABLE' | 'MAINTENANCE' | 'ARCHIVED';
-export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';
+export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED' | 'CLOSED';
 
 export type RoomSortOption =
   | 'newest'
@@ -12,6 +12,7 @@ export interface RoomAvailabilitySlot {
   startTime: string;
   endTime: string;
   status: RoomSlotStatus;
+  reason?: string;
 }
 
 export interface RoomAvailabilityResponseData {

@@ -205,6 +205,24 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
       orderBy: [{ status: 'asc' }, { name: 'asc' }, { id: 'asc' }],
     });
 
+    const roomIds = rooms.map((r) => r.id);
+    const closures =
+      roomIds.length > 0 && prisma.closure?.findMany
+        ? await prisma.closure.findMany({
+            where: {
+              OR: [{ roomId: null }, { roomId: { in: roomIds } }],
+              startTime: { lt: dayEnd },
+              endTime: { gt: dayStart },
+            },
+            select: {
+              roomId: true,
+              startTime: true,
+              endTime: true,
+              reason: true,
+            },
+          })
+        : [];
+
     const roomDtos: DashboardRoomScheduleDto[] = rooms.map((room) => {
       const isMaintenance = room.status === RoomStatus.MAINTENANCE;
 
@@ -213,9 +231,11 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
         endTime: b.endTime,
       }));
 
+      const roomClosures = closures.filter((c) => c.roomId === null || c.roomId === room.id);
+
       const rawSlots = isMaintenance
         ? []
-        : generateAvailabilitySlots(dayStart, dayEnd, blockingIntervals);
+        : generateAvailabilitySlots(dayStart, dayEnd, blockingIntervals, roomClosures);
 
       const slots = rawSlots.map((s) => ({
         startTime: s.startTime,

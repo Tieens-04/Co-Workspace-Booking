@@ -19,6 +19,7 @@ cùng lúc. Backend luôn là nơi quyết định; FE chỉ kiểm tra trước
 | Giờ hoạt động             | 07:00–22:00 cùng một ngày, giờ Việt Nam (`Asia/Ho_Chi_Minh`, UTC+7)                                                               | `07:00–08:00`, `21:00–22:00` hợp lệ              | `400 OUTSIDE_OPERATING_HOURS`       |
 | Customer tự hủy           | **còn ít nhất 1 giờ** trước giờ bắt đầu                                                                                           | đúng 60 phút hợp lệ; 59 phút bị từ chối          | `400 CANCELLATION_POLICY_VIOLATION` |
 | Trùng lịch                | `existing.start < requested.end AND existing.end > requested.start` với booking `CONFIRMED`                                       | chạm biên (kết thúc 10:00, bắt đầu 10:00) hợp lệ | `409 BOOKING_CONFLICT`              |
+| Khung đóng cửa (CWB-86)   | Không giao với `Closure` của phòng (`roomId = room.id`) hoặc toàn cơ sở (`roomId = null`)                                         | chạm biên với khung đóng cửa hợp lệ              | `409 ROOM_CLOSED`                   |
 
 Server kiểm tra lại lead time bằng giờ server ngay trước khi insert, sau khi lấy khóa phòng (`SELECT ... FOR UPDATE`,
 CWB-51). Giá tiền = `price_per_hour × thời lượng`, Decimal làm tròn `ROUND_HALF_UP` 2 chữ số; tổng tiền từ client
@@ -50,6 +51,14 @@ Khách có tài khoản nhận một email nhắc `BOOKING_REMINDER_HOURS` giờ
 Admin có thể khóa tài khoản `CUSTOMER` lạm dụng (bắt buộc lý do, có audit). Tài khoản bị khóa bị đăng xuất ngay,
 không đăng nhập được (`403 ACCOUNT_LOCKED`) và không tạo được booking. Booking tương lai **không** tự hủy: admin
 được cảnh báo danh sách để xử lý thủ công. Không khóa được tài khoản `ADMIN`, kể cả chính mình.
+
+### Quản lý ngày nghỉ lễ & khung đóng cửa (CWB-86)
+
+Admin có thể thiết lập các khoảng đóng cửa (`Closure`) áp dụng cho **toàn cơ sở** (`roomId = null`) hoặc **theo từng phòng** (`roomId = <uuid>`), kèm lý do bắt buộc (1–500 ký tự).
+- **Chặn đặt phòng & đổi lịch**: Mọi thao tác tạo booking (`CUSTOMER` hoặc `GUEST`) và dời lịch (`PATCH /api/v1/bookings/:id/reschedule`) giao với bất kỳ `Closure` nào của phòng đó hoặc toàn cơ sở (`closure.startTime < requested.endTime AND closure.endTime > requested.startTime`) đều bị từ chối với `409 ROOM_CLOSED` ngay trong transaction sau khi khóa hàng phòng (`SELECT ... FOR UPDATE`).
+- **Đồng bộ khóa hàng phòng (`SELECT ... FOR UPDATE`)**: Khi tạo hoặc cập nhật `Closure`, server khóa hàng phòng liên quan (hoặc toàn bộ phòng chưa lưu trữ khi đóng cửa toàn cơ sở) trước khi kiểm tra booking xung đột và ghi dữ liệu, đảm bảo tuần tự hóa với các request tạo/dời lịch booking chạy đồng thời.
+- **Bảo toàn booking hiện có**: Nếu khoảng đóng cửa giao với các booking `CONFIRMED` đang có và request chưa gửi `acknowledgeConflictingBookings: true`, server trả về `409 CLOSURE_HAS_CONFLICTING_BOOKINGS` kèm danh sách các booking trùng (`bookingCode`, `roomId`, `roomName`, `startTime`, `endTime`, `userEmail`, `guestName`). Khi gửi kèm `acknowledgeConflictingBookings: true`, khung đóng cửa được lưu và **tuyệt đối không tự động hủy** các booking `CONFIRMED` hiện có.
+- **Hiển thị lịch trống (`GET /api/v1/rooms/:id/availability` & `GET /api/v1/admin/dashboard/schedule`)**: Các slot 30 phút giao với `Closure` (và chưa có booking `CONFIRMED` chiếm chỗ) mang trạng thái `CLOSED` kèm `closureReason`.
 
 ### Thay đổi đã thay thế (superseded)
 
@@ -93,6 +102,7 @@ Chi tiết request/response từng endpoint: [application-reference.md](applicat
 | Admin không hủy được `COMPLETED`/`NO_SHOW` (CWB-71)    | `admin-booking.integration.test.ts`                                                                      |
 | Lưu `cancelledAt`, `cancelledBy` và hiển thị lý do hủy cho khách hàng (CWB-82) | `booking-cancellation.test.ts`, `booking-cancellation.integration.test.ts`, `admin-booking.test.ts`, `admin-booking.integration.test.ts`, `booking-history.test.ts`, `BookingDetailPage.test.tsx`, `BookingHistoryPage.test.tsx`, `status.test.ts` |
 | Ghi nhận hoàn tiền, locking, audit, doanh thu và cảnh báo khách hàng (CWB-83) | `booking-revenue.test.ts`, `admin-booking.test.ts`, `admin-booking.integration.test.ts`, `RefundBookingDialog.test.tsx`, `AdminBookingsPage.test.tsx`, `BookingDetailPage.test.tsx` |
+| Quản lý khung đóng cửa toàn cơ sở / theo phòng, khóa đồng thời, chặn đặt/dời lịch, cảnh báo xung đột và audit (CWB-86) | `admin-closure.validator.test.ts`, `closure.service.test.ts`, `closure.integration.test.ts`, `AdminClosuresPage.test.tsx`, `BookingForm.test.tsx`, `AdminGuestBookingForm.test.tsx`, `BookingDetailPage.test.tsx`, `RoomOverviewGrid.test.tsx`, `AdminAuditPage.test.tsx`, `e2e/closure.spec.ts` |
 
 ## 4. QA checklist (FE/BE/docs khớp nhau)
 
