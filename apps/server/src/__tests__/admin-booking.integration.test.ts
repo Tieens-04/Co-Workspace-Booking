@@ -660,7 +660,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('allows boundary touching between guest and customer bookings', async () => {
-      const slot1Start = new Date(Date.now() + 140 * 60 * 60 * 1000);
+      const slot1Start = new Date(Date.now() + 240 * 60 * 60 * 1000);
       slot1Start.setUTCHours(2, 0, 0, 0); // Within 07:00–22:00 Vietnam
       const slot1End = new Date(slot1Start.getTime() + 60 * 60 * 1000);
 
