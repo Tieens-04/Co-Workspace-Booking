@@ -3,6 +3,7 @@ import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { m } from 'motion/react';
 import {
   CalendarCheck,
+  CalendarX,
   DoorOpen,
   History,
   LayoutDashboard,
@@ -46,6 +47,13 @@ const NAV_ITEMS = [
     label: 'Quản lý đặt phòng',
     icon: CalendarCheck,
     testId: 'admin-nav-bookings',
+    end: false,
+  },
+  {
+    to: '/admin/closures',
+    label: 'Khung đóng cửa',
+    icon: CalendarX,
+    testId: 'admin-nav-closures',
     end: false,
   },
   {

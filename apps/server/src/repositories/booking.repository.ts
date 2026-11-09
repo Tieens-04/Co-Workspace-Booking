@@ -113,6 +113,33 @@ function assertRoomBookable(lockedRoom: Pick<LockedRoomRecord, 'status'>): void 
   }
 }
 
+async function assertRoomNotClosed(
+  tx: Prisma.TransactionClient,
+  roomId: string,
+  startDate: Date,
+  endDate: Date,
+): Promise<void> {
+  const conflictingClosure = tx.closure
+    ? await tx.closure.findFirst({
+        where: {
+          OR: [{ roomId: null }, { roomId }],
+          startTime: { lt: endDate },
+          endTime: { gt: startDate },
+        },
+        select: { id: true, reason: true },
+      })
+    : null;
+
+  if (conflictingClosure) {
+    throw new AppError(
+      'ROOM_CLOSED',
+      `Phòng hoặc cơ sở đang đóng cửa trong khoảng thời gian này (${conflictingClosure.reason})`,
+      409,
+      { reason: conflictingClosure.reason },
+    );
+  }
+}
+
 /** Result of createBooking; `idempotentReplay` marks a retried request answered with the original. */
 export type CreatedBookingResult = BookingResponseDto & { idempotentReplay?: boolean };
 
@@ -476,7 +503,10 @@ export class BookingRepository
         );
       }
 
-      // 3. Overlap check inside transaction:
+      // 3. CWB-86: Closure check inside transaction (closure takes precedence over booking overlap)
+      await assertRoomNotClosed(tx, data.roomId, data.startDate, data.endDate);
+
+      // 4. Overlap check inside transaction:
       // existing.startTime < requested.endTime AND existing.endTime > requested.startTime
       const conflictingBookings = await tx.booking.findMany({
         where: {
@@ -497,7 +527,7 @@ export class BookingRepository
         );
       }
 
-      // 4. Calculate totalAmount deterministically from persisted room price
+      // 5. Calculate totalAmount deterministically from persisted room price
       const totalAmount = calculateBookingTotal(lockedRoom.pricePerHour, data.durationMinutes);
 
       // Lock waits, overlap queries, and code-collision retries can exhaust the lead time.
@@ -742,7 +772,10 @@ export class BookingRepository
       const newEndDate = new Date(input.endTime);
       validateBookingTime(newStartDate, newEndDate, evaluationTime);
 
-      // 4. Check overlap on target room, strictly excluding this booking
+      // 4. CWB-86: Check closure inside transaction (closure takes precedence over booking overlap)
+      await assertRoomNotClosed(tx, targetRoomId, newStartDate, newEndDate);
+
+      // 5. Check overlap on target room, strictly excluding this booking
       const conflictingBookings = await tx.booking.findMany({
         where: {
           roomId: targetRoomId,

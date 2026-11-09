@@ -88,6 +88,9 @@ export class Scenario {
     try {
       const roomIds = this.rooms.map((room) => room.id);
       const userIds = this.users.map((user) => user.id);
+      await this.db.closure.deleteMany({
+        where: { OR: [{ roomId: { in: roomIds } }, { createdById: { in: userIds } }] },
+      });
       await this.db.booking.deleteMany({
         where: { OR: [{ roomId: { in: roomIds } }, { userId: { in: userIds } }] },
       });

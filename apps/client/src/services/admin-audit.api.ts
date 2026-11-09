@@ -2,19 +2,24 @@ import { apiClient } from './api';
 import { ApiResponse, PaginationMeta } from '../types/room';
 
 export const AUDIT_ACTION_LABELS = {
+  BOOKING_RESCHEDULED: 'Đổi lịch đặt phòng',
   BOOKING_GUEST_CREATED: 'Tạo đặt phòng khách vãng lai',
   BOOKING_PAYMENT_CONFIRMED: 'Xác nhận thanh toán',
   BOOKING_CANCELLED_BY_ADMIN: 'Hủy đặt phòng',
   BOOKING_CHECKED_IN: 'Check-in',
   BOOKING_COMPLETED: 'Hoàn tất đặt phòng',
   BOOKING_MARKED_NO_SHOW: 'Đánh dấu không đến',
+  BOOKING_REFUNDED: 'Hoàn tiền đặt phòng',
   ROOM_STATUS_CHANGED: 'Đổi trạng thái phòng',
   USER_LOCKED: 'Khóa tài khoản',
   USER_UNLOCKED: 'Mở khóa tài khoản',
+  CLOSURE_CREATED: 'Tạo khung đóng cửa',
+  CLOSURE_UPDATED: 'Cập nhật khung đóng cửa',
+  CLOSURE_DELETED: 'Xóa khung đóng cửa',
 } as const;
 
 export type AuditAction = keyof typeof AUDIT_ACTION_LABELS;
-export type AuditEntityType = 'BOOKING' | 'ROOM' | 'USER';
+export type AuditEntityType = 'BOOKING' | 'ROOM' | 'USER' | 'CLOSURE';
 
 export interface AuditEvent {
   id: string;

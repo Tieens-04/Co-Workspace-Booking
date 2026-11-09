@@ -26,13 +26,15 @@ export interface TimeGridProps {
   maxAdvanceDays?: number | null;
 }
 
-type SlotState = 'available' | 'booked' | 'past' | 'selected';
+type SlotState = 'available' | 'booked' | 'closed' | 'past' | 'selected';
 
 const SLOT_STATE_CLASSES: Record<SlotState, string> = {
   available:
     'border-input bg-card text-foreground hover:border-primary hover:bg-primary/5 disabled:opacity-50',
   selected: 'border-primary bg-primary text-primary-foreground',
   booked: 'border-border bg-muted bg-hatch text-booked-foreground line-through',
+  closed:
+    'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 line-through opacity-80',
   past: 'border-border bg-transparent text-muted-foreground opacity-40',
 };
 
@@ -40,12 +42,14 @@ const SWATCH_CLASSES: Record<SlotState, string> = {
   available: 'border-input bg-card',
   selected: 'border-primary bg-primary',
   booked: 'border-border bg-muted bg-hatch',
+  closed: 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40',
   past: 'border-border bg-transparent opacity-40',
 };
 
 const LEGEND_ITEMS: { state: SlotState; label: string }[] = [
   { state: 'available', label: 'Trống' },
   { state: 'booked', label: 'Đã đặt (không thể chọn)' },
+  { state: 'closed', label: 'Đóng cửa / Nghỉ lễ' },
   { state: 'selected', label: 'Đang chọn / Đã chọn' },
   { state: 'past', label: 'Đã qua giờ' },
 ];
@@ -150,16 +154,27 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
   const slotCounts = useMemo(() => {
     let open = 0;
     let booked = 0;
+    let closed = 0;
     for (const slot of slots) {
-      if (slot.status === 'BOOKED') booked += 1;
+      if (slot.status === 'CLOSED') closed += 1;
+      else if (slot.status === 'BOOKED') booked += 1;
       else if (new Date(slot.startTime).getTime() - currentMs >= MIN_LEAD_TIME_MS) open += 1;
     }
-    return { open, booked };
+    return { open, booked, closed };
   }, [slots, currentMs]);
 
   const handleSlotClick = (slot: RoomAvailabilitySlot) => {
     if (disabled) return;
     setGridError(null);
+
+    if (slot.status === 'CLOSED') {
+      setGridError(
+        slot.reason
+          ? `Khung giờ này đóng cửa: ${slot.reason}`
+          : 'Khung giờ này đang đóng cửa.',
+      );
+      return;
+    }
 
     const clickNow = now || new Date();
     const clickMs = clickNow.getTime();
@@ -239,6 +254,12 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     );
 
     if (!rangeCheck.isAvailable) {
+      if (rangeCheck.reason === 'CLOSED_SLOT') {
+        setGridError(
+          `Khoảng thời gian đã chọn đi qua khung giờ đóng cửa (${rangeCheck.conflictingSlot?.reason || 'Đóng cửa'}). Vui lòng chọn khoảng giờ khác.`,
+        );
+        return;
+      }
       setGridError(
         'Khoảng thời gian đã chọn đi qua khung giờ đã có người đặt. Vui lòng chọn khoảng giờ liên tục không có slot bận.',
       );
@@ -262,6 +283,12 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
             <>
               {' · '}
               <span className="tabular-nums">{slotCounts.booked}</span> khung đã có người đặt
+            </>
+          )}
+          {slotCounts.closed > 0 && (
+            <>
+              {' · '}
+              <span className="tabular-nums">{slotCounts.closed}</span> khung đóng cửa
             </>
           )}
         </p>
@@ -324,6 +351,7 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
           const slotStartMs = new Date(slot.startTime).getTime();
           const slotEndMs = new Date(slot.endTime).getTime();
 
+          const isClosed = slot.status === 'CLOSED';
           const isBooked = slot.status === 'BOOKED';
           // Past or under 30m lead time
           const isPast = slotStartMs - currentMs < MIN_LEAD_TIME_MS;
@@ -350,7 +378,10 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
           let statusText = 'Trống';
           let slotState: SlotState = 'available';
 
-          if (isBooked) {
+          if (isClosed) {
+            statusText = slot.reason ? `Đóng cửa (${slot.reason})` : 'Đóng cửa';
+            slotState = 'closed';
+          } else if (isBooked) {
             statusText = 'Đã đặt';
             slotState = 'booked';
           } else if (isPast) {
@@ -364,9 +395,9 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
             slotState = 'selected';
           }
 
-          const isBtnDisabled = disabled || isBooked || isPast || isBeyondHorizon;
-          // AC1 / F2: BOOKED slot must never be aria-pressed
-          const isBtnPressed = !isBooked && (isSelecting || isInSelectedRange);
+          const isBtnDisabled = disabled || isClosed || isBooked || isPast || isBeyondHorizon;
+          // AC1 / F2: BOOKED or CLOSED slot must never be aria-pressed
+          const isBtnPressed = !isClosed && !isBooked && (isSelecting || isInSelectedRange);
 
           return (
             <button

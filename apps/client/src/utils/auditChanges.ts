@@ -13,6 +13,8 @@ const FIELD_LABELS: Record<string, string> = {
   endTime: 'Kết thúc',
   totalAmount: 'Tổng tiền',
   acknowledgeFutureBookings: 'Xác nhận lịch đặt tương lai',
+  reason: 'Lý do',
+  acknowledgeConflictingBookings: 'Xác nhận lịch đặt trùng',
 };
 
 export const formatAuditTime = (iso: string) => {

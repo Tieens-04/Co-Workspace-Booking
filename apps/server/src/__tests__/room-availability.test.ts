@@ -298,6 +298,48 @@ describe('Room Availability Unit & API Tests', () => {
       const bookedSlots = slots.filter((s) => s.status === 'BOOKED');
       expect(bookedSlots).toHaveLength(6);
     });
+
+    it('marks slots overlapping closure as CLOSED with reason', () => {
+      const closureStart = new Date('2026-09-21T02:00:00.000Z');
+      const closureEnd = new Date('2026-09-21T04:00:00.000Z');
+
+      const slots = generateAvailabilitySlots(
+        dayStart,
+        dayEnd,
+        [],
+        [{ startTime: closureStart, endTime: closureEnd, reason: 'Bảo trì hệ thống điện' }],
+      );
+
+      const closedSlots = slots.filter((s) => s.status === 'CLOSED');
+      expect(closedSlots).toHaveLength(4);
+      expect(closedSlots[0].reason).toBe('Bảo trì hệ thống điện');
+      expect(closedSlots[0].startTime).toBe('2026-09-21T02:00:00.000Z');
+      expect(closedSlots[3].endTime).toBe('2026-09-21T04:00:00.000Z');
+
+      const slotBefore = slots.find((s) => s.endTime === '2026-09-21T02:00:00.000Z');
+      expect(slotBefore?.status).toBe('AVAILABLE');
+    });
+
+    it('closure takes precedence over booking when overlapping', () => {
+      const bookingStart = new Date('2026-09-21T02:00:00.000Z');
+      const bookingEnd = new Date('2026-09-21T04:00:00.000Z');
+      const closureStart = new Date('2026-09-21T03:00:00.000Z');
+      const closureEnd = new Date('2026-09-21T05:00:00.000Z');
+
+      const slots = generateAvailabilitySlots(
+        dayStart,
+        dayEnd,
+        [{ startTime: bookingStart, endTime: bookingEnd }],
+        [{ startTime: closureStart, endTime: closureEnd, reason: 'Nghỉ đột xuất' }],
+      );
+
+      const bookedSlot = slots.find((s) => s.startTime === '2026-09-21T02:00:00.000Z');
+      expect(bookedSlot?.status).toBe('BOOKED');
+
+      const closedSlot = slots.find((s) => s.startTime === '2026-09-21T03:00:00.000Z');
+      expect(closedSlot?.status).toBe('CLOSED');
+      expect(closedSlot?.reason).toBe('Nghỉ đột xuất');
+    });
   });
 
   describe('HTTP API Endpoints: GET /api/v1/rooms/:id/availability', () => {
@@ -422,6 +464,27 @@ describe('Room Availability Unit & API Tests', () => {
       expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('VALIDATION_ERROR');
       expect(roomRepository.findAvailabilityById).not.toHaveBeenCalled();
+    });
+
+    it('returns 200 with CLOSED slots when room has closures', async () => {
+      vi.spyOn(roomRepository, 'findAvailabilityById').mockResolvedValue(
+        mockAvailabilityFixture({
+          closures: [
+            {
+              startTime: new Date('2026-09-21T02:00:00.000Z'),
+              endTime: new Date('2026-09-21T04:00:00.000Z'),
+              reason: 'Nghỉ lễ 2/9',
+            },
+          ],
+        }),
+      );
+
+      const res = await request(app).get(`/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`);
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      const closedSlots = res.body.data.slots.filter((s: { status: string; reason?: string }) => s.status === 'CLOSED');
+      expect(closedSlots.length).toBe(4);
+      expect(closedSlots[0].reason).toBe('Nghỉ lễ 2/9');
     });
 
     it.each([

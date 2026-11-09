@@ -61,6 +61,13 @@ export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date 
             <li className="flex items-center gap-1.5">
               <span
                 aria-hidden="true"
+                className={`${LEGEND_SWATCH} border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950/60`}
+              />
+              Đóng cửa
+            </li>
+            <li className="flex items-center gap-1.5">
+              <span
+                aria-hidden="true"
                 className={`${LEGEND_SWATCH} border-status-maintenance-border bg-status-maintenance-bg bg-hatch`}
               />
               Bảo trì
@@ -150,6 +157,7 @@ export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date 
                         (rs) => rs.startTime === slot.startTime,
                       );
                       const isBooked = matchingRoomSlot?.status === 'BOOKED';
+                      const isClosed = matchingRoomSlot?.status === 'CLOSED';
 
                       const matchingBooking = room.bookings.find((b) => {
                         const bStart = new Date(b.startTime).getTime();
@@ -161,7 +169,9 @@ export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date 
 
                       const title = isBooked
                         ? `Đã đặt: ${matchingBooking?.customerName || 'Khách'} (${matchingBooking?.bookingCode || ''})`
-                        : `Trống: ${formatSlotTime(slot.startTime)} - ${formatSlotTime(slot.endTime)}`;
+                        : isClosed
+                          ? `Đóng cửa: ${formatSlotTime(slot.startTime)} - ${formatSlotTime(slot.endTime)}`
+                          : `Trống: ${formatSlotTime(slot.startTime)} - ${formatSlotTime(slot.endTime)}`;
 
                       return (
                         <td
@@ -172,7 +182,11 @@ export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date 
                           <div
                             className={cn(
                               'h-6 rounded-sm transition-colors duration-150',
-                              isBooked ? 'bg-primary' : 'bg-muted',
+                              isBooked
+                                ? 'bg-primary'
+                                : isClosed
+                                  ? 'border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950/60'
+                                  : 'bg-muted',
                             )}
                           />
                         </td>

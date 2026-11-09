@@ -566,4 +566,90 @@ describe('AdminGuestBookingForm Component Tests', () => {
       expect(screen.getByTestId('guest-submit-btn')).not.toBeDisabled();
     });
   });
+
+  it('shows closure-specific message when preflight finds CLOSED_SLOT and refreshes availability on 409 ROOM_CLOSED (CWB-86)', async () => {
+    const slot = getFutureSlot(4, 2);
+    const dateStr = slot.startTime.split('T')[0];
+    const user = userEvent.setup();
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-room-select')).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByTestId('guest-name-input'), 'Khách Đóng Cửa');
+    await user.type(screen.getByTestId('guest-phone-input'), '0912345678');
+    await user.selectOptions(screen.getByTestId('guest-room-select'), 'room-uuid-1');
+
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-start-time-input')).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByTestId('guest-start-time-input'), {
+      target: { value: slot.startTime },
+    });
+    fireEvent.change(screen.getByTestId('guest-end-time-input'), {
+      target: { value: slot.endTime },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-submit-btn')).not.toBeDisabled();
+    });
+
+    // 1. Preflight returns a CLOSED slot inside the selected range
+    const closedSlots = create48Slots(dateStr).map((s) =>
+      s.startTime === slot.startDate.toISOString()
+        ? { ...s, status: 'CLOSED' as const, reason: 'Bảo trì điện' }
+        : s,
+    );
+    vi.mocked(roomApi.getAvailability).mockImplementation(async (rId, d) => ({
+      success: true,
+      message: 'OK',
+      data: {
+        roomId: rId,
+        date: d as string,
+        timezone: 'Asia/Ho_Chi_Minh',
+        slots: d === dateStr ? closedSlots : create48Slots(d as string),
+      },
+    }));
+
+    await user.click(screen.getByTestId('guest-submit-btn'));
+
+    const errBox = await screen.findByTestId('guest-booking-error-general');
+    expect(errBox).toHaveTextContent(/đóng cửa/i);
+    expect(errBox).not.toHaveTextContent(/đã có người đặt/i);
+
+    // 2. Now preflight returns AVAILABLE, but POST returns 409 ROOM_CLOSED
+    vi.mocked(roomApi.getAvailability).mockImplementation(async (rId, d) => ({
+      success: true,
+      message: 'OK',
+      data: {
+        roomId: rId,
+        date: d as string,
+        timezone: 'Asia/Ho_Chi_Minh',
+        slots: create48Slots(d as string),
+      },
+    }));
+    vi.mocked(adminBookingApi.createGuestBooking).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          code: 'ROOM_CLOSED',
+          message: 'Phòng hoặc cơ sở đang đóng cửa trong khoảng thời gian này (Nghỉ lễ)',
+        },
+      },
+    });
+
+    const callsBefore = vi.mocked(roomApi.getAvailability).mock.calls.length;
+    await user.click(screen.getByTestId('guest-submit-btn'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-booking-error-general')).toHaveTextContent(
+        'Phòng hoặc cơ sở đang đóng cửa trong khoảng thời gian này (Nghỉ lễ)',
+      );
+    });
+    expect(vi.mocked(roomApi.getAvailability).mock.calls.length).toBeGreaterThanOrEqual(
+      callsBefore + 2,
+    );
+  });
 });

@@ -52,6 +52,11 @@ describe('AdminLayout', () => {
       '/admin/bookings',
     );
     expect(within(nav).getByTestId('admin-nav-bookings')).toHaveTextContent('Quản lý đặt phòng');
+    expect(within(nav).getByTestId('admin-nav-closures')).toHaveAttribute(
+      'href',
+      '/admin/closures',
+    );
+    expect(within(nav).getByTestId('admin-nav-closures')).toHaveTextContent('Khung đóng cửa');
     expect(screen.getByText('Bookings Screen')).toBeInTheDocument();
   });
 

@@ -106,4 +106,44 @@ describe('AdminAuditPage (CWB-67)', () => {
       { key: 'totalAmount', label: 'Tổng tiền', from: null, to: '200.00' },
     ]);
   });
+
+  it('renders CLOSURE audit events with Vietnamese labels and filters by CLOSURE entity (CWB-86)', async () => {
+    const user = userEvent.setup();
+    const closureCreated: AuditEvent = {
+      id: 'evt-closure-1',
+      actorId: 'admin-1',
+      actorRole: 'ADMIN',
+      action: 'CLOSURE_CREATED' as AuditEvent['action'],
+      entityType: 'CLOSURE' as AuditEvent['entityType'],
+      entityId: 'closure-1',
+      before: null,
+      after: {
+        roomId: null,
+        startTime: '2026-12-25T01:00:00.000Z',
+        endTime: '2026-12-25T11:00:00.000Z',
+        reason: 'Nghỉ Giáng Sinh',
+        acknowledgeConflictingBookings: true,
+      },
+      createdAt: '2026-11-09T03:00:00.000Z',
+    };
+    vi.mocked(adminAuditApi.list).mockResolvedValue(page([closureCreated]));
+
+    render(<AdminAuditPage />);
+
+    const row = await screen.findByTestId('audit-row-evt-closure-1');
+    expect(row).toHaveTextContent('Tạo khung đóng cửa');
+    expect(row).toHaveTextContent('Khung đóng cửa');
+    expect(row).toHaveTextContent('Lý do:Nghỉ Giáng Sinh');
+    expect(row).toHaveTextContent('Xác nhận lịch đặt trùng:Có');
+
+    await user.selectOptions(screen.getByLabelText('Đối tượng'), 'CLOSURE');
+    await user.click(screen.getByTestId('audit-apply'));
+
+    await waitFor(() =>
+      expect(adminAuditApi.list).toHaveBeenLastCalledWith(
+        expect.objectContaining({ entityType: 'CLOSURE' }),
+        expect.anything(),
+      ),
+    );
+  });
 });

@@ -441,10 +441,16 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
       const rangeCheck = checkRangeAvailability(startUtc!, endUtc!, allFreshSlots);
       if (!rangeCheck.isAvailable) {
         setHasBookingConflict(true);
-        setErrors({
-          general:
-            'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
-        });
+        if (rangeCheck.reason === 'CLOSED_SLOT') {
+          setErrors({
+            general: `Khoảng thời gian đã chọn có chứa khung giờ đóng cửa${rangeCheck.conflictingSlot?.reason ? ` (${rangeCheck.conflictingSlot.reason})` : ''}. Vui lòng chọn khung giờ khác.`,
+          });
+        } else {
+          setErrors({
+            general:
+              'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác hoặc điều chỉnh thời gian.',
+          });
+        }
         return;
       }
 
@@ -498,6 +504,14 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
         const msg = message || 'Phòng vừa chuyển sang bảo trì, không thể đặt phòng.';
         setErrors({ general: msg });
         showToast(msg, 'error');
+      } else if (code === 'ROOM_CLOSED') {
+        setHasBookingConflict(true);
+        const msg =
+          message ||
+          'Phòng hoặc cơ sở đang đóng cửa trong khoảng thời gian này. Vui lòng chọn khung giờ khác.';
+        setErrors({ general: msg });
+        showToast(msg, 'error');
+        availability.refresh().catch(() => {});
       } else if (code === 'BOOKING_CONFLICT') {
         setHasBookingConflict(true);
         const msg =

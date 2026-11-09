@@ -1393,4 +1393,87 @@ describe('BookingForm', () => {
       expect(message).not.toMatch(/email/i);
     });
   });
+
+  describe('Closure handling in BookingForm (CWB-86)', () => {
+    it('shows closure-specific error message when range contains a CLOSED slot and refreshes availability on 409 ROOM_CLOSED', async () => {
+      vi.mocked(roomApi.getAvailability).mockImplementation(async (_id, date) =>
+        mockAvailabilityResponse(date),
+      );
+
+      renderComponent();
+
+      const startInput = screen.getByLabelText(/Thời gian bắt đầu/i);
+      const endInput = screen.getByLabelText(/Thời gian kết thúc/i);
+
+      fireEvent.change(startInput, { target: { value: '2026-10-25T10:00' } });
+      fireEvent.change(endInput, { target: { value: '2026-10-25T12:00' } });
+      await act(async () => {});
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('booking-submit-btn'));
+      });
+      expect(screen.getByTestId('booking-review-section')).toBeInTheDocument();
+
+      // 1. Preflight refresh returns a CLOSED slot inside the selected range
+      const closedResponse = mockAvailabilityResponse('2026-10-25');
+      closedResponse.data.slots[21] = {
+        ...closedResponse.data.slots[21],
+        status: 'CLOSED',
+        reason: 'Nghỉ bảo trì điện',
+      };
+      vi.mocked(roomApi.getAvailability).mockResolvedValueOnce(closedResponse);
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('booking-confirm-btn'));
+      });
+
+      const errAlert = await screen.findByTestId('booking-general-error');
+      expect(errAlert).toHaveTextContent(/đóng cửa/i);
+      expect(errAlert).toHaveTextContent(/Nghỉ bảo trì điện/i);
+      expect(errAlert).not.toHaveTextContent(/đã có người đặt/i);
+      expect(screen.queryByText('Khung giờ vừa có người khác đặt trước')).not.toBeInTheDocument();
+
+      // 2. Return to edit, re-select range, preflight returns AVAILABLE, POST returns 409 ROOM_CLOSED
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('booking-back-btn'));
+      });
+      fireEvent.change(screen.getByLabelText(/Thời gian bắt đầu/i), {
+        target: { value: '2026-10-25T14:00' },
+      });
+      fireEvent.change(screen.getByLabelText(/Thời gian kết thúc/i), {
+        target: { value: '2026-10-25T16:00' },
+      });
+      await act(async () => {});
+
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('booking-submit-btn'));
+      });
+      expect(screen.getByTestId('booking-review-section')).toBeInTheDocument();
+
+      vi.mocked(bookingApi.createBooking).mockRejectedValueOnce({
+        name: 'AxiosError',
+        response: {
+          status: 409,
+          data: {
+            code: 'ROOM_CLOSED',
+            message: 'Phòng hoặc cơ sở đang đóng cửa trong khoảng thời gian này (Khử khuẩn)',
+          },
+        },
+      });
+
+      const callsBefore = vi.mocked(roomApi.getAvailability).mock.calls.length;
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('booking-confirm-btn'));
+      });
+
+      expect(await screen.findByTestId('booking-general-error')).toHaveTextContent(
+        'Phòng hoặc cơ sở đang đóng cửa trong khoảng thời gian này (Khử khuẩn)',
+      );
+      expect(screen.queryByText('Khung giờ vừa có người khác đặt trước')).not.toBeInTheDocument();
+      // 1 preflight call + 1 refresh call in catch(ROOM_CLOSED)
+      expect(vi.mocked(roomApi.getAvailability).mock.calls.length).toBeGreaterThanOrEqual(
+        callsBefore + 2,
+      );
+    });
+  });
 });

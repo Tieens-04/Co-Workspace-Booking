@@ -274,7 +274,7 @@ export function checkRangeAvailability(
   slots: RoomAvailabilitySlot[],
 ): {
   isAvailable: boolean;
-  reason?: 'BOOKED_SLOT' | 'MISSING_SLOT';
+  reason?: 'BOOKED_SLOT' | 'CLOSED_SLOT' | 'MISSING_SLOT';
   conflictingSlot?: RoomAvailabilitySlot;
 } {
   if (endUtc.getTime() <= startUtc.getTime()) {
@@ -294,6 +294,9 @@ export function checkRangeAvailability(
     const slot = slotMap.get(currentMs);
     if (!slot) {
       return { isAvailable: false, reason: 'MISSING_SLOT' };
+    }
+    if (slot.status === 'CLOSED') {
+      return { isAvailable: false, reason: 'CLOSED_SLOT', conflictingSlot: slot };
     }
     if (slot.status === 'BOOKED') {
       return { isAvailable: false, reason: 'BOOKED_SLOT', conflictingSlot: slot };

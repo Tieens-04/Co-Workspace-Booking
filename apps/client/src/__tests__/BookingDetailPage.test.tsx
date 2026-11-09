@@ -1014,6 +1014,61 @@ describe('BookingDetailPage', () => {
       expect(errorNotice).toHaveTextContent('Khung giờ này đã có người đặt');
       expect(screen.getByTestId('reschedule-dialog-content')).toBeInTheDocument();
     });
+
+    it('preserves CLOSED slots inside the current booking range as disabled on TimeGrid instead of turning them AVAILABLE (CWB-86)', async () => {
+      const { roomApi } = await import('../services/room.api');
+      const futureDate = new Date(Date.now() + 24 * 3600 * 1000);
+      const y = futureDate.getUTCFullYear();
+      const m = String(futureDate.getUTCMonth() + 1).padStart(2, '0');
+      const d = String(futureDate.getUTCDate()).padStart(2, '0');
+      const dateStr = `${y}-${m}-${d}`;
+      const currentStartIso = new Date(`${dateStr}T10:00:00.000+07:00`).toISOString();
+      const currentEndIso = new Date(`${dateStr}T12:00:00.000+07:00`).toISOString();
+
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: currentStartIso,
+          endTime: currentEndIso,
+        }),
+      );
+
+      // Suppose an admin acknowledged a closure over [10:00, 12:00) VN on that date
+      const startOfDay = new Date(`${dateStr}T00:00:00.000+07:00`);
+      const slotsWithClosure = Array.from({ length: 48 }, (_, i) => {
+        const slotStart = new Date(startOfDay.getTime() + i * 30 * 60 * 1000);
+        const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
+        const isClosedSlot = i >= 20 && i < 24; // 10:00 - 12:00 VN
+        return {
+          startTime: slotStart.toISOString(),
+          endTime: slotEnd.toISOString(),
+          status: (isClosedSlot ? 'CLOSED' : 'AVAILABLE') as 'CLOSED' | 'AVAILABLE',
+          reason: isClosedSlot ? 'Bảo trì đột xuất' : undefined,
+        };
+      });
+
+      vi.mocked(roomApi.getAvailability).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: {
+          roomId: mockDetailData.room.id,
+          date: dateStr,
+          timezone: 'Asia/Ho_Chi_Minh',
+          slots: slotsWithClosure,
+          maxAdvanceDays: 30,
+        },
+      });
+
+      renderComponent();
+
+      const user = userEvent.setup();
+      await user.click(await screen.findByTestId('reschedule-booking-init-btn'));
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+
+      const slot1000 = await screen.findByTestId('time-slot-10:00');
+      expect(slot1000).toBeDisabled();
+      expect(slot1000).toHaveAttribute('data-slot-state', 'closed');
+    });
   });
 
   describe('Refund & Paid Cancellation Warning (CWB-83)', () => {

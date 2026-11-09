@@ -9,6 +9,12 @@ export interface BookingInterval {
   endTime: Date;
 }
 
+export interface ClosureInterval {
+  startTime: Date;
+  endTime: Date;
+  reason: string;
+}
+
 /**
  * Returns UTC Date objects for start of day and end of day in Vietnam timezone (+07:00).
  * dayStart = YYYY-MM-DDT00:00:00.000+07:00
@@ -37,18 +43,33 @@ export function isIntervalOverlapping(
 
 /**
  * Generates 48 contiguous 30-minute slots covering [dayStart, dayEnd)
- * and determines status (AVAILABLE / BOOKED) based on blocking intervals.
+ * and determines status (AVAILABLE / BOOKED / CLOSED) based on blocking intervals and closures.
  */
 export function generateAvailabilitySlots(
   dayStart: Date,
   dayEnd: Date,
   blockingIntervals: BookingInterval[],
+  closures: ClosureInterval[] = [],
 ): RoomAvailabilitySlotDto[] {
   const slots: RoomAvailabilitySlotDto[] = [];
 
   for (let i = 0; i < SLOTS_PER_DAY; i++) {
     const slotStart = new Date(dayStart.getTime() + i * SLOT_DURATION_MS);
     const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MS);
+
+    const matchingClosure = closures.find((c) =>
+      isIntervalOverlapping(slotStart, slotEnd, c.startTime, c.endTime),
+    );
+
+    if (matchingClosure) {
+      slots.push({
+        startTime: slotStart.toISOString(),
+        endTime: slotEnd.toISOString(),
+        status: 'CLOSED',
+        reason: matchingClosure.reason,
+      });
+      continue;
+    }
 
     const isBooked = blockingIntervals.some((b) =>
       isIntervalOverlapping(slotStart, slotEnd, b.startTime, b.endTime),

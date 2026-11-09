@@ -54,6 +54,13 @@ import {
   getAdminUsersQuerySchema,
   updateUserStatusBodySchema,
 } from '../validators/admin-user.validator.js';
+import { adminClosureController } from '../controllers/admin-closure.controller.js';
+import {
+  createClosureSchema,
+  updateClosureSchema,
+  closureIdParamsSchema,
+  getClosuresQuerySchema,
+} from '../validators/admin-closure.validator.js';
 
 const router = Router();
 
@@ -193,6 +200,30 @@ router.post(
   '/email-outbox/:id/retry',
   validateParams(emailOutboxIdParamsSchema),
   adminEmailOutboxController.retry,
+);
+
+// CWB-86: closures management.
+router.get('/closures', validateQuery(getClosuresQuerySchema), adminClosureController.listClosures);
+router.get(
+  '/closures/:id',
+  validateParams(closureIdParamsSchema),
+  adminClosureController.getClosureById,
+);
+router.post(
+  '/closures',
+  validateBody(createClosureSchema),
+  adminClosureController.createClosure,
+);
+router.patch(
+  '/closures/:id',
+  validateParams(closureIdParamsSchema),
+  validateBody(updateClosureSchema),
+  adminClosureController.updateClosure,
+);
+router.delete(
+  '/closures/:id',
+  validateParams(closureIdParamsSchema),
+  adminClosureController.deleteClosure,
 );
 
 export default router;

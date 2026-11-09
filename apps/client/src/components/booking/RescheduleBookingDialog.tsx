@@ -105,7 +105,7 @@ export const RescheduleBookingDialog: React.FC<RescheduleBookingDialogProps> = (
     return rawSlots.map((slot) => {
       const slotStartMs = new Date(slot.startTime).getTime();
       const slotEndMs = new Date(slot.endTime).getTime();
-      if (slotStartMs >= currentStartMs && slotEndMs <= currentEndMs) {
+      if (slot.status === 'BOOKED' && slotStartMs >= currentStartMs && slotEndMs <= currentEndMs) {
         return { ...slot, available: true, status: 'AVAILABLE' as const };
       }
       return slot;
