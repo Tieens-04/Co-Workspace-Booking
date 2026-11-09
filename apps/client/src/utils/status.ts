@@ -35,6 +35,7 @@ export const PAYMENT_STATUS_META: Record<string, StatusMeta> = {
 export const ROOM_STATUS_META: Record<string, StatusMeta> = {
   AVAILABLE: { label: 'Sẵn sàng', tone: 'success' },
   MAINTENANCE: { label: 'Bảo trì', tone: 'maintenance' },
+  ARCHIVED: { label: 'Ngừng kinh doanh', tone: 'neutral' },
 };
 
 const META_BY_KIND: Record<StatusKind, Record<string, StatusMeta>> = {

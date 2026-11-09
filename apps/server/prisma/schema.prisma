@@ -20,6 +20,7 @@ enum Role {
 enum RoomStatus {
   AVAILABLE
   MAINTENANCE
+  ARCHIVED
 }
 
 enum BookingStatus {

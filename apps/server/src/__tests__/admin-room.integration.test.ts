@@ -6,6 +6,7 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { TestAccounts } from './support/test-accounts.js';
 import { roomRepository } from '../repositories/room.repository.js';
+import { generateToken } from '../utils/jwt.util.js';
 
 describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)', () => {
   const accounts = new TestAccounts();
@@ -586,6 +587,246 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       const afterRoom = await prisma.room.findUnique({ where: { id: createdRoomId } });
       expect(afterRoom!.name).toBe(originalName);
       expect(afterRoom!.status).toBe(RoomStatus.AVAILABLE);
+    });
+  });
+
+  describe('Room Archiving & Unarchiving Integration (CWB-85: AC1, AC2, AC3, AC4)', () => {
+    it('archives room, records status history & audit event, hides from public, and unarchives', async () => {
+      // 1. Ensure room is clean of bookings and in AVAILABLE status
+      await prisma.booking.deleteMany({ where: { roomId: createdRoomId } });
+      await prisma.room.update({
+        where: { id: createdRoomId },
+        data: { status: RoomStatus.AVAILABLE },
+      });
+
+      // 2. Admin archives the room without future bookings (AC1)
+      const archiveRes = await request(app)
+        .patch(`/api/v1/admin/rooms/${createdRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: RoomStatus.ARCHIVED });
+
+      expect(archiveRes.status).toBe(200);
+      expect(archiveRes.body.data.status).toBe(RoomStatus.ARCHIVED);
+
+      // Verify DB status
+      const archivedDbRoom = await prisma.room.findUnique({ where: { id: createdRoomId } });
+      expect(archivedDbRoom!.status).toBe(RoomStatus.ARCHIVED);
+
+      // Verify RoomStatusHistory recorded (AC1)
+      const history = await prisma.roomStatusHistory.findMany({
+        where: { roomId: createdRoomId },
+        orderBy: { effectiveAt: 'desc' },
+      });
+      expect(history.length).toBeGreaterThan(0);
+      expect(history[0].status).toBe(RoomStatus.ARCHIVED);
+
+      // Verify AuditEvent recorded (AC1)
+      const auditEvents = await prisma.auditEvent.findMany({
+        where: { entityId: createdRoomId, action: 'ROOM_STATUS_CHANGED' },
+        orderBy: { createdAt: 'desc' },
+      });
+      expect(auditEvents.length).toBeGreaterThan(0);
+      expect((auditEvents[0].after as any).status).toBe(RoomStatus.ARCHIVED);
+
+      // 3. Public access verification (AC2)
+      // Hidden from public GET /api/v1/rooms
+      const publicListRes = await request(app).get('/api/v1/rooms');
+      expect(publicListRes.status).toBe(200);
+      const publicItem = publicListRes.body.data.items.find(
+        (r: { id: string }) => r.id === createdRoomId,
+      );
+      expect(publicItem).toBeUndefined();
+
+      // Public GET /api/v1/rooms/:id returns 404
+      const publicDetailRes = await request(app).get(`/api/v1/rooms/${createdRoomId}`);
+      expect(publicDetailRes.status).toBe(404);
+      expect(publicDetailRes.body.code).toBe('ROOM_NOT_FOUND');
+
+      // Public GET /api/v1/rooms/:id/availability returns 404
+      const publicAvailRes = await request(app).get(
+        `/api/v1/rooms/${createdRoomId}/availability?date=2026-12-10`,
+      );
+      expect(publicAvailRes.status).toBe(404);
+      expect(publicAvailRes.body.code).toBe('ROOM_NOT_FOUND');
+
+      // Booking into ARCHIVED room is rejected (Customer)
+      const customerToken = generateToken({ sub: testUserId, role: Role.CUSTOMER });
+      const bookRes = await request(app)
+        .post('/api/v1/bookings')
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          roomId: createdRoomId,
+          startTime: '2026-12-10T09:00:00.000+07:00',
+          endTime: '2026-12-10T11:00:00.000+07:00',
+        });
+      expect(bookRes.status).toBe(409);
+      expect(bookRes.body.code).toBe('ROOM_NOT_AVAILABLE');
+
+      // Guest booking into ARCHIVED room is also rejected
+      const guestBookRes = await request(app)
+        .post('/api/v1/admin/bookings/guest')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roomId: createdRoomId,
+          guestName: 'Walk-in Guest',
+          guestPhone: '0912345678',
+          startTime: '2026-12-10T09:00:00.000+07:00',
+          endTime: '2026-12-10T11:00:00.000+07:00',
+        });
+      expect(guestBookRes.status).toBe(409);
+      expect(guestBookRes.body.code).toBe('ROOM_NOT_AVAILABLE');
+
+      // Admin can list archived rooms with status filter (AC2)
+      const adminListRes = await request(app)
+        .get('/api/v1/admin/rooms?status=ARCHIVED')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(adminListRes.status).toBe(200);
+      const adminItem = adminListRes.body.data.items.find(
+        (r: { id: string }) => r.id === createdRoomId,
+      );
+      expect(adminItem).toBeDefined();
+
+      // Admin can view details of ARCHIVED room via GET /api/v1/admin/rooms/:id (AC4)
+      const adminDetailRes = await request(app)
+        .get(`/api/v1/admin/rooms/${createdRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(adminDetailRes.status).toBe(200);
+      expect(adminDetailRes.body.data.id).toBe(createdRoomId);
+      expect(adminDetailRes.body.data.status).toBe(RoomStatus.ARCHIVED);
+
+      // 4. Admin unarchives the room back to AVAILABLE (AC4)
+      const unarchiveRes = await request(app)
+        .patch(`/api/v1/admin/rooms/${createdRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: RoomStatus.AVAILABLE });
+
+      expect(unarchiveRes.status).toBe(200);
+      expect(unarchiveRes.body.data.status).toBe(RoomStatus.AVAILABLE);
+
+      const unarchivedDbRoom = await prisma.room.findUnique({ where: { id: createdRoomId } });
+      expect(unarchivedDbRoom!.status).toBe(RoomStatus.AVAILABLE);
+    });
+
+    it('handles future booking conflict when archiving room (AC3)', async () => {
+      // 1. Reset to AVAILABLE
+      await prisma.room.update({
+        where: { id: createdRoomId },
+        data: { status: RoomStatus.AVAILABLE },
+      });
+
+      // 2. Create a future CONFIRMED booking
+      const futureStart = new Date(Date.now() + 72 * 60 * 60 * 1000);
+      const futureEnd = new Date(Date.now() + 74 * 60 * 60 * 1000);
+      const testCode = `CS-20261205-${randomUUID().slice(0, 4).toUpperCase()}`;
+
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: testCode,
+          roomId: createdRoomId,
+          userId: testUserId,
+          startTime: futureStart,
+          endTime: futureEnd,
+          totalAmount: new Prisma.Decimal('360.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      // 3. Attempt to archive without acknowledgement -> 409 ROOM_HAS_FUTURE_BOOKINGS
+      const conflictRes = await request(app)
+        .patch(`/api/v1/admin/rooms/${createdRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: RoomStatus.ARCHIVED });
+
+      expect(conflictRes.status).toBe(409);
+      expect(conflictRes.body.code).toBe('ROOM_HAS_FUTURE_BOOKINGS');
+      expect(conflictRes.body.details.futureBookingCount).toBe(1);
+      expect(conflictRes.body.details.bookings[0].bookingCode).toBe(testCode);
+
+      // Verify room status unchanged
+      const roomCheck = await prisma.room.findUnique({ where: { id: createdRoomId } });
+      expect(roomCheck!.status).toBe(RoomStatus.AVAILABLE);
+
+      // 4. Archive with acknowledgeFutureBookings: true -> 200, booking preserved
+      const ackRes = await request(app)
+        .patch(`/api/v1/admin/rooms/${createdRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({ status: RoomStatus.ARCHIVED, acknowledgeFutureBookings: true });
+
+      expect(ackRes.status).toBe(200);
+      expect(ackRes.body.data.status).toBe(RoomStatus.ARCHIVED);
+
+      // Verify booking is still CONFIRMED
+      const bookingCheck = await prisma.booking.findUnique({ where: { id: booking.id } });
+      expect(bookingCheck!.status).toBe(BookingStatus.CONFIRMED);
+
+      // 5. Customer cannot reschedule booking of ARCHIVED room (Finding 3 Regression)
+      const customerToken = generateToken({ sub: testUserId, role: Role.CUSTOMER });
+      const newStart = new Date(futureStart.getTime() + 24 * 60 * 60 * 1000);
+      newStart.setUTCHours(2, 0, 0, 0); // 09:00 VN
+      const newEnd = new Date(newStart.getTime() + 2 * 60 * 60 * 1000);
+
+      const rescheduleRes = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}`)
+        .set('Authorization', `Bearer ${customerToken}`)
+        .send({
+          startTime: newStart.toISOString(),
+          endTime: newEnd.toISOString(),
+        });
+      expect(rescheduleRes.status).toBe(409);
+      expect(rescheduleRes.body.code).toBe('ROOM_NOT_AVAILABLE');
+      expect(rescheduleRes.body.message).toContain('Phòng đã ngừng kinh doanh');
+
+      // 6. Booking of ARCHIVED room is preserved in customer booking history (AC2, AC6)
+      const customerHistoryRes = await request(app)
+        .get('/api/v1/bookings')
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(customerHistoryRes.status).toBe(200);
+      const foundInCustomerHistory = customerHistoryRes.body.data.items.find(
+        (b: { id: string }) => b.id === booking.id,
+      );
+      expect(foundInCustomerHistory).toBeDefined();
+      expect(foundInCustomerHistory.bookingCode).toBe(testCode);
+      expect(foundInCustomerHistory.room.id).toBe(createdRoomId);
+
+      // 7. Booking of ARCHIVED room is preserved in admin booking list (AC6)
+      const adminBookingsRes = await request(app)
+        .get(`/api/v1/admin/bookings?bookingCode=${testCode}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(adminBookingsRes.status).toBe(200);
+      expect(adminBookingsRes.body.data.items).toHaveLength(1);
+      expect(adminBookingsRes.body.data.items[0].id).toBe(booking.id);
+      expect(adminBookingsRes.body.data.items[0].room.id).toBe(createdRoomId);
+
+      // 8. Room and its bookings appear in admin revenue endpoint (AC6)
+      const revenueRes = await request(app)
+        .get(`/api/v1/admin/revenue?roomId=${createdRoomId}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(revenueRes.status).toBe(200);
+      expect(revenueRes.body.success).toBe(true);
+      expect(revenueRes.body.data).toHaveProperty('actualRevenue');
+      expect(revenueRes.body.data).toHaveProperty('potentialRevenue');
+
+      // 9. Booking of ARCHIVED room appears in admin CSV export (AC6)
+      const dateStr = futureStart.toISOString().slice(0, 10);
+      const csvRes = await request(app)
+        .get(
+          `/api/v1/admin/reports/bookings.csv?startDate=${dateStr}&endDate=${dateStr}&roomId=${createdRoomId}`,
+        )
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(csvRes.status).toBe(200);
+      expect(csvRes.headers['content-type']).toContain('text/csv');
+      expect(csvRes.text).toContain(testCode);
+
+      // 10. Filter combining status=ARCHIVED with time slot returns 0 rooms (Finding 2 Regression)
+      const slotFilterRes = await request(app)
+        .get('/api/v1/admin/rooms?status=ARCHIVED&date=2026-12-10&startTime=09:00&endTime=11:00')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(slotFilterRes.status).toBe(200);
+      expect(slotFilterRes.body.data.items).toHaveLength(0);
+
+      // Clean up booking
+      await prisma.booking.delete({ where: { id: booking.id } });
     });
   });
 });

@@ -403,6 +403,34 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(res.body.message).toBe('Không tìm thấy phòng');
     });
 
+    it('returns 404 ROOM_NOT_FOUND when room is ARCHIVED (AC2)', async () => {
+      vi.mocked(roomRepository.findById).mockResolvedValue(
+        mockRoomFixture({ status: RoomStatus.ARCHIVED }),
+      );
+
+      const res = await request(app).get(`/api/v1/rooms/${roomId1}`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.message).toBe('Không tìm thấy phòng');
+    });
+
+    it('returns 404 ROOM_NOT_FOUND for availability when room is ARCHIVED (AC2)', async () => {
+      vi.spyOn(roomRepository, 'findAvailabilityById').mockResolvedValue({
+        id: roomId1,
+        status: RoomStatus.ARCHIVED,
+        bookings: [],
+      });
+
+      const res = await request(app).get(`/api/v1/rooms/${roomId1}/availability?date=2026-11-20`);
+
+      expect(res.status).toBe(404);
+      expect(res.body.success).toBe(false);
+      expect(res.body.code).toBe('ROOM_NOT_FOUND');
+      expect(res.body.message).toBe('Không tìm thấy phòng');
+    });
+
     it('detail endpoint: returns full details, primary image first, amenities sorted by name, no leaked internal fields', async () => {
       const res = await request(app).get(`/api/v1/rooms/${roomId1}`);
 
@@ -465,6 +493,66 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(where.capacity).toBeUndefined();
       expect(where.pricePerHour).toBeUndefined();
       expect(where.AND).toBeUndefined();
+      expect(where.status).toEqual({ not: RoomStatus.ARCHIVED });
+    });
+
+    it('excludes ARCHIVED status by default in buildWhere (AC2)', () => {
+      const where = roomRepository.buildWhere({
+        page: 1,
+        limit: 10,
+      });
+
+      expect(where.status).toEqual({ not: RoomStatus.ARCHIVED });
+    });
+
+    it('allows including archived rooms when includeArchived is true in buildWhere', () => {
+      const where = roomRepository.buildWhere({
+        page: 1,
+        limit: 10,
+        includeArchived: true,
+      });
+
+      expect(where.status).toBeUndefined();
+    });
+
+    it('sets specific status when provided in buildWhere', () => {
+      const where = roomRepository.buildWhere({
+        page: 1,
+        limit: 10,
+        status: RoomStatus.ARCHIVED,
+      });
+
+      expect(where.status).toBe(RoomStatus.ARCHIVED);
+    });
+
+    it('sets where.id = { in: [] } when slot search is combined with non-AVAILABLE status (Finding 2 Regression)', () => {
+      const whereArchived = roomRepository.buildWhere({
+        page: 1,
+        limit: 10,
+        startDate: new Date('2026-12-10T09:00:00.000+07:00'),
+        endDate: new Date('2026-12-10T11:00:00.000+07:00'),
+        status: RoomStatus.ARCHIVED,
+      });
+      expect(whereArchived.id).toEqual({ in: [] });
+
+      const whereMaintenance = roomRepository.buildWhere({
+        page: 1,
+        limit: 10,
+        startDate: new Date('2026-12-10T09:00:00.000+07:00'),
+        endDate: new Date('2026-12-10T11:00:00.000+07:00'),
+        status: RoomStatus.MAINTENANCE,
+      });
+      expect(whereMaintenance.id).toEqual({ in: [] });
+
+      const whereAvailable = roomRepository.buildWhere({
+        page: 1,
+        limit: 10,
+        startDate: new Date('2026-12-10T09:00:00.000+07:00'),
+        endDate: new Date('2026-12-10T11:00:00.000+07:00'),
+        status: RoomStatus.AVAILABLE,
+      });
+      expect(whereAvailable.status).toBe(RoomStatus.AVAILABLE);
+      expect(whereAvailable.id).toBeUndefined();
     });
   });
 

@@ -132,6 +132,7 @@ export function RoomForm({
           >
             <option value="AVAILABLE">AVAILABLE (Sẵn sàng)</option>
             <option value="MAINTENANCE">MAINTENANCE (Bảo trì)</option>
+            <option value="ARCHIVED">ARCHIVED (Ngừng kinh doanh)</option>
           </NativeSelect>
         </Field>
       ) : (
@@ -150,6 +151,7 @@ export function RoomForm({
         <MaintenanceWarning
           returnFocusRef={submitButtonRef}
           warning={futureBookingWarning}
+          targetStatus={values.status}
           isConfirming={isConfirmingMaintenance}
           onDismiss={onDismissWarning}
           onConfirm={onConfirmMaintenance}

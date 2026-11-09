@@ -1,4 +1,4 @@
-export type RoomStatus = 'AVAILABLE' | 'MAINTENANCE';
+export type RoomStatus = 'AVAILABLE' | 'MAINTENANCE' | 'ARCHIVED';
 export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED';
 
 export type RoomSortOption =
@@ -100,4 +100,5 @@ export interface GetRoomsParams {
   date?: string;
   startTime?: string;
   endTime?: string;
+  status?: RoomStatus;
 }

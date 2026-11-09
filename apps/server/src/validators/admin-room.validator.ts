@@ -204,13 +204,18 @@ export const updateRoomSchema = z
   })
   .refine(
     (data) => {
-      if (data.acknowledgeFutureBookings !== undefined && data.status !== RoomStatus.MAINTENANCE) {
+      if (
+        data.acknowledgeFutureBookings !== undefined &&
+        data.status !== RoomStatus.MAINTENANCE &&
+        data.status !== RoomStatus.ARCHIVED
+      ) {
         return false;
       }
       return true;
     },
     {
-      message: 'acknowledgeFutureBookings chỉ được sử dụng khi cập nhật trạng thái MAINTENANCE',
+      message:
+        'acknowledgeFutureBookings chỉ được sử dụng khi cập nhật trạng thái MAINTENANCE hoặc ARCHIVED',
       path: ['acknowledgeFutureBookings'],
     },
   );

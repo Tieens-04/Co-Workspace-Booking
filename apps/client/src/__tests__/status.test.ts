@@ -56,6 +56,7 @@ describe('status utilities', () => {
     it('returns correct meta for room statuses', () => {
       expect(getStatusMeta('room', 'AVAILABLE')).toEqual(ROOM_STATUS_META.AVAILABLE);
       expect(getStatusMeta('room', 'MAINTENANCE')).toEqual(ROOM_STATUS_META.MAINTENANCE);
+      expect(getStatusMeta('room', 'ARCHIVED')).toEqual(ROOM_STATUS_META.ARCHIVED);
     });
 
     it('falls back to neutral tone for unknown statuses', () => {

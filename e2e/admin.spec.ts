@@ -173,3 +173,49 @@ test('maintenance requires keyboard confirmation, retains future booking and blo
     ).status(),
   ).toBe(409);
 });
+
+test('admin archives room with future booking, retains booking, hides from public, filters by status and unarchives', async ({
+  page,
+  scenario,
+}) => {
+  const room = await scenario.createRoom();
+  const booking = await scenario.booking({ roomId: room.id });
+  await login(page, scenario.admin);
+  await page.getByTestId(`admin-edit-btn-${room.id}`).click();
+  await page.getByLabel('Trạng thái phòng').selectOption('ARCHIVED');
+  const trigger = page.getByTestId('admin-submit-room-btn');
+  await trigger.click();
+  const warning = page.getByRole('alertdialog');
+  await expect(warning).toContainText(booking.bookingCode);
+  await dialogKeyboard(page, warning, trigger);
+  await warning.getByRole('button', { name: 'Vẫn chuyển sang ngừng kinh doanh' }).press('Enter');
+  await expect(warning).toBeHidden();
+
+  // Verify DB state: booking remains CONFIRMED, room is ARCHIVED
+  expect((await scenario.db.booking.findUniqueOrThrow({ where: { id: booking.id } })).status).toBe(
+    'CONFIRMED',
+  );
+  expect((await scenario.db.room.findUniqueOrThrow({ where: { id: room.id } })).status).toBe(
+    'ARCHIVED',
+  );
+
+  // Verify public view: hidden from /rooms list and 404s on /rooms/:id
+  await page.goto('/rooms');
+  await expect(page.getByText(room.name)).toHaveCount(0);
+  const detailRes = await api(page, `/rooms/${room.id}`);
+  expect(detailRes.status()).toBe(404);
+
+  // Admin view: filter by ARCHIVED, edit and unarchive back to AVAILABLE
+  await page.goto('/admin');
+  await page.getByTestId('admin-room-status-filter').selectOption('ARCHIVED');
+  await expect(page.getByText(room.name)).toBeVisible();
+
+  await page.getByTestId(`admin-edit-btn-${room.id}`).click();
+  await page.getByLabel('Trạng thái phòng').selectOption('AVAILABLE');
+  await page.getByTestId('admin-submit-room-btn').click();
+
+  await expect(page.getByText('Cập nhật thông tin phòng thành công!')).toBeVisible();
+  expect((await scenario.db.room.findUniqueOrThrow({ where: { id: room.id } })).status).toBe(
+    'AVAILABLE',
+  );
+});

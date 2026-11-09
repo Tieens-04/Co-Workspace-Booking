@@ -1,7 +1,7 @@
 import { BookingStatus, PaymentMethod, PaymentStatus, Prisma, Role } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { summarizeRevenueGroups, toRevenueGroups } from '../utils/booking-revenue.util.js';
-import { lockRoomRow } from './room.repository.js';
+import { lockRoomRow, type LockedRoomRecord } from './room.repository.js';
 import {
   BLOCKING_BOOKING_STATUSES,
   BookingResponseDto,
@@ -95,6 +95,23 @@ export type CreateBookingRepoInput = {
   auditActor?: AuditActor;
   idempotency?: BookingIdempotency;
 } & BookingIdentity;
+
+function assertRoomBookable(lockedRoom: Pick<LockedRoomRecord, 'status'>): void {
+  if (lockedRoom.status === 'ARCHIVED') {
+    throw new AppError(
+      'ROOM_NOT_AVAILABLE',
+      'Phòng đã ngừng kinh doanh, không thể đặt phòng',
+      409,
+    );
+  }
+  if (lockedRoom.status === 'MAINTENANCE') {
+    throw new AppError(
+      'ROOM_NOT_AVAILABLE',
+      'Phòng đang trong trạng thái bảo trì, không thể đặt phòng',
+      409,
+    );
+  }
+}
 
 /** Result of createBooking; `idempotentReplay` marks a retried request answered with the original. */
 export type CreatedBookingResult = BookingResponseDto & { idempotentReplay?: boolean };
@@ -445,14 +462,8 @@ export class BookingRepository
         }
       }
 
-      // 2. Reject if room is currently in MAINTENANCE
-      if (lockedRoom.status === 'MAINTENANCE') {
-        throw new AppError(
-          'ROOM_NOT_AVAILABLE',
-          'Phòng đang trong trạng thái bảo trì, không thể đặt phòng',
-          409,
-        );
-      }
+      // 2. Reject if room is currently in MAINTENANCE or ARCHIVED
+      assertRoomBookable(lockedRoom);
 
       // 2b. Upcoming-booking cap per customer (CWB-78); admin guest bookings are exempt.
       // After the idempotency replay above, so retrying an already created booking still succeeds.
@@ -724,14 +735,7 @@ export class BookingRepository
       // 2. Lock target room (defaults to current room)
       const targetRoomId = input.roomId ?? lockedBooking.room_id;
       const lockedRoom = await lockRoomRow(tx, targetRoomId);
-
-      if (lockedRoom.status === 'MAINTENANCE') {
-        throw new AppError(
-          'ROOM_NOT_AVAILABLE',
-          'Phòng đang trong trạng thái bảo trì, không thể đặt phòng',
-          409,
-        );
-      }
+      assertRoomBookable(lockedRoom);
 
       // 3. Validate new time slot
       const newStartDate = new Date(input.startTime);

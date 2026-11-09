@@ -11,7 +11,10 @@ import {
   updateAmenitySchema,
 } from '../validators/amenity.validator.js';
 import { validateQuery, validateBody, validateParams } from '../middlewares/validate.middleware.js';
-import { getRoomsQuerySchema, getRoomByIdParamsSchema } from '../validators/room.validator.js';
+import {
+  getAdminRoomsQuerySchema,
+  getRoomByIdParamsSchema,
+} from '../validators/room.validator.js';
 import { createRoomSchema, updateRoomSchema } from '../validators/admin-room.validator.js';
 import {
   getAdminBookingsQuerySchema,
@@ -54,7 +57,12 @@ import {
 
 const router = Router();
 
-router.get('/rooms', validateQuery(getRoomsQuerySchema), adminRoomController.getRooms);
+router.get('/rooms', validateQuery(getAdminRoomsQuerySchema), adminRoomController.getRooms);
+router.get(
+  '/rooms/:id',
+  validateParams(getRoomByIdParamsSchema),
+  adminRoomController.getRoomById,
+);
 router.post('/rooms', validateBody(createRoomSchema), adminRoomController.createRoom);
 router.patch(
   '/rooms/:id',

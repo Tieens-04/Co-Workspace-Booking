@@ -4,6 +4,7 @@ import { Role, BookingStatus, RoomStatus } from '@prisma/client';
 import app from '../app.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { adminDashboardService } from '../services/admin-dashboard.service.js';
+import { calculateDashboardOccupancy } from '../utils/dashboard-occupancy.util.js';
 
 // Prevent real DB access during unit tests
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
@@ -240,5 +241,39 @@ describe('Admin Dashboard KPI & Schedule API Unit Tests', () => {
         expect(res.body.code).toBe('VALIDATION_ERROR');
       },
     );
+  });
+
+  describe('Occupancy Calculation with ARCHIVED Status (AC5)', () => {
+    it('excludes room time from denominator during ARCHIVED periods', () => {
+      const periodStart = new Date('2026-10-14T00:00:00.000Z');
+      const periodEnd = new Date('2026-10-14T10:00:00.000Z'); // 10 hours = 600 minutes
+      const roomCreated = new Date('2026-10-01T00:00:00.000Z');
+
+      const room = {
+        id: 'room-1',
+        createdAt: roomCreated,
+        statusHistory: [
+          { status: RoomStatus.AVAILABLE, effectiveAt: roomCreated },
+          { status: RoomStatus.ARCHIVED, effectiveAt: new Date('2026-10-14T04:00:00.000Z') }, // archived at 04:00
+          { status: RoomStatus.AVAILABLE, effectiveAt: new Date('2026-10-14T08:00:00.000Z') }, // unarchived at 08:00
+        ],
+      };
+
+      // Available intervals within [00:00, 10:00):
+      // [00:00, 04:00) = 4 hours = 240 mins
+      // [08:00, 10:00) = 2 hours = 120 mins
+      // Total available: 360 mins (the 4 hours of ARCHIVED are excluded)
+      const booking = {
+        roomId: 'room-1',
+        status: BookingStatus.CONFIRMED,
+        startTime: new Date('2026-10-14T01:00:00.000Z'),
+        endTime: new Date('2026-10-14T03:00:00.000Z'), // 2 hours = 120 mins
+      };
+
+      const result = calculateDashboardOccupancy([room], [booking], periodStart, periodEnd);
+
+      expect(result.totalPeriodRoomMinutes).toBe(360);
+      expect(result.bookedMinutes).toBe(120);
+    });
   });
 });

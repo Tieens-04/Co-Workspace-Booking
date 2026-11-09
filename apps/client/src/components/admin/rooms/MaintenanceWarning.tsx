@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import type { FutureBookingWarningDetails } from '../../../types/admin-room';
+import type { RoomStatus } from '../../../types/room';
 
 interface MaintenanceWarningProps {
   warning: FutureBookingWarningDetails;
@@ -16,6 +17,7 @@ interface MaintenanceWarningProps {
   onDismiss: () => void;
   onConfirm: () => void;
   returnFocusRef?: RefObject<HTMLElement | null>;
+  targetStatus?: RoomStatus;
 }
 
 /**
@@ -28,6 +30,7 @@ export function MaintenanceWarning({
   onDismiss,
   onConfirm,
   returnFocusRef,
+  targetStatus,
 }: MaintenanceWarningProps) {
   const previousFocus = useRef<HTMLElement | null>(null);
   return (
@@ -60,8 +63,11 @@ export function MaintenanceWarning({
           </AlertDialogTitle>
         </div>
         <AlertDialogDescription className="text-sm text-foreground">
-          Chuyển phòng sang trạng thái <strong className="font-semibold">Bảo trì</strong> sẽ{' '}
-          <strong className="font-semibold">không tự động hủy</strong> các booking này. Quản trị
+          Chuyển phòng sang trạng thái{' '}
+          <strong className="font-semibold">
+            {targetStatus === 'ARCHIVED' ? 'Ngừng kinh doanh' : 'Bảo trì'}
+          </strong>{' '}
+          sẽ <strong className="font-semibold">không tự động hủy</strong> các booking này. Quản trị
           viên cần liên hệ khách hàng và xử lý hoặc hủy thủ công các booking dưới đây:
         </AlertDialogDescription>
         <ul
@@ -99,7 +105,11 @@ export function MaintenanceWarning({
             disabled={isConfirming}
             data-testid="admin-warning-confirm-btn"
           >
-            {isConfirming ? 'Đang chuyển...' : 'Vẫn chuyển sang bảo trì'}
+            {isConfirming
+              ? 'Đang chuyển...'
+              : targetStatus === 'ARCHIVED'
+                ? 'Vẫn chuyển sang ngừng kinh doanh'
+                : 'Vẫn chuyển sang bảo trì'}
           </Button>
         </div>
       </AlertDialogContent>
