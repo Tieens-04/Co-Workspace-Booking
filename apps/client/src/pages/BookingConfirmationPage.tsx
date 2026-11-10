@@ -13,6 +13,7 @@ import { StatusBadge } from '../components/common/StatusBadge';
 import { DetailList, DetailRow } from '../components/booking/DetailList';
 import { Notice } from '../components/booking/Notice';
 import { CopyCodeButton } from '../components/booking/CopyCodeButton';
+import { PaymentInstructions } from '../components/booking/PaymentInstructions';
 import { BookingTimeRange } from '../components/booking/BookingTimeRange';
 import { SuccessMark } from '../components/motion/SuccessMark';
 
@@ -307,6 +308,7 @@ export const BookingConfirmationPage: React.FC = () => {
                       khi đến nhận phòng tại Co-Space Working.
                     </p>
                   </Notice>
+                  {booking.paymentInstructions && <PaymentInstructions booking={booking} />}
                 </section>
 
                 <nav className="grid gap-2" aria-label="Thao tác tiếp theo">

@@ -155,6 +155,48 @@ describe('BookingDetailPage', () => {
     expect(screen.getByTestId('payment-status-badge')).toHaveTextContent('Đã thanh toán');
   });
 
+  it('shows bank transfer instructions from the server on an UNPAID booking (CWB-89)', async () => {
+    vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+      mockDetailResponse({
+        ...mockDetailData,
+        paymentInstructions: {
+          bankName: 'Vietcombank',
+          accountNumber: '0123456789',
+          accountName: 'CONG TY CO SPACE',
+          transferContent: 'CS-20261025-ABCD',
+          amount: '500000.00',
+        },
+      }),
+    );
+
+    renderComponent();
+
+    expect(await screen.findByTestId('payment-transfer-instructions')).toBeInTheDocument();
+    expect(screen.getByTestId('payment-transfer-content')).toHaveTextContent('CS-20261025-ABCD');
+    expect(screen.getByTestId('payment-transfer-amount')).toHaveTextContent('500.000');
+    expect(screen.queryByTestId('payment-paid-at-value')).not.toBeInTheDocument();
+  });
+
+  it('shows the paid state, method and payment time after staff confirmation (CWB-89)', async () => {
+    vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+      mockDetailResponse({
+        ...mockDetailData,
+        paymentStatus: 'PAID',
+        paymentMethod: 'QR',
+        paidAt: '2026-10-25T02:30:00.000Z',
+        paymentInstructions: null,
+      }),
+    );
+
+    renderComponent();
+
+    expect(await screen.findByTestId('booking-detail-card')).toBeInTheDocument();
+    expect(screen.getByTestId('payment-status-badge')).toHaveTextContent('Đã thanh toán');
+    expect(screen.getByTestId('payment-method-value')).toHaveTextContent('Chuyển khoản QR');
+    expect(screen.getByTestId('payment-paid-at-value')).toHaveTextContent('09:30');
+    expect(screen.queryByTestId('payment-transfer-instructions')).not.toBeInTheDocument();
+  });
+
   it('renders not found state when ID is not a valid UUID without calling API', async () => {
     renderComponent(['/bookings/invalid-uuid-123']);
 

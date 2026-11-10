@@ -307,4 +307,42 @@ describe('NotificationService (Unit)', () => {
       expect(await send()).toBe(true);
     },
   );
+  describe('payment receipt (CWB-89)', () => {
+    const payload = {
+      recipientEmail: 'customer@example.com',
+      customerName: '<b>Hà</b>',
+      bookingCode: 'CS-20261120-ABCD',
+      roomName: 'Phòng <script>x</script>',
+      startTime: new Date('2026-11-20T03:00:00Z'),
+      endTime: new Date('2026-11-20T05:00:00Z'),
+      totalAmount: '250000.00',
+      paymentMethod: 'QR' as const,
+      paidAt: new Date('2026-11-19T02:15:00Z'),
+    };
+
+    it('sends amount, method and Vietnam payment time with every value HTML-escaped', async () => {
+      const service = new NotificationService({ smtpUser: 'test-user', smtpPass: 'test-pass' });
+
+      expect(await service.sendPaymentReceipt(payload)).toBe(true);
+
+      const mail = mockSendMail.mock.calls[0][0];
+      expect(mail.to).toBe('customer@example.com');
+      expect(mail.subject).toBe('[Co-Space] Biên nhận thanh toán CS-20261120-ABCD');
+      expect(mail.html).toContain('250.000');
+      expect(mail.html).toContain('Chuyển khoản / QR');
+      expect(mail.html).toContain('09:15');
+      expect(mail.html).not.toContain('<script>');
+      expect(mail.html).not.toContain('<b>Hà</b>');
+      expect(mail.html).toContain('&lt;b&gt;Hà&lt;/b&gt;');
+      expect(mail.text).toContain('Phương thức: Chuyển khoản / QR');
+    });
+
+    it('returns false without throwing when SMTP fails', async () => {
+      const service = new NotificationService({ smtpUser: 'test-user', smtpPass: 'test-pass' });
+      mockSendMail.mockRejectedValue(Object.assign(new Error('boom'), { code: 'ECONNECTION' }));
+      vi.spyOn(console, 'error').mockImplementation(() => {});
+
+      expect(await service.sendPaymentReceipt({ ...payload, paymentMethod: 'CASH' })).toBe(false);
+    });
+  });
 });

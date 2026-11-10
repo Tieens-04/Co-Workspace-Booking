@@ -12,6 +12,15 @@ export interface BookingRoomDto {
   name: string;
 }
 
+/** CWB-89: bank transfer details for a CONFIRMED + UNPAID booking (server-calculated amount). */
+export interface PaymentInstructions {
+  bankName: string;
+  accountNumber: string;
+  accountName: string;
+  transferContent: string;
+  amount: string;
+}
+
 export interface BookingResult {
   id: string;
   bookingCode: string;
@@ -25,6 +34,8 @@ export interface BookingResult {
   status: string;
   paymentStatus: string;
   paymentMethod: string | null;
+  paidAt?: string | null;
+  paymentInstructions?: PaymentInstructions | null;
   cancellationReason?: string | null;
   cancelledAt?: string | null;
   cancelledBy?: 'CUSTOMER' | 'ADMIN' | null;

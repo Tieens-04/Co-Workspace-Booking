@@ -75,7 +75,10 @@ export class AdminBookingService {
     paymentMethod: PaymentMethod,
     actor?: AuditActor,
   ): Promise<AdminBookingResponseDto> {
-    return this.adminBookingRepo.confirmPaymentForAdmin(id, paymentMethod, actor);
+    const booking = await this.adminBookingRepo.confirmPaymentForAdmin(id, paymentMethod, actor);
+    // CWB-89: deliver the receipt queued in the payment transaction (no-op when nothing is due).
+    this.emailOutbox.kick();
+    return booking;
   }
 
   async cancelBooking(

@@ -43,6 +43,8 @@ const outboxInclude = {
       endTime: true,
       totalAmount: true,
       paymentStatus: true,
+      paymentMethod: true,
+      paidAt: true,
       cancellationReason: true,
       room: { select: { name: true } },
       user: { select: { email: true, fullName: true, deletedAt: true } },
@@ -185,6 +187,13 @@ export class EmailOutboxService {
           ...base,
           reason: booking.cancellationReason,
         });
+      case 'PAYMENT_RECEIPT':
+        return this.notification.sendPaymentReceipt({
+          ...base,
+          totalAmount: booking.totalAmount.toFixed(2),
+          paymentMethod: booking.paymentMethod,
+          paidAt: booking.paidAt,
+        });
       case 'EMAIL_VERIFICATION':
         throw new Error('EMAIL_VERIFICATION delivered via deliverVerification');
       default: {
@@ -260,6 +269,9 @@ export class EmailOutboxService {
           if (row.booking.status === BookingStatus.CANCELLED) skipReason = 'BOOKING_CANCELLED';
           else if (row.booking.status !== BookingStatus.CONFIRMED) skipReason = 'BOOKING_NOT_ACTIVE';
           else if (row.booking.startTime.getTime() <= now.getTime()) skipReason = 'REMINDER_EXPIRED';
+        } else if (row.kind === 'PAYMENT_RECEIPT' && row.booking.paymentStatus !== 'PAID') {
+          // CWB-89: never send a receipt for a booking that is not (or no longer) paid.
+          skipReason = 'BOOKING_NOT_PAID';
         }
       }
 

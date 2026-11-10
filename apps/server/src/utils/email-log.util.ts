@@ -21,7 +21,8 @@ export function logEmailFailure(
     | 'password reset'
     | 'reminder'
     | 'reschedule'
-    | 'verification',
+    | 'verification'
+    | 'receipt',
   /** Non-sensitive reference (booking code or user id); never an email address or token. */
   bookingCode: string,
   error: unknown,

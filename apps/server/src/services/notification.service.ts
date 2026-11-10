@@ -26,6 +26,12 @@ export interface BookingReminderEmailPayload extends BaseBookingEmailPayload {
   isPaid: boolean;
 }
 
+export interface PaymentReceiptEmailPayload extends BaseBookingEmailPayload {
+  totalAmount: string | number;
+  paymentMethod: 'CASH' | 'QR' | null;
+  paidAt: Date | string | null;
+}
+
 export interface PasswordResetEmailPayload {
   recipientEmail: string;
   customerName: string;
@@ -240,6 +246,67 @@ Tổng tiền: ${formattedAmount}
       return true;
     } catch (err: unknown) {
       logEmailFailure('confirmation', payload.bookingCode, err);
+      return false;
+    }
+  }
+
+  /** CWB-89: receipt after an admin confirmed the payment; every value is HTML-escaped. */
+  async sendPaymentReceipt(payload: PaymentReceiptEmailPayload): Promise<boolean> {
+    if (!this.transporter) {
+      return false;
+    }
+
+    try {
+      const formattedAmount = formatVND(payload.totalAmount);
+      const startFormatted = formatDate(payload.startTime);
+      const endFormatted = formatDate(payload.endTime);
+      const paidFormatted = payload.paidAt ? formatDate(payload.paidAt) : '—';
+      const method =
+        payload.paymentMethod === 'QR'
+          ? 'Chuyển khoản / QR'
+          : payload.paymentMethod === 'CASH'
+            ? 'Tiền mặt'
+            : '—';
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #2f855a;">Biên nhận thanh toán</h2>
+          <p>Xin chào <strong>${escapeHtml(payload.customerName)}</strong>,</p>
+          <p>Co-Space Working đã nhận được thanh toán cho đơn đặt phòng của bạn.</p>
+          <div style="background-color: #f7fafc; padding: 16px; border-radius: 6px; margin: 20px 0;">
+            <p style="margin: 6px 0;"><strong>Mã đặt phòng:</strong> ${escapeHtml(payload.bookingCode)}</p>
+            <p style="margin: 6px 0;"><strong>Phòng:</strong> ${escapeHtml(payload.roomName)}</p>
+            <p style="margin: 6px 0;"><strong>Thời gian:</strong> ${escapeHtml(startFormatted)} - ${escapeHtml(endFormatted)}</p>
+            <p style="margin: 6px 0;"><strong>Số tiền đã thanh toán:</strong> ${escapeHtml(formattedAmount)}</p>
+            <p style="margin: 6px 0;"><strong>Phương thức:</strong> ${escapeHtml(method)}</p>
+            <p style="margin: 6px 0;"><strong>Thời điểm thanh toán:</strong> ${escapeHtml(paidFormatted)}</p>
+          </div>
+          <p>Vui lòng giữ email này làm biên nhận. Nếu có sai sót, vui lòng liên hệ quầy lễ tân.</p>
+          <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;" />
+          <p style="color: #718096; font-size: 12px;">Co-Space Working System</p>
+        </div>
+      `;
+
+      const text = `
+Biên nhận thanh toán
+Xin chào ${payload.customerName},
+Đơn đặt phòng ${payload.bookingCode} tại ${payload.roomName} (${startFormatted} - ${endFormatted}) đã được thanh toán.
+Số tiền: ${formattedAmount}
+Phương thức: ${method}
+Thời điểm thanh toán: ${paidFormatted}
+      `.trim();
+
+      await this.transporter.sendMail({
+        from: this.config.smtpFrom,
+        to: payload.recipientEmail,
+        subject: `[Co-Space] Biên nhận thanh toán ${payload.bookingCode}`,
+        text,
+        html,
+      });
+
+      return true;
+    } catch (err: unknown) {
+      logEmailFailure('receipt', payload.bookingCode, err);
       return false;
     }
   }

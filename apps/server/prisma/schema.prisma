@@ -50,6 +50,7 @@ enum EmailOutboxKind {
   BOOKING_REMINDER
   BOOKING_RESCHEDULED
   EMAIL_VERIFICATION
+  PAYMENT_RECEIPT
 }
 
 enum PaymentMethod {
@@ -203,6 +204,8 @@ model Booking {
   status                    BookingStatus  @default(CONFIRMED)
   paymentStatus             PaymentStatus  @default(UNPAID) @map("payment_status")
   paymentMethod             PaymentMethod? @map("payment_method")
+  // CWB-89: when an admin confirmed the payment (null = unpaid or paid before CWB-89).
+  paidAt                    DateTime?      @map("paid_at")
   checkedInAt               DateTime?      @map("checked_in_at")
   attendanceTrackingEnabled Boolean        @default(true) @map("attendance_tracking_enabled")
   cancellationReason        String?        @map("cancellation_reason") @db.Text

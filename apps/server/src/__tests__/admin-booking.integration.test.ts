@@ -47,6 +47,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       'status',
       'paymentStatus',
       'paymentMethod',
+      // CWB-89: payment time (null until an admin confirms the payment).
+      'paidAt',
       'cancellationReason',
       'cancelledAt',
       'cancelledBy',
