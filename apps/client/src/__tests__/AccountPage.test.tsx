@@ -11,7 +11,13 @@ import { createMockJwt } from './test-utils';
 import type { SafeUser } from '../types/auth';
 
 vi.mock('../services/me.api', () => ({
-  meApi: { getMe: vi.fn(), updateMe: vi.fn(), changePassword: vi.fn(), logoutAll: vi.fn() },
+  meApi: {
+    getMe: vi.fn(),
+    updateMe: vi.fn(),
+    changePassword: vi.fn(),
+    logoutAll: vi.fn(),
+    deleteAccount: vi.fn(),
+  },
 }));
 
 const user: SafeUser = {
@@ -240,6 +246,96 @@ describe('AccountPage and profile hydration (CWB-63)', () => {
       expect(screen.getByTestId('account-logout-all-confirm')).toBeEnabled();
       expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe(original);
       expect(screen.queryByTestId('login-screen')).not.toBeInTheDocument();
+    });
+  });
+  describe('delete account (CWB-88)', () => {
+    const openDialog = async (user$: ReturnType<typeof userEvent.setup>) => {
+      await user$.click(await screen.findByTestId('account-delete-btn'));
+      return screen.findByTestId('account-delete-dialog');
+    };
+
+    it('requires the password, anonymizes the account and ends the session', async () => {
+      const user$ = userEvent.setup();
+      vi.mocked(meApi.deleteAccount).mockResolvedValue(ok(null));
+      renderPage();
+
+      const dialog = await openDialog(user$);
+      expect(dialog).toHaveTextContent('không thể hoàn tác');
+      await user$.click(screen.getByTestId('account-delete-confirm'));
+      expect(screen.getByTestId('account-delete-error')).toHaveTextContent('Nhập mật khẩu');
+      expect(meApi.deleteAccount).not.toHaveBeenCalled();
+
+      // Keyboard only: type the password and submit with Enter.
+      await user$.type(
+        screen.getByLabelText('Mật khẩu hiện tại', { selector: '#account-delete-password' }),
+        'Password123!{Enter}',
+      );
+
+      expect(await screen.findByTestId('login-screen')).toBeInTheDocument();
+      expect(meApi.deleteAccount).toHaveBeenCalledWith({ currentPassword: 'Password123!' });
+      expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    });
+
+    it('lists the bookings to cancel first when the server answers 409', async () => {
+      const user$ = userEvent.setup();
+      const original = localStorage.getItem(TOKEN_STORAGE_KEY);
+      vi.mocked(meApi.deleteAccount).mockRejectedValue({
+        response: {
+          status: 409,
+          data: {
+            code: 'ACCOUNT_HAS_ACTIVE_BOOKINGS',
+            message: 'Bạn còn lịch đặt phòng chưa kết thúc.',
+            details: {
+              bookings: [
+                {
+                  id: 'b-1',
+                  bookingCode: 'CS-20261120-ABCD',
+                  roomName: 'Phòng Sen',
+                  startTime: '2026-11-20T03:00:00.000Z',
+                  endTime: '2026-11-20T05:00:00.000Z',
+                },
+              ],
+            },
+          },
+        },
+      });
+      renderPage();
+
+      await openDialog(user$);
+      await user$.type(
+        screen.getByLabelText('Mật khẩu hiện tại', { selector: '#account-delete-password' }),
+        'Password123!',
+      );
+      await user$.click(screen.getByTestId('account-delete-confirm'));
+
+      expect(await screen.findByTestId('account-delete-error')).toHaveTextContent('chưa kết thúc');
+      const list = screen.getByTestId('account-delete-blocking');
+      expect(list).toHaveTextContent('CS-20261120-ABCD');
+      expect(list).toHaveTextContent('Phòng Sen');
+      expect(list).toHaveTextContent('10:00');
+      expect(screen.getByTestId('account-delete-confirm')).toBeEnabled();
+      expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBe(original);
+    });
+
+    it('closes with Escape without deleting anything', async () => {
+      const user$ = userEvent.setup();
+      renderPage();
+
+      await openDialog(user$);
+      await user$.keyboard('{Escape}');
+
+      await waitFor(() =>
+        expect(screen.queryByTestId('account-delete-dialog')).not.toBeInTheDocument(),
+      );
+      expect(meApi.deleteAccount).not.toHaveBeenCalled();
+    });
+
+    it('is not offered to admin accounts', async () => {
+      vi.mocked(meApi.getMe).mockResolvedValue(ok({ ...user, role: 'ADMIN' }));
+      renderPage();
+
+      expect(await screen.findByDisplayValue('Nguyễn Thu Lan')).toBeInTheDocument();
+      expect(screen.queryByTestId('account-delete-section')).not.toBeInTheDocument();
     });
   });
 });

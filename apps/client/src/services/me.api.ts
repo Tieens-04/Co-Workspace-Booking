@@ -2,6 +2,7 @@ import { apiClient } from './api';
 import {
   ApiSuccessResponse,
   ChangePasswordRequest,
+  DeleteAccountRequest,
   LoginData,
   SafeUser,
   UpdateProfileRequest,
@@ -27,6 +28,12 @@ export const meApi = {
   /** Revokes every token of this account, the current one included (CWB-77). */
   async logoutAll(): Promise<ApiSuccessResponse<null>> {
     const response = await apiClient.post<ApiSuccessResponse<null>>('/me/logout-all');
+    return response.data;
+  },
+
+  /** Anonymizes this customer account and ends every session (CWB-88). */
+  async deleteAccount(payload: DeleteAccountRequest): Promise<ApiSuccessResponse<null>> {
+    const response = await apiClient.post<ApiSuccessResponse<null>>('/me/deletion', payload);
     return response.data;
   },
 };

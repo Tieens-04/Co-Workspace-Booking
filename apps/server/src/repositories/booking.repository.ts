@@ -49,6 +49,9 @@ export const accountLockedError = (): AppError =>
     403,
   );
 
+export const accountDeletedError = (): AppError =>
+  new AppError('UNAUTHORIZED', 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại', 401);
+
 export const emailNotVerifiedError = (): AppError =>
   new AppError(
     'EMAIL_NOT_VERIFIED',
@@ -464,11 +467,17 @@ export class BookingRepository
       // so one customer's concurrent requests for different rooms serialize on the booking cap.
       if (data.userId) {
         const [account] = await tx.$queryRaw<
-          Array<{ locked_at: Date | null; email_verified_at: Date | null }>
+          Array<{
+            locked_at: Date | null;
+            email_verified_at: Date | null;
+            deleted_at: Date | null;
+          }>
         >(
-          Prisma.sql`SELECT locked_at, email_verified_at FROM users WHERE id = ${data.userId} FOR UPDATE`,
+          Prisma.sql`SELECT locked_at, email_verified_at, deleted_at FROM users WHERE id = ${data.userId} FOR UPDATE`,
         );
         if (!account) throw emailNotVerifiedError();
+        // CWB-88: the account was deleted after this request passed authentication.
+        if (account.deleted_at) throw accountDeletedError();
         // CWB-79: the session check runs before this transaction; re-check under the row lock so
         // a request that passed authentication just before an admin lock cannot still book.
         if (account.locked_at) throw accountLockedError();

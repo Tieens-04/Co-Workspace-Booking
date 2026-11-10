@@ -36,6 +36,7 @@ const fixture = (passwordHash: string, role: Role = Role.CUSTOMER): User => ({
   lockedAt: null,
   lockReason: null,
   emailVerifiedAt: null,
+  deletedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -146,6 +147,22 @@ describe('Register/Login HTTP regressions (mocked repository, real bcrypt/JWT)',
     expect(locked.body.data).toBeUndefined();
     // The admin's reason stays internal.
     expect(JSON.stringify(locked.body)).not.toContain('Spam');
+  });
+
+  it('treats an anonymized (deleted) account like an unknown email at login (CWB-88)', async () => {
+    const missing = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: registration.email, password: registration.password });
+    vi.mocked(userRepository.findByEmail).mockResolvedValue({
+      ...fixture(await hashPassword(registration.password)),
+      deletedAt: new Date('2026-11-10T03:00:00Z'),
+    });
+    const deleted = await request(app)
+      .post('/api/v1/auth/login')
+      .send({ email: registration.email, password: registration.password });
+    expect(deleted.status).toBe(401);
+    expect(deleted.body).toEqual(missing.body);
+    expect(deleted.body.data).toBeUndefined();
   });
 
   it.each(['a'.repeat(72), 'é'.repeat(36)])(

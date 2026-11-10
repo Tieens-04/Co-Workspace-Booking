@@ -73,6 +73,20 @@ export interface ChangePasswordRequest {
   newPassword: string;
 }
 
+/** `POST /me/deletion` (CWB-88): the current password re-confirms the account owner. */
+export interface DeleteAccountRequest {
+  currentPassword: string;
+}
+
+/** Booking listed in the 409 ACCOUNT_HAS_ACTIVE_BOOKINGS details; it must be cancelled first. */
+export interface DeletionBlockingBooking {
+  id: string;
+  bookingCode: string;
+  roomName: string;
+  startTime: string;
+  endTime: string;
+}
+
 export interface VerifyEmailRequest {
   token: string;
 }

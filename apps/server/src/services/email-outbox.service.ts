@@ -45,7 +45,7 @@ const outboxInclude = {
       paymentStatus: true,
       cancellationReason: true,
       room: { select: { name: true } },
-      user: { select: { email: true, fullName: true } },
+      user: { select: { email: true, fullName: true, deletedAt: true } },
     },
   },
   user: {
@@ -54,6 +54,7 @@ const outboxInclude = {
       email: true,
       fullName: true,
       emailVerifiedAt: true,
+      deletedAt: true,
     },
   },
 } satisfies Prisma.EmailOutboxInclude;
@@ -240,10 +241,13 @@ export class EmailOutboxService {
       let skipReason: string | null = null;
       if (row.kind === 'EMAIL_VERIFICATION') {
         if (!row.user?.email) skipReason = 'NO_RECIPIENT';
+        // CWB-88: checked on every attempt, so an admin requeue never mails a deleted account.
+        else if (row.user.deletedAt) skipReason = 'ACCOUNT_DELETED';
         else if (row.user.emailVerifiedAt) skipReason = 'ALREADY_VERIFIED';
         else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
       } else {
         if (!row.booking?.user?.email) skipReason = 'NO_RECIPIENT';
+        else if (row.booking.user.deletedAt) skipReason = 'ACCOUNT_DELETED';
         else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
         else if (
           (row.kind === 'BOOKING_CONFIRMATION' || row.kind === 'BOOKING_RESCHEDULED') &&
