@@ -70,6 +70,9 @@ const ForgotPasswordPage = lazy(() =>
 const ResetPasswordPage = lazy(() =>
   import('./pages/ResetPasswordPage').then((m) => ({ default: m.ResetPasswordPage })),
 );
+const VerifyEmailPage = lazy(() =>
+  import('./pages/VerifyEmailPage').then((m) => ({ default: m.VerifyEmailPage })),
+);
 const AccountPage = lazy(() =>
   import('./pages/AccountPage').then((m) => ({ default: m.AccountPage })),
 );
@@ -114,6 +117,7 @@ export default function App() {
                           </AuthenticatedRoute>
                         }
                       />
+                      <Route path="verify-email" element={<VerifyEmailPage />} />
                       <Route path="*" element={<NotFoundPage />} />
                     </Route>
 

@@ -38,6 +38,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Notice } from './booking/Notice';
 import { DetailList, DetailRow } from './booking/DetailList';
 import { SwapValue } from './motion/SwapValue';
+import { EmailVerificationNotice } from './auth/EmailVerificationNotice';
 
 export interface BookingFormProps {
   roomId: string;
@@ -89,6 +90,10 @@ export const BookingForm: React.FC<BookingFormProps> = ({
   // Presentation only: the picked slot was taken by someone else after it was shown as free
   // (preflight refresh or 409 BOOKING_CONFLICT). Cleared as soon as the selection changes.
   const [slotJustTaken, setSlotJustTaken] = useState<boolean>(false);
+  const [isEmailNotVerified, setIsEmailNotVerified] = useState<boolean>(false);
+  const isUnverified =
+    Boolean(isAuthenticated && auth?.principal && auth.principal.emailVerifiedAt === null) ||
+    (isEmailNotVerified && !auth?.principal?.emailVerifiedAt);
   const [currentMs, setCurrentMs] = useState<number>(() => Date.now());
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -487,7 +492,14 @@ export const BookingForm: React.FC<BookingFormProps> = ({
       const message = err.response?.data?.message;
       const details = err.response?.data?.details;
 
-      if (code === 'ROOM_NOT_AVAILABLE') {
+      if (code === 'EMAIL_NOT_VERIFIED') {
+        setIsEmailNotVerified(true);
+        const msg = message || 'Bạn cần xác thực email trước khi có thể đặt phòng.';
+        setErrors({
+          general: msg,
+        });
+        showToast(msg, 'error');
+      } else if (code === 'ROOM_NOT_AVAILABLE') {
         setIsStaleMaintenance(true);
         const msg = message || 'Phòng vừa được chuyển sang bảo trì, không thể đặt phòng.';
         setErrors({
@@ -581,6 +593,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           titleId="booking-review-heading"
           description="Vui lòng kiểm tra lại toàn bộ thông tin trước khi gửi yêu cầu đặt chỗ."
         />
+
+        {isUnverified && <EmailVerificationNotice className="mb-2" />}
 
         {errors.general && (
           <Notice tone="error" role="alert" data-testid="booking-general-error">
@@ -739,6 +753,8 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           </p>
         }
       />
+
+      {isUnverified && <EmailVerificationNotice className="mb-2" />}
 
       {errors.general && (
         <Notice tone="error" role="alert" data-testid="booking-general-error">

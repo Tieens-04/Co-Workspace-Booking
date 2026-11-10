@@ -87,6 +87,7 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Khách Outbox',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     customerId = customer.id;
@@ -97,6 +98,7 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Admin Outbox',
         role: Role.ADMIN,
+        emailVerifiedAt: new Date(),
       },
     });
     adminId = admin.id;

@@ -21,37 +21,40 @@ export async function seedDemoData(prisma: PrismaClient) {
   // 2. Tạo Users (1 ADMIN, 2 CUSTOMER)
   const admin = await prisma.user.upsert({
     where: { email: DEMO_USER_EMAILS.admin },
-    update: {},
+    update: { emailVerifiedAt: new Date() },
     create: {
       email: DEMO_USER_EMAILS.admin,
       fullName: 'System Admin',
       passwordHash: defaultPasswordHash,
       phoneNumber: '0901234567',
       role: Role.ADMIN,
+      emailVerifiedAt: new Date(),
     },
   });
 
   const customer1 = await prisma.user.upsert({
     where: { email: DEMO_USER_EMAILS.customer1 },
-    update: {},
+    update: { emailVerifiedAt: new Date() },
     create: {
       email: DEMO_USER_EMAILS.customer1,
       fullName: 'Nguyễn Văn A',
       passwordHash: defaultPasswordHash,
       phoneNumber: '0912345678',
       role: Role.CUSTOMER,
+      emailVerifiedAt: new Date(),
     },
   });
 
   const customer2 = await prisma.user.upsert({
     where: { email: DEMO_USER_EMAILS.customer2 },
-    update: {},
+    update: { emailVerifiedAt: new Date() },
     create: {
       email: DEMO_USER_EMAILS.customer2,
       fullName: 'Trần Thị B',
       passwordHash: defaultPasswordHash,
       phoneNumber: '0923456789',
       role: Role.CUSTOMER,
+      emailVerifiedAt: new Date(),
     },
   });
 

@@ -50,6 +50,13 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
      ```
      Nếu có kết quả trả về, thực hiện đổi tên các phòng trùng lặp (ví dụ nối thêm hậu tố phân biệt) trước khi chạy `prisma migrate deploy` để tránh MySQL văng lỗi `ERROR 1062 (23000): Duplicate entry` làm gián đoạn triển khai.
 
+   - **Lưu ý migration CWB-87 (`20261109150000_cwb87_email_verification`):**
+     Migration thêm cột `email_verified_at` vào bảng `users` (mặc định NULL cho tài khoản đăng ký mới) và tự động chạy câu lệnh backfill:
+     ```sql
+     UPDATE `users` SET `email_verified_at` = CURRENT_TIMESTAMP(3);
+     ```
+     để toàn bộ tài khoản legacy hiện có không bị gián đoạn quyền đặt phòng. Đồng thời migration tạo bảng `email_verification_tokens`, bổ sung giá trị `EMAIL_VERIFICATION` vào enum `EmailOutboxKind`, và nới lỏng cột `booking_id` trong `email_outbox` sang nullable cùng khóa ngoại `user_id` liên kết `users(id)`. Không yêu cầu can thiệp thủ công trước khi deploy.
+
 3. **Triển khai:**
 
    ```bash
@@ -64,7 +71,7 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
 4. **Lần triển khai đầu:** export `ADMIN_BOOTSTRAP_*` trong shell rồi tạo admin bằng `docker compose exec -e ADMIN_BOOTSTRAP_EMAIL -e ADMIN_BOOTSTRAP_PASSWORD -e ADMIN_BOOTSTRAP_FULL_NAME server npm run admin:bootstrap` (thư mục làm việc của container đã là `apps/server`, thêm `--workspace` sẽ lỗi `No workspaces found`; `-e TÊN` không kèm giá trị để mật khẩu không nằm trên dòng lệnh) (xem README, CWB-59), sau đó gỡ các biến này.
 5. **Smoke test sau triển khai** (dùng tài khoản thật của môi trường, không dùng dữ liệu demo):
    - `curl -fsS https://<domain>/api/v1/health` → `status: "OK"`, `database: "connected"`.
-   - Đăng ký/đăng nhập customer; đăng nhập admin.
+   - Đăng ký tài khoản customer mới → kiểm tra email kích hoạt → xác thực tài khoản; kiểm tra chặn đặt phòng `403 EMAIL_NOT_VERIFIED` trước khi kích hoạt và cho phép đặt phòng sau khi kích hoạt. Đăng nhập customer cũ (được backfill verified) và đăng nhập admin.
    - Tìm phòng → đặt một slot hợp lệ (nhận mã `CS-YYYYMMDD-XXXX`) → hủy khi còn ≥ 1 giờ.
    - Admin: tạo booking khách vãng lai, xác nhận thanh toán (CASH/QR), check-in/hoàn tất theo quy tắc thời gian.
    - Admin: upload ảnh phòng (≤ 5MB) qua Nginx.

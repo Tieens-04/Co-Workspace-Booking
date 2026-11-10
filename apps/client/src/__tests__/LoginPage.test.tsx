@@ -105,6 +105,7 @@ describe('LoginPage', () => {
           fullName: 'Customer User',
           phoneNumber: null,
           role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
         },
       },
     });
@@ -138,6 +139,7 @@ describe('LoginPage', () => {
           fullName: 'System Administrator',
           phoneNumber: null,
           role: 'ADMIN',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
         },
       },
     });
@@ -171,6 +173,7 @@ describe('LoginPage', () => {
           fullName: 'Storage User',
           phoneNumber: null,
           role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
         },
       },
     });
@@ -308,6 +311,7 @@ describe('LoginPage', () => {
           fullName: 'U',
           phoneNumber: null,
           role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
         },
       },
     });
@@ -343,6 +347,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -378,6 +383,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -414,6 +420,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -449,6 +456,7 @@ describe('LoginPage', () => {
             fullName: 'System Administrator',
             phoneNumber: null,
             role: 'ADMIN',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -484,6 +492,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -519,6 +528,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -554,6 +564,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });

@@ -80,6 +80,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
         fullName: 'Khách Hàng Thật',
         phoneNumber: '0901112222',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUserId = user.id;
@@ -93,6 +94,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
         fullName: 'Admin Quản Trị',
         phoneNumber: '0909998888',
         role: Role.ADMIN,
+        emailVerifiedAt: new Date(),
       },
     });
     adminUserId = admin.id;

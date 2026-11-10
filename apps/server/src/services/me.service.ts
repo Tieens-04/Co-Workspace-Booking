@@ -13,6 +13,7 @@ const toSafeUser = (user: User): SafeUser => ({
   fullName: user.fullName,
   phoneNumber: user.phoneNumber,
   role: user.role,
+  emailVerifiedAt: user.emailVerifiedAt,
 });
 
 // A valid token whose account no longer exists is treated as an invalid session.

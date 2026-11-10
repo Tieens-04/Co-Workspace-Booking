@@ -32,6 +32,7 @@ export class TestAccounts {
       email: `test_account_${id}@example.com`,
       passwordHash: '!integration-test-account',
       fullName: `Integration ${role}`,
+      emailVerifiedAt: new Date(),
     }));
     this.pending.clear();
     if (rows.length === 0) return;

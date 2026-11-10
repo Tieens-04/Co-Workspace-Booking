@@ -74,6 +74,7 @@ describe('Auth & RBAC Middleware', () => {
           tokenVersion: 0,
           lockedAt: null,
           lockReason: null,
+          emailVerifiedAt: new Date(),
           createdAt: new Date(),
           updatedAt: new Date(),
         });

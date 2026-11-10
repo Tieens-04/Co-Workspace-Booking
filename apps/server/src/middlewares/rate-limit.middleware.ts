@@ -98,6 +98,31 @@ export const resetPasswordRateLimiter = rateLimit({
   ),
 });
 
+/** Failed verify attempts (invalid/expired token): 10 per IP per 15 minutes. */
+export const verifyEmailRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => getClientRateLimitKey(req),
+  handler: tooManyAttempts(
+    'Quá nhiều lần xác thực email không thành công. Vui lòng thử lại sau.',
+  ),
+});
+
+/** Resend verification email: 5 requests per user per 15 minutes. Keyed by verified user id. */
+export const resendVerificationRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => `user:${req.user?.sub ?? getClientRateLimitKey(req)}`,
+  handler: tooManyAttempts(
+    'Quá nhiều yêu cầu gửi lại email xác thực. Vui lòng thử lại sau 15 phút.',
+  ),
+});
+
 /**
  * CWB-78: account creation is free, so every POST /auth/register request counts:
  * 10 per IP per hour. Placed before validation so malformed scripted requests count too.

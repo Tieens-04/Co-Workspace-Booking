@@ -7,6 +7,10 @@ import {
   notificationService as defaultNotificationService,
   NotificationService,
 } from './notification.service.js';
+import {
+  emailVerificationRepository,
+  VERIFICATION_TOKEN_TTL_MINUTES,
+} from '../repositories/email-verification.repository.js';
 
 /** Attempts before a message is parked as FAILED; an admin can requeue it. */
 export const EMAIL_MAX_ATTEMPTS = 5;
@@ -44,6 +48,14 @@ const outboxInclude = {
       user: { select: { email: true, fullName: true } },
     },
   },
+  user: {
+    select: {
+      id: true,
+      email: true,
+      fullName: true,
+      emailVerifiedAt: true,
+    },
+  },
 } satisfies Prisma.EmailOutboxInclude;
 
 type OutboxRecord = Prisma.EmailOutboxGetPayload<{ include: typeof outboxInclude }>;
@@ -59,7 +71,7 @@ const toDto = (row: OutboxRecord) => ({
   id: row.id,
   kind: row.kind,
   bookingId: row.bookingId,
-  bookingCode: row.booking.bookingCode,
+  bookingCode: row.booking?.bookingCode ?? null,
   status: row.status,
   attempts: row.attempts,
   lastError: row.lastError,
@@ -113,8 +125,35 @@ export class EmailOutboxService {
     await this.db.emailOutbox.updateMany({ where: { id, status: 'QUEUED' }, data });
   }
 
+  private async deliverVerification(
+    userId: string,
+    now: Date,
+  ): Promise<{ status: 'DELIVERED' } | { status: 'FAILED' } | { status: 'SKIPPED'; reason: string }> {
+    const issueResult = await emailVerificationRepository.issueToken(userId, now);
+    if (issueResult.status === 'ALREADY_VERIFIED') {
+      return { status: 'SKIPPED', reason: 'ALREADY_VERIFIED' };
+    }
+    if (issueResult.status === 'USER_NOT_FOUND') {
+      return { status: 'SKIPPED', reason: 'NO_RECIPIENT' };
+    }
+
+    const verifyUrl = `${ENV.CLIENT_URL.replace(/\/+$/, '')}/verify-email?token=${issueResult.token}`;
+    const sent = await this.notification
+      .sendEmailVerification({
+        recipientEmail: issueResult.recipientEmail,
+        customerName: issueResult.customerName,
+        verifyUrl,
+        expiresInMinutes: VERIFICATION_TOKEN_TTL_MINUTES,
+        reference: issueResult.userId,
+      })
+      .catch(() => false);
+
+    return sent ? { status: 'DELIVERED' } : { status: 'FAILED' };
+  }
+
   private async deliver(row: OutboxRecord): Promise<boolean> {
     const { booking } = row;
+    if (!booking) return false;
     const base = {
       recipientEmail: booking.user!.email,
       customerName: booking.user!.fullName,
@@ -145,6 +184,8 @@ export class EmailOutboxService {
           ...base,
           reason: booking.cancellationReason,
         });
+      case 'EMAIL_VERIFICATION':
+        throw new Error('EMAIL_VERIFICATION delivered via deliverVerification');
       default: {
         const _exhaustive: never = row.kind;
         throw new Error(`Unhandled outbox kind: ${_exhaustive}`);
@@ -197,28 +238,47 @@ export class EmailOutboxService {
     });
     for (const row of rows) {
       let skipReason: string | null = null;
-      if (!row.booking.user?.email) skipReason = 'NO_RECIPIENT';
-      else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
-      else if (
-        (row.kind === 'BOOKING_CONFIRMATION' || row.kind === 'BOOKING_RESCHEDULED') &&
-        row.booking.status === BookingStatus.CANCELLED
-      ) {
-        skipReason = 'BOOKING_CANCELLED';
-      } else if (row.kind === 'BOOKING_REMINDER') {
-        // Checked on every attempt, including admin retries: a reminder only goes out for a
-        // booking that is still CONFIRMED and has not started yet.
-        if (row.booking.status === BookingStatus.CANCELLED) skipReason = 'BOOKING_CANCELLED';
-        else if (row.booking.status !== BookingStatus.CONFIRMED) skipReason = 'BOOKING_NOT_ACTIVE';
-        else if (row.booking.startTime.getTime() <= now.getTime()) skipReason = 'REMINDER_EXPIRED';
+      if (row.kind === 'EMAIL_VERIFICATION') {
+        if (!row.user?.email) skipReason = 'NO_RECIPIENT';
+        else if (row.user.emailVerifiedAt) skipReason = 'ALREADY_VERIFIED';
+        else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
+      } else {
+        if (!row.booking?.user?.email) skipReason = 'NO_RECIPIENT';
+        else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
+        else if (
+          (row.kind === 'BOOKING_CONFIRMATION' || row.kind === 'BOOKING_RESCHEDULED') &&
+          row.booking.status === BookingStatus.CANCELLED
+        ) {
+          skipReason = 'BOOKING_CANCELLED';
+        } else if (row.kind === 'BOOKING_REMINDER') {
+          // Checked on every attempt, including admin retries: a reminder only goes out for a
+          // booking that is still CONFIRMED and has not started yet.
+          if (row.booking.status === BookingStatus.CANCELLED) skipReason = 'BOOKING_CANCELLED';
+          else if (row.booking.status !== BookingStatus.CONFIRMED) skipReason = 'BOOKING_NOT_ACTIVE';
+          else if (row.booking.startTime.getTime() <= now.getTime()) skipReason = 'REMINDER_EXPIRED';
+        }
       }
+
       if (skipReason) {
         await this.finish(row.id, { status: 'SKIPPED', lastError: skipReason });
         result.skipped++;
         continue;
       }
 
-      // NotificationService logs a sanitized failure code (never the address or credentials).
-      const delivered = await this.deliver(row).catch(() => false);
+      let delivered = false;
+      if (row.kind === 'EMAIL_VERIFICATION') {
+        const deliverResult = await this.deliverVerification(row.userId!, now);
+        if (deliverResult.status === 'SKIPPED') {
+          await this.finish(row.id, { status: 'SKIPPED', lastError: deliverResult.reason });
+          result.skipped++;
+          continue;
+        }
+        delivered = deliverResult.status === 'DELIVERED';
+      } else {
+        // NotificationService logs a sanitized failure code (never the address or credentials).
+        delivered = await this.deliver(row).catch(() => false);
+      }
+
       if (delivered) {
         await this.finish(row.id, { status: 'SENT', sentAt: new Date(), lastError: null });
         result.sent++;

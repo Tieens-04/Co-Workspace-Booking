@@ -2,12 +2,39 @@ import { Request, Response, NextFunction } from 'express';
 import { authService, AuthService } from '../services/auth.service.js';
 import { sendSuccess } from '../utils/response.util.js';
 import { passwordResetService, PasswordResetService } from '../services/password-reset.service.js';
+import {
+  emailVerificationService,
+  EmailVerificationService,
+} from '../services/email-verification.service.js';
 
 export class AuthController {
   constructor(
     private readonly service: AuthService = authService,
     private readonly resetService: PasswordResetService = passwordResetService,
+    private readonly verificationService: EmailVerificationService = emailVerificationService,
   ) {}
+
+  verifyEmail = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await this.verificationService.verifyEmail(req.body.token);
+      return sendSuccess(res, null, 'Xác thực email thành công. Bạn đã có thể đặt phòng.');
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  resendVerification = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await this.verificationService.resendVerification(req.user!.sub);
+      return sendSuccess(
+        res,
+        null,
+        'Nếu tài khoản chưa xác thực, email xác thực mới đã được gửi. Vui lòng kiểm tra hộp thư.',
+      );
+    } catch (err) {
+      return next(err);
+    }
+  };
 
   forgotPassword = (req: Request, res: Response) => {
     // Same response whether or not the email exists (no account enumeration).

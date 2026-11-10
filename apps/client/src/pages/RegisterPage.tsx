@@ -76,7 +76,8 @@ export const RegisterPage: React.FC = () => {
       navigate('/login', {
         state: {
           email: sanitizedEmail,
-          successMessage: 'Đăng ký tài khoản thành công! Vui lòng đăng nhập.',
+          successMessage:
+            'Đăng ký tài khoản thành công! Bạn có thể đăng nhập ngay để xem phòng; vui lòng kiểm tra hộp thư để xác thực email trước khi đặt phòng.',
         },
       });
     } catch (err: unknown) {

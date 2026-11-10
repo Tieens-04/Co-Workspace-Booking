@@ -25,11 +25,13 @@ const STATUS_LABELS: Record<EmailOutboxStatus, string> = {
   FAILED: 'Gửi thất bại',
   SKIPPED: 'Bỏ qua',
 };
-const KIND_LABELS = {
+const KIND_LABELS: Record<string, string> = {
   BOOKING_CONFIRMATION: 'Xác nhận đặt phòng',
   BOOKING_CANCELLATION: 'Thông báo hủy',
   BOOKING_REMINDER: 'Nhắc lịch',
-} as const;
+  BOOKING_RESCHEDULED: 'Đổi lịch',
+  EMAIL_VERIFICATION: 'Xác thực tài khoản',
+};
 const REASON_LABELS: Record<string, string> = {
   SMTP_ERROR: 'Lỗi máy chủ email',
   SMTP_DISABLED: 'Chưa cấu hình SMTP',
@@ -37,6 +39,7 @@ const REASON_LABELS: Record<string, string> = {
   BOOKING_CANCELLED: 'Đơn đã hủy trước khi gửi',
   BOOKING_NOT_ACTIVE: 'Đơn không còn ở trạng thái đã xác nhận',
   REMINDER_EXPIRED: 'Đã qua giờ bắt đầu',
+  ALREADY_VERIFIED: 'Tài khoản đã xác thực',
 };
 const STATUS_VARIANT: Record<
   EmailOutboxStatus,
@@ -90,7 +93,7 @@ export const AdminEmailsPage: React.FC = () => {
     setRetryingId(item.id);
     try {
       await adminEmailOutboxApi.retry(item.id);
-      showToast(`Đã đưa email ${item.bookingCode} vào hàng đợi gửi lại`, 'success');
+      showToast(`Đã đưa email ${item.bookingCode ?? 'xác thực'} vào hàng đợi gửi lại`, 'success');
       await load();
     } catch (err) {
       showToast(errorMessage(err, 'Không thể gửi lại email.'), 'error');
@@ -157,7 +160,8 @@ export const AdminEmailsPage: React.FC = () => {
               >
                 <div className="min-w-0 flex-1">
                   <p className="font-medium">
-                    {KIND_LABELS[item.kind]} · {item.bookingCode}
+                    {KIND_LABELS[item.kind] ?? item.kind}
+                    {item.bookingCode ? ` · ${item.bookingCode}` : ''}
                   </p>
                   <p className="text-sm text-muted-foreground">
                     Tạo lúc {formatAuditTime(item.createdAt)} · {item.attempts} lần thử
@@ -173,7 +177,7 @@ export const AdminEmailsPage: React.FC = () => {
                     size="sm"
                     onClick={() => void retry(item)}
                     disabled={retryingId !== null}
-                    aria-label={`Gửi lại email ${item.bookingCode}`}
+                    aria-label={`Gửi lại email ${item.bookingCode ?? 'xác thực'}`}
                     data-testid={`email-retry-${item.id}`}
                   >
                     {retryingId === item.id ? (

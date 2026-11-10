@@ -57,6 +57,7 @@ describe.each([
         fullName: 'Lead time test',
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         role,
+        emailVerifiedAt: new Date(),
       },
     });
     await prisma.room.createMany({

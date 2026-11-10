@@ -27,6 +27,7 @@ const TestAuthConsumer = () => {
             fullName: 'New User',
             phoneNumber: null,
             role: 'CUSTOMER',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           })
         }
       >

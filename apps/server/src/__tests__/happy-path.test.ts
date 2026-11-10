@@ -11,7 +11,17 @@ import { BookingResponseDto } from '../types/booking.type.js';
 import { AdminBookingResponseDto } from '../types/admin-booking.type.js';
 
 // Prevent real DB access during unit tests
-vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
+const fakeTx = {
+  emailOutbox: {
+    create: vi.fn().mockResolvedValue({ id: 'mock-outbox-id' }),
+  },
+};
+vi.mock('../utils/prisma.util.js', () => {
+  const fakePrisma = {
+    $transaction: vi.fn(async (cb: (tx: any) => Promise<any>) => cb(fakeTx)),
+  };
+  return { default: fakePrisma, prisma: fakePrisma };
+});
 
 // Helper to convert internal record to customer DTO
 function toCustomerDto(record: any): BookingResponseDto {
@@ -84,6 +94,7 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
       phoneNumber: '0901234567',
       role: Role.ADMIN,
       passwordHash: adminPasswordHash,
+      emailVerifiedAt: new Date(),
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -102,6 +113,7 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
         phoneNumber: data.phoneNumber || null,
         role: data.role || Role.CUSTOMER,
         passwordHash: data.passwordHash,
+        emailVerifiedAt: new Date(),
         createdAt: new Date(),
         updatedAt: new Date(),
       };

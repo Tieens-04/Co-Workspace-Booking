@@ -12,3 +12,14 @@ export async function enqueueBookingEmail(
 ): Promise<void> {
   await tx.emailOutbox.createMany({ data: [{ kind, bookingId }], skipDuplicates: true });
 }
+
+/**
+ * Queues an account-level email (such as EMAIL_VERIFICATION) inside the caller's transaction.
+ */
+export async function enqueueAccountEmail(
+  tx: Prisma.TransactionClient,
+  kind: EmailOutboxKind,
+  userId: string,
+): Promise<void> {
+  await tx.emailOutbox.create({ data: { kind, userId } });
+}

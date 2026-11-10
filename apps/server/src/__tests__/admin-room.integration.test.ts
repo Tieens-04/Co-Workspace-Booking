@@ -29,6 +29,7 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Test Booking Customer',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUserId = user.id;

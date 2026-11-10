@@ -31,6 +31,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Customer One',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUser1Id = user1.id;
@@ -43,6 +44,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Customer Two',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUser2Id = user2.id;

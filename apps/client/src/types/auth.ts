@@ -6,6 +6,7 @@ export interface SafeUser {
   fullName: string;
   phoneNumber: string | null;
   role: Role;
+  emailVerifiedAt: string | null;
 }
 
 export interface AuthPrincipal {
@@ -13,6 +14,7 @@ export interface AuthPrincipal {
   role: Role;
   email?: string;
   fullName?: string;
+  emailVerifiedAt?: string | null;
 }
 
 export interface JwtPayload {
@@ -69,4 +71,8 @@ export interface UpdateProfileRequest {
 export interface ChangePasswordRequest {
   currentPassword: string;
   newPassword: string;
+}
+
+export interface VerifyEmailRequest {
+  token: string;
 }

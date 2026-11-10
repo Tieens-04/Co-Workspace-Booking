@@ -35,5 +35,15 @@ export const resetPasswordSchema = z
   })
   .strict();
 
+export const verifyEmailSchema = z
+  .object({
+    token: z.string().regex(/^[A-Za-z0-9_-]{43}$/, 'Liên kết xác thực không hợp lệ'),
+  })
+  .strict();
+
+export const resendVerificationSchema = z.object({}).strict();
+
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+export type ResendVerificationInput = z.infer<typeof resendVerificationSchema>;
