@@ -28,6 +28,20 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
 - Khi nhận `SIGTERM`/`SIGINT`: readiness chuyển 503 → ngừng nhận kết nối mới (đóng keep-alive rảnh) → chờ request đang xử lý → chờ tác vụ nền đã đăng ký (email xác nhận/hủy) → `prisma.$disconnect()`. Toàn bộ dùng chung hạn `SHUTDOWN_TIMEOUT_MS` (mặc định 20000, giới hạn 1000–120000); quá hạn thì đóng kết nối còn lại và thoát mã 1.
 - Compose chạy `exec node dist/server.js` để Node là PID 1 và nhận được tín hiệu; `stop_grace_period: 30s` phải lớn hơn `SHUTDOWN_TIMEOUT_MS`.
 
+### Log HTTP request (CWB-90)
+
+Định dạng chọn theo `NODE_ENV` (không thêm biến môi trường mới):
+
+| `NODE_ENV` | Định dạng |
+| --- | --- |
+| `development` | Dòng ngắn dễ đọc: `GET /api/v1/rooms 200 12.345 ms - 512` (không mã màu) |
+| `production` (và mọi giá trị khác) | Một object JSON mỗi dòng trên stdout: `{"time":"<ISO 8601 UTC>","method":"GET","path":"/api/v1/rooms","status":200,"durationMs":12.345,"bytes":512,"ip":"203.0.113.7"}` |
+| `test` | Tắt log request |
+
+- Chỉ ghi các trường trên: **không** ghi query string, header (`Authorization`, cookie), body (token đặt lại mật khẩu/xác thực email gửi trong body) hay user agent. Segment đường dẫn dạng chuỗi mờ dài ≥ 24 ký tự (không phải UUID) được thay bằng `:redacted`.
+- `ip` là `req.ip`, nên phụ thuộc `TRUST_PROXY` (sau nginx của Compose là IP thật của khách).
+- Xem log: `docker compose logs -f server | grep '^{'`; lọc lỗi 5xx: `docker compose logs server | grep '^{' | jq -c 'select(.status >= 500)'`.
+
 ## 3. Quy trình phát hành
 
 1. **Điều kiện:** PR đã merge với CI xanh (`quality`, `browser-e2e`, `docker-build`, `secret-scan`). Ghi lại commit SHA sẽ triển khai.
