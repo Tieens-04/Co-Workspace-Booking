@@ -1,5 +1,6 @@
 import dotenv from 'dotenv';
 import { smtpConfigFromEnv } from './smtp.config.js';
+import { parsePaymentConfig, type PaymentAccount } from './payment.config.js';
 dotenv.config();
 
 const rawTrustProxy = process.env.TRUST_PROXY;
@@ -105,4 +106,6 @@ export const ENV = {
   CLOUDINARY_API_KEY: cloudinaryApiKey,
   CLOUDINARY_API_SECRET: cloudinaryApiSecret,
   SMTP: smtpConfigFromEnv(process.env),
+  // CWB-89: receiving bank account for transfer instructions (null = counter payment only).
+  PAYMENT: parsePaymentConfig(process.env) as PaymentAccount | null,
 };

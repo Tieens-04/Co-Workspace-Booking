@@ -6,7 +6,7 @@ import { bookingApi } from '../services/booking.api';
 import { BookingResult } from '../types/booking';
 import { formatCurrency } from '../utils/format';
 import { getCancellationActorLabel, getPaymentMethodLabel } from '../utils/status';
-import { ArrowLeft, Banknote, LoaderCircle, RotateCw, SearchX } from 'lucide-react';
+import { ArrowLeft, LoaderCircle, RotateCw, SearchX } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -27,6 +27,7 @@ import { DetailList, DetailRow } from '../components/booking/DetailList';
 import { BookingTimeRange } from '../components/booking/BookingTimeRange';
 import { formatVietnamDateTime } from '../components/booking/formatBookingTime';
 import { StatusBadge } from '../components/common/StatusBadge';
+import { PaymentInstructions } from '../components/booking/PaymentInstructions';
 
 const UUID_REGEX = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
@@ -495,6 +496,13 @@ export const BookingDetailPage: React.FC = () => {
                       {getPaymentMethodLabel(effectiveBooking.paymentMethod)}
                     </span>
                   </DetailRow>
+                  {effectiveBooking.paymentStatus === 'PAID' && effectiveBooking.paidAt && (
+                    <DetailRow label="Thời điểm thanh toán">
+                      <span className="tabular-nums" data-testid="payment-paid-at-value">
+                        {formatVietnamDateTime(effectiveBooking.paidAt)}
+                      </span>
+                    </DetailRow>
+                  )}
                   {effectiveBooking.refundedAmount &&
                     Number(effectiveBooking.refundedAmount) > 0 && (
                       <DetailRow label="Số tiền đã hoàn">
@@ -514,13 +522,7 @@ export const BookingDetailPage: React.FC = () => {
                     </span>
                   </DetailRow>
                 </DetailList>
-                {effectiveBooking.status === 'CONFIRMED' &&
-                  effectiveBooking.paymentStatus === 'UNPAID' && (
-                    <p className="flex items-start gap-2 text-sm text-muted-foreground">
-                      <Banknote aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
-                      Xuất trình mã đặt phòng và thanh toán tại quầy khi đến nhận phòng.
-                    </p>
-                  )}
+                <PaymentInstructions booking={effectiveBooking} />
               </section>
 
               {effectiveBooking.status === 'CONFIRMED' && (

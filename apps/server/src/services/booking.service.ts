@@ -22,6 +22,8 @@ import { validateBookingTime } from '../utils/booking-time.util.js';
 import { generateBookingCode } from '../utils/booking-code.util.js';
 import { AppError } from '../utils/error.util.js';
 import { emailOutboxService, EmailOutboxService } from './email-outbox.service.js';
+import { ENV } from '../config/env.config.js';
+import { paymentInstructionsFor } from '../utils/payment-instructions.util.js';
 
 export const MAX_CODE_RETRIES = 5;
 
@@ -40,7 +42,8 @@ export class BookingService {
     const idempotency = idempotencyKey
       ? { scope: `user:${userId}`, key: idempotencyKey, hash: hashBookingIntent(input) }
       : undefined;
-    return this.createBookingInternal({ userId }, input, now, idempotency);
+    const booking = await this.createBookingInternal({ userId }, input, now, idempotency);
+    return { ...booking, paymentInstructions: paymentInstructionsFor(booking, ENV.PAYMENT) };
   }
 
   async createGuestBooking(
@@ -163,7 +166,7 @@ export class BookingService {
     if (!booking) {
       throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
     }
-    return booking;
+    return { ...booking, paymentInstructions: paymentInstructionsFor(booking, ENV.PAYMENT) };
   }
 
   async cancelBooking(

@@ -171,6 +171,7 @@ function toBookingResponse(
     status: booking.status,
     paymentStatus: booking.paymentStatus,
     paymentMethod: booking.paymentMethod,
+    paidAt: booking.paidAt,
   };
 }
 
@@ -203,6 +204,7 @@ export const bookingReadSelect = {
   status: true,
   paymentStatus: true,
   paymentMethod: true,
+  paidAt: true,
   cancellationReason: true,
   cancelledAt: true,
   cancelledBy: true,
@@ -240,6 +242,7 @@ export function mapBookingRecordToDto(record: BookingReadRecord): BookingRespons
     status: record.status,
     paymentStatus: record.paymentStatus,
     paymentMethod: record.paymentMethod,
+    paidAt: record.paidAt,
     cancellationReason: record.cancellationReason ?? null,
     cancelledAt: record.cancelledAt ?? null,
     cancelledBy: record.cancelledBy ?? null,
@@ -1080,9 +1083,10 @@ export class BookingRepository
           status: BookingStatus;
           payment_status: PaymentStatus;
           payment_method: PaymentMethod | null;
+          user_id: string | null;
         }>
       >(
-        Prisma.sql`SELECT id, status, payment_status, payment_method FROM bookings WHERE id = ${id} FOR UPDATE`,
+        Prisma.sql`SELECT id, status, payment_status, payment_method, user_id FROM bookings WHERE id = ${id} FOR UPDATE`,
       );
 
       if (!rows || rows.length === 0) {
@@ -1121,10 +1125,16 @@ export class BookingRepository
         data: {
           paymentStatus: PaymentStatus.PAID,
           paymentMethod,
+          paidAt: new Date(),
         },
         select: adminBookingReadSelect,
       });
       await auditBookingChange(tx, actor, 'BOOKING_PAYMENT_CONFIRMED', id, auditBefore, updated);
+      // CWB-89: receipt email for registered customers (guests have no email), committed with the
+      // payment; SMTP failures only retry the email and never touch the payment.
+      if (lockedBooking.user_id) {
+        await enqueueBookingEmail(tx, 'PAYMENT_RECEIPT', id);
+      }
 
       return mapAdminBookingRecordToDto(updated);
     });
