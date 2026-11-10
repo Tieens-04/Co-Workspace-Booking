@@ -75,6 +75,8 @@ model User {
   lockReason   String?   @map("lock_reason") @db.VarChar(500)
   // CWB-87: timestamp of email verification (null = unverified; new registrations remain null).
   emailVerifiedAt DateTime? @map("email_verified_at")
+  // CWB-88: set when the customer deleted the account; personal data is anonymized, bookings kept.
+  deletedAt    DateTime? @map("deleted_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 

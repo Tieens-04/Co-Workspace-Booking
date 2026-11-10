@@ -1,11 +1,15 @@
-import { User } from '@prisma/client';
+import { Role, User } from '@prisma/client';
 import { ENV } from '../config/env.config.js';
 import { AppError } from '../utils/error.util.js';
 import { comparePassword, hashPassword } from '../utils/password.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { UserRepository, userRepository } from '../repositories/user.repository.js';
 import type { LoginResult, SafeUser } from './auth.service.js';
-import type { ChangePasswordInput, UpdateMeInput } from '../validators/me.validator.js';
+import type {
+  ChangePasswordInput,
+  DeleteAccountInput,
+  UpdateMeInput,
+} from '../validators/me.validator.js';
 
 const toSafeUser = (user: User): SafeUser => ({
   id: user.id,
@@ -74,6 +78,39 @@ export class MeService {
   async logoutAll(userId: string): Promise<void> {
     const revoked = await this.userRepo.revokeSessions(userId);
     if (!revoked) throw sessionGone();
+  }
+
+  /**
+   * CWB-88 (Decree 13/2023 erasure request): re-confirms the password, then anonymizes the
+   * account. Blocked with 409 while a CONFIRMED booking is upcoming or running. Admin accounts are
+   * managed separately and cannot be deleted here.
+   */
+  async deleteAccount(userId: string, input: DeleteAccountInput, now = new Date()): Promise<void> {
+    const user = await this.userRepo.findById(userId);
+    if (!user || user.deletedAt) throw sessionGone();
+    if (user.role !== Role.CUSTOMER) {
+      throw new AppError(
+        'ACCOUNT_DELETION_FORBIDDEN',
+        'Tài khoản quản trị không thể tự xóa. Vui lòng liên hệ quản trị hệ thống.',
+        403,
+      );
+    }
+
+    const matches = await comparePassword(input.currentPassword, user.passwordHash);
+    if (!matches) {
+      throw new AppError('INVALID_CURRENT_PASSWORD', 'Mật khẩu hiện tại không chính xác', 400);
+    }
+
+    const result = await this.userRepo.anonymizeAccount(userId, now);
+    if (result.status === 'NOT_FOUND') throw sessionGone();
+    if (result.status === 'HAS_ACTIVE_BOOKINGS') {
+      throw new AppError(
+        'ACCOUNT_HAS_ACTIVE_BOOKINGS',
+        'Bạn còn lịch đặt phòng chưa kết thúc. Vui lòng hủy các lịch này trước khi xóa tài khoản.',
+        409,
+        { bookings: result.bookings },
+      );
+    }
   }
 }
 

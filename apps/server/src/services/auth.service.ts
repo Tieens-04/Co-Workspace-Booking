@@ -90,7 +90,8 @@ export class AuthService {
     const normalizedEmail = dto.email.trim().toLowerCase();
 
     const user = await this.userRepo.findByEmail(normalizedEmail);
-    if (!user) {
+    // CWB-88: an anonymized account behaves exactly like an unknown email.
+    if (!user || user.deletedAt) {
       await compareDummyPassword(dto.password);
       throw new AppError('INVALID_CREDENTIALS', 'Email hoặc mật khẩu không chính xác', 401);
     }

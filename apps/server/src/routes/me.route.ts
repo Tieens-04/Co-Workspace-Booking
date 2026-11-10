@@ -4,6 +4,7 @@ import { validateBody, validateQuery } from '../middlewares/validate.middleware.
 import { changePasswordRateLimiter } from '../middlewares/rate-limit.middleware.js';
 import {
   changePasswordBodySchema,
+  deleteAccountBodySchema,
   logoutAllBodySchema,
   meQuerySchema,
   updateMeBodySchema,
@@ -32,6 +33,14 @@ router.post(
   validateQuery(meQuerySchema),
   validateBody(logoutAllBodySchema),
   meController.logoutAll,
+);
+// CWB-88: anonymizes the account. Shares the per-account wrong-password budget with /password.
+router.post(
+  '/deletion',
+  validateQuery(meQuerySchema),
+  validateBody(deleteAccountBodySchema),
+  changePasswordRateLimiter,
+  meController.deleteAccount,
 );
 
 export default router;

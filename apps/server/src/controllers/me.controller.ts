@@ -40,6 +40,15 @@ export class MeController {
       return next(err);
     }
   };
+
+  deleteAccount = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await this.service.deleteAccount(req.user!.sub, req.body);
+      return sendSuccess(res, null, 'Tài khoản đã được xóa');
+    } catch (err) {
+      return next(err);
+    }
+  };
 }
 
 export const meController = new MeController();

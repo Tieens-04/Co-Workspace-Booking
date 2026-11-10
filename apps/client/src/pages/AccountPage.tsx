@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { CircleAlert, CircleCheck, Loader2, LogOut } from 'lucide-react';
+import { CircleAlert, CircleCheck, Loader2, LogOut, Trash2 } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Field } from '@/components/common/Field';
 import { ErrorState } from '@/components/common/EmptyState';
@@ -21,9 +21,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmailVerificationNotice } from '../components/auth/EmailVerificationNotice';
 import { PasswordInput } from '../components/auth/PasswordInput';
 import { useAuth } from '../hooks/useAuth';
+import { useReturnFocus } from '../hooks/useReturnFocus';
 import { useToast } from '../hooks/useToast';
 import { meApi } from '../services/me.api';
-import { SafeUser } from '../types/auth';
+import { DeletionBlockingBooking, SafeUser } from '../types/auth';
+import { formatVietnamDateTime } from '../components/booking/formatBookingTime';
 import { normalizePhoneNumber, optionalPhoneRule } from '../utils/validation';
 
 type ApiError = {
@@ -32,7 +34,9 @@ type ApiError = {
     data?: {
       code?: string;
       message?: string;
-      details?: Array<{ field?: string; path?: (string | number)[]; message?: string }>;
+      details?:
+        | Array<{ field?: string; path?: (string | number)[]; message?: string }>
+        | { bookings?: DeletionBlockingBooking[] };
     };
   };
 };
@@ -70,6 +74,14 @@ export const AccountPage: React.FC = () => {
   const [isLogoutAllOpen, setIsLogoutAllOpen] = useState(false);
   const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
   const [logoutAllError, setLogoutAllError] = useState<string | null>(null);
+
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [deletePassword, setDeletePassword] = useState('');
+  const [showDeletePassword, setShowDeletePassword] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [blockingBookings, setBlockingBookings] = useState<DeletionBlockingBooking[]>([]);
+  const deleteDialogFocus = useReturnFocus();
 
   const loadProfile = useCallback(() => {
     const controller = new AbortController();
@@ -203,6 +215,41 @@ export const AccountPage: React.FC = () => {
       // A 401 is handled by the interceptor (session already ended); show anything else here.
       setLogoutAllError(errorMessage(err, 'Không thể đăng xuất mọi thiết bị. Vui lòng thử lại.'));
       setIsLoggingOutAll(false);
+    }
+  };
+
+  const handleDeleteOpenChange = (open: boolean) => {
+    if (!open && isDeleting) return;
+    if (open) {
+      setDeleteError(null);
+      setBlockingBookings([]);
+      setDeletePassword('');
+    }
+    setIsDeleteOpen(open);
+  };
+
+  const handleDeleteAccount = async () => {
+    if (isDeleting) return;
+    if (!deletePassword) {
+      setDeleteError('Nhập mật khẩu hiện tại để xác nhận.');
+      return;
+    }
+    setDeleteError(null);
+    setBlockingBookings([]);
+    setIsDeleting(true);
+    try {
+      await meApi.deleteAccount({ currentPassword: deletePassword });
+      // Every token of the account is revoked server-side; end the local session too.
+      showToast('Tài khoản của bạn đã được xóa', 'success');
+      logout('userAction');
+    } catch (err) {
+      const data = (err as ApiError).response?.data;
+      const details = data?.details;
+      if (data?.code === 'ACCOUNT_HAS_ACTIVE_BOOKINGS' && details && !Array.isArray(details)) {
+        setBlockingBookings(details.bookings ?? []);
+      }
+      setDeleteError(errorMessage(err, 'Không thể xóa tài khoản. Vui lòng thử lại.'));
+      setIsDeleting(false);
     }
   };
 
@@ -404,6 +451,98 @@ export const AccountPage: React.FC = () => {
               </AlertDialogContent>
             </AlertDialog>
           </Card>
+
+          {profile.role === 'CUSTOMER' && (
+            <Card
+              className="border-destructive/40 p-5 sm:p-6 lg:col-span-2"
+              data-testid="account-delete-section"
+            >
+              <h2 className="text-lg font-semibold text-destructive">Xóa tài khoản</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Email, họ tên và số điện thoại sẽ bị xóa vĩnh viễn và bạn không thể đăng nhập lại.
+                Lịch sử đặt phòng được giữ ở dạng ẩn danh cho mục đích kế toán. Bạn cần hủy mọi
+                lịch đặt phòng chưa kết thúc trước khi xóa.
+              </p>
+              <Button
+                type="button"
+                variant="destructive"
+                className="mt-4"
+                onClick={() => handleDeleteOpenChange(true)}
+                data-testid="account-delete-btn"
+              >
+                <Trash2 aria-hidden="true" />
+                Xóa tài khoản
+              </Button>
+              <AlertDialog open={isDeleteOpen} onOpenChange={handleDeleteOpenChange}>
+                <AlertDialogContent data-testid="account-delete-dialog" {...deleteDialogFocus}>
+                  <form
+                    noValidate
+                    className="grid gap-4"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      void handleDeleteAccount();
+                    }}
+                  >
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Xóa vĩnh viễn tài khoản?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Thao tác này không thể hoàn tác. Mọi phiên đăng nhập sẽ kết thúc và dữ liệu
+                        cá nhân của bạn bị ẩn danh hóa.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <Field id="account-delete-password" label="Mật khẩu hiện tại">
+                      <PasswordInput
+                        value={deletePassword}
+                        autoComplete="current-password"
+                        visible={showDeletePassword}
+                        onToggleVisible={() => setShowDeletePassword((v) => !v)}
+                        showLabel="Hiện mật khẩu"
+                        hideLabel="Ẩn mật khẩu"
+                        disabled={isDeleting}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                      />
+                    </Field>
+                    {deleteError && (
+                      <Alert variant="destructive" data-testid="account-delete-error">
+                        <CircleAlert aria-hidden="true" />
+                        <AlertDescription>
+                          {deleteError}
+                          {blockingBookings.length > 0 && (
+                            <ul
+                              className="mt-2 list-disc space-y-1 pl-5"
+                              data-testid="account-delete-blocking"
+                            >
+                              {blockingBookings.map((booking) => (
+                                <li key={booking.id}>
+                                  <strong>{booking.bookingCode}</strong> · {booking.roomName} ·{' '}
+                                  {formatVietnamDateTime(booking.startTime)}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <AlertDialogFooter>
+                      <AlertDialogCancel variant="ghost" disabled={isDeleting}>
+                        Hủy
+                      </AlertDialogCancel>
+                      <Button
+                        type="submit"
+                        variant="destructive"
+                        disabled={isDeleting}
+                        aria-busy={isDeleting || undefined}
+                        data-testid="account-delete-confirm"
+                      >
+                        {isDeleting && <Loader2 aria-hidden="true" className="animate-spin" />}
+                        {isDeleting ? 'Đang xóa…' : 'Xóa vĩnh viễn'}
+                      </Button>
+                    </AlertDialogFooter>
+                  </form>
+                </AlertDialogContent>
+              </AlertDialog>
+            </Card>
+          )}
         </div>
         </>
       )}

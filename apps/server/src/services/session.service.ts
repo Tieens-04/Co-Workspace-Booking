@@ -13,7 +13,13 @@ export class SessionService {
   async isTokenCurrent(userId: string, tokenVersion: number): Promise<boolean> {
     const state = await this.userRepo.findSessionState(userId);
     // CWB-79: a locked account has no valid session even if a token slipped past the version bump.
-    return state !== null && state.lockedAt === null && state.tokenVersion === tokenVersion;
+    // CWB-88: an anonymized (deleted) account never has a valid session either.
+    return (
+      state !== null &&
+      state.lockedAt === null &&
+      state.deletedAt === null &&
+      state.tokenVersion === tokenVersion
+    );
   }
 }
 

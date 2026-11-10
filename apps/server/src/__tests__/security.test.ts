@@ -124,6 +124,7 @@ describe('Security Regressions (CWB-33, CWB-37)', () => {
           lockedAt: null,
           lockReason: null,
           emailVerifiedAt: new Date(),
+          deletedAt: null,
           createdAt: new Date(),
           updatedAt: new Date(),
         });
