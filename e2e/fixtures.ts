@@ -45,6 +45,7 @@ export class Scenario {
         fullName: `Browser ${role} ${this.users.length}`,
         passwordHash: await bcrypt.hash(PASSWORD, 10),
         role,
+        emailVerifiedAt: new Date(),
       },
     });
     this.users.push(user);

@@ -29,6 +29,18 @@ export const authApi = {
     return response.data;
   },
 
+  async verifyEmail(token: string): Promise<ApiSuccessResponse<null>> {
+    const response = await apiClient.post<ApiSuccessResponse<null>>('/auth/verify-email', {
+      token,
+    });
+    return response.data;
+  },
+
+  async resendVerification(): Promise<ApiSuccessResponse<null>> {
+    const response = await apiClient.post<ApiSuccessResponse<null>>('/auth/resend-verification', {});
+    return response.data;
+  },
+
   async login(payload: LoginRequest): Promise<ApiSuccessResponse<LoginData>> {
     const response = await apiClient.post<ApiSuccessResponse<LoginData>>('/auth/login', payload);
     return response.data;

@@ -62,6 +62,7 @@ describe('Account self-service /api/v1/me (CWB-63, real MySQL)', () => {
         fullName: user.fullName,
         phoneNumber: '0900000000',
         role,
+        emailVerifiedAt: null,
       });
       expect(JSON.stringify(res.body)).not.toContain('passwordHash');
     },

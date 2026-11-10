@@ -12,7 +12,13 @@ import { ipKeyGenerator } from 'express-rate-limit';
 import { loginRateLimiter, registerRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 // Any accidental persistence access fails: these tests cannot connect to a real DB.
-vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
+vi.mock('../utils/prisma.util.js', () => {
+  const fakeTx = { emailOutbox: { create: vi.fn() } };
+  return {
+    default: { $transaction: (cb: any) => (typeof cb === 'function' ? cb(fakeTx) : Promise.all(cb)) },
+    prisma: { $transaction: (cb: any) => (typeof cb === 'function' ? cb(fakeTx) : Promise.all(cb)) },
+  };
+});
 
 const registration = {
   email: 'customer@example.com',
@@ -29,6 +35,7 @@ const fixture = (passwordHash: string, role: Role = Role.CUSTOMER): User => ({
   tokenVersion: 3,
   lockedAt: null,
   lockReason: null,
+  emailVerifiedAt: null,
   createdAt: new Date(),
   updatedAt: new Date(),
 });
@@ -69,6 +76,7 @@ describe('Register/Login HTTP regressions (mocked repository, real bcrypt/JWT)',
       fullName: 'Customer',
       phoneNumber: null,
       role: 'CUSTOMER',
+      emailVerifiedAt: null,
     });
     const saved = vi.mocked(userRepository.create).mock.calls[0][0];
     expect(saved.passwordHash).not.toBe(registration.password);
@@ -210,6 +218,7 @@ describe('Register/Login HTTP regressions (mocked repository, real bcrypt/JWT)',
       expect.objectContaining({
         phoneNumber: '0912345678',
       }),
+      expect.anything(),
     );
   });
 

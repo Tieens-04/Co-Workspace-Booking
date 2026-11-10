@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { EmailVerificationNotice } from '../components/auth/EmailVerificationNotice';
 import { PasswordInput } from '../components/auth/PasswordInput';
 import { useAuth } from '../hooks/useAuth';
 import { useToast } from '../hooks/useToast';
@@ -231,7 +232,11 @@ export const AccountPage: React.FC = () => {
       )}
 
       {!isLoading && !loadError && profile && (
-        <div className="mt-8 grid gap-6 lg:grid-cols-2">
+        <>
+          {profile.emailVerifiedAt === null && (
+            <EmailVerificationNotice className="mt-8" />
+          )}
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
           <Card className="p-5 sm:p-6">
             <form noValidate onSubmit={handleProfileSubmit} data-testid="account-profile-form">
               <h2 className="text-lg font-semibold">Hồ sơ</h2>
@@ -400,6 +405,7 @@ export const AccountPage: React.FC = () => {
             </AlertDialog>
           </Card>
         </div>
+        </>
       )}
     </div>
   );

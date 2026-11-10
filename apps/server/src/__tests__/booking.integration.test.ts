@@ -43,6 +43,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Customer One',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUserId = user1.id;
@@ -55,6 +56,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Customer Two',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUser2Id = user2.id;

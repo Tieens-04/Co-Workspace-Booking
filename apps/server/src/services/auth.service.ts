@@ -1,9 +1,12 @@
-import { Role, Prisma } from '@prisma/client';
+import { Role, Prisma, PrismaClient } from '@prisma/client';
 import { ENV } from '../config/env.config.js';
+import prisma from '../utils/prisma.util.js';
 import { AppError } from '../utils/error.util.js';
 import { hashPassword, comparePassword, compareDummyPassword } from '../utils/password.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { UserRepository, userRepository } from '../repositories/user.repository.js';
+import { enqueueAccountEmail } from '../repositories/email-outbox.repository.js';
+import { emailOutboxService, EmailOutboxService } from './email-outbox.service.js';
 import { RegisterInput, LoginInput } from '../validators/auth.validator.js';
 
 export interface SafeUser {
@@ -12,6 +15,7 @@ export interface SafeUser {
   fullName: string;
   phoneNumber: string | null;
   role: Role;
+  emailVerifiedAt: Date | null;
 }
 
 export interface LoginResult {
@@ -22,7 +26,14 @@ export interface LoginResult {
 }
 
 export class AuthService {
-  constructor(private readonly userRepo: UserRepository = userRepository) {}
+  constructor(
+    private readonly userRepo: UserRepository = userRepository,
+    private readonly outboxService: EmailOutboxService = emailOutboxService,
+    private readonly outboxRepo: { enqueueAccountEmail: typeof enqueueAccountEmail } = {
+      enqueueAccountEmail,
+    },
+    private readonly db: PrismaClient = prisma,
+  ) {}
 
   async register(dto: RegisterInput): Promise<SafeUser> {
     const normalizedEmail = dto.email.trim().toLowerCase();
@@ -35,13 +46,22 @@ export class AuthService {
     const passwordHash = await hashPassword(dto.password);
 
     try {
-      const createdUser = await this.userRepo.create({
-        email: normalizedEmail,
-        passwordHash,
-        fullName: dto.fullName.trim(),
-        phoneNumber: dto.phoneNumber?.trim() || null,
-        role: Role.CUSTOMER,
+      const createdUser = await this.db.$transaction(async (tx) => {
+        const user = await this.userRepo.create(
+          {
+            email: normalizedEmail,
+            passwordHash,
+            fullName: dto.fullName.trim(),
+            phoneNumber: dto.phoneNumber?.trim() || null,
+            role: Role.CUSTOMER,
+          },
+          tx,
+        );
+        await this.outboxRepo.enqueueAccountEmail(tx, 'EMAIL_VERIFICATION', user.id);
+        return user;
       });
+
+      this.outboxService.kick();
 
       return {
         id: createdUser.id,
@@ -49,6 +69,7 @@ export class AuthService {
         fullName: createdUser.fullName,
         phoneNumber: createdUser.phoneNumber,
         role: createdUser.role,
+        emailVerifiedAt: createdUser.emailVerifiedAt,
       };
     } catch (err) {
       if (
@@ -104,6 +125,7 @@ export class AuthService {
         fullName: user.fullName,
         phoneNumber: user.phoneNumber,
         role: user.role,
+        emailVerifiedAt: user.emailVerifiedAt,
       },
     };
   }

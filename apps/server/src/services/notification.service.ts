@@ -35,6 +35,15 @@ export interface PasswordResetEmailPayload {
   reference: string;
 }
 
+export interface EmailVerificationEmailPayload {
+  recipientEmail: string;
+  customerName: string;
+  verifyUrl: string;
+  expiresInMinutes: number;
+  /** Non-sensitive reference for failure logs (user id). */
+  reference: string;
+}
+
 const escapeHtml = (value: string): string =>
   value.replace(/[&<>"']/g, (character) => {
     switch (character) {
@@ -138,6 +147,48 @@ Nếu bạn không yêu cầu, hãy bỏ qua email này.
       return true;
     } catch (err: unknown) {
       logEmailFailure('password reset', payload.reference, err);
+      return false;
+    }
+  }
+
+  async sendEmailVerification(payload: EmailVerificationEmailPayload): Promise<boolean> {
+    if (!this.transporter) {
+      return false;
+    }
+
+    try {
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #2b6cb0;">Xác thực địa chỉ email</h2>
+          <p>Xin chào <strong>${escapeHtml(payload.customerName)}</strong>,</p>
+          <p>Cảm ơn bạn đã đăng ký tài khoản tại <strong>Co-Space Working</strong>.</p>
+          <p>Vui lòng mở liên kết sau để xác thực email của bạn và kích hoạt tính năng đặt phòng:</p>
+          <p><a href="${escapeHtml(payload.verifyUrl)}" style="color: #2b6cb0; font-weight: bold;">Xác thực email</a> (liên kết dùng một lần, hết hạn sau ${payload.expiresInMinutes} phút).</p>
+          <p>Nếu bạn không đăng ký tài khoản này, vui lòng bỏ qua email.</p>
+          <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;" />
+          <p style="color: #718096; font-size: 12px;">Co-Space Working System</p>
+        </div>
+      `;
+
+      const text = `
+Xác thực địa chỉ email
+Xin chào ${payload.customerName},
+Mở liên kết sau để xác thực email của bạn (dùng một lần, hết hạn sau ${payload.expiresInMinutes} phút):
+${payload.verifyUrl}
+Nếu bạn không đăng ký tài khoản này, vui lòng bỏ qua email.
+      `.trim();
+
+      await this.transporter.sendMail({
+        from: this.config.smtpFrom,
+        to: payload.recipientEmail,
+        subject: '[Co-Space] Xác thực địa chỉ email',
+        text,
+        html,
+      });
+
+      return true;
+    } catch (err: unknown) {
+      logEmailFailure('verification', payload.reference, err);
       return false;
     }
   }

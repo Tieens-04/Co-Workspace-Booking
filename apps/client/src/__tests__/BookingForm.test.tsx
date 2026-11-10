@@ -669,6 +669,46 @@ describe('BookingForm', () => {
       expect(screen.getByText('Đã xảy ra lỗi hệ thống, vui lòng thử lại.')).toBeInTheDocument();
     });
 
+    it('handles 403 EMAIL_NOT_VERIFIED by keeping inputs and showing EmailVerificationNotice', async () => {
+      const user = userEvent.setup();
+      const verificationError = {
+        name: 'AxiosError',
+        response: {
+          status: 403,
+          data: {
+            code: 'EMAIL_NOT_VERIFIED',
+            message: 'Bạn cần xác thực email trước khi có thể đặt phòng.',
+          },
+        },
+      };
+
+      vi.mocked(bookingApi.createBooking).mockRejectedValueOnce(verificationError);
+
+      renderComponent();
+
+      const startInput = screen.getByLabelText(/Thời gian bắt đầu/i);
+      const endInput = screen.getByLabelText(/Thời gian kết thúc/i);
+      const noteInput = screen.getByLabelText(/Ghi chú/i);
+
+      await user.type(startInput, '2026-10-25T10:00');
+      await user.type(endInput, '2026-10-25T12:00');
+      await user.type(noteInput, 'Team meeting note');
+      await user.click(screen.getByTestId('booking-submit-btn'));
+
+      await user.click(screen.getByTestId('booking-confirm-btn'));
+
+      expect(await screen.findByTestId('email-verification-notice')).toBeInTheDocument();
+      expect(
+        screen.getByText('Bạn cần xác thực email trước khi có thể đặt phòng.'),
+      ).toBeInTheDocument();
+
+      // Return to edit phase and verify inputs are intact
+      await user.click(screen.getByTestId('booking-back-btn'));
+      expect(screen.getByLabelText(/Thời gian bắt đầu/i)).toHaveValue('2026-10-25T10:00');
+      expect(screen.getByLabelText(/Thời gian kết thúc/i)).toHaveValue('2026-10-25T12:00');
+      expect(screen.getByLabelText(/Ghi chú/i)).toHaveValue('Team meeting note');
+    });
+
     it('prevents duplicate submission while booking request is in flight', async () => {
       let resolvePromise: (value: any) => void;
       const pendingPromise = new Promise((resolve) => {

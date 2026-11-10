@@ -12,6 +12,7 @@
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `/login`                | Form đăng nhập (Email, mật khẩu, nút ẩn/hiện mật khẩu, liên kết đăng ký).                                                                                                                           | Người dùng đã đăng nhập tự động chuyển về trang đích theo role (`CUSTOMER` → `/`, `ADMIN` → `/admin`). Điền sẵn email và hiển thị thông báo thành công nếu nhận state từ trang Đăng ký. Hỗ trợ quay lại an toàn các đường dẫn (`/rooms/:id`, `/bookings`, `/bookings/:uuid`) nếu có `state.from`. |
 | `/register`             | Form đăng ký tài khoản khách hàng (`fullName`, `email`, `phoneNumber` tùy chọn, `password`, `confirmPassword`, nút ẩn/hiện mật khẩu).                                                               | Người dùng đã đăng nhập tự chuyển về trang đích theo role. Đăng ký thành công → `/login` kèm email điền sẵn và banner thông báo thành công (chưa cấp phiên).                                                                                                                                      |
+| `/verify-email`         | Trang xác thực email (CWB-87): nhận token từ query param `?token=...`, tự động xóa query khỏi URL ngay khi nạp để chống rò rỉ token qua Referer/lịch sử, cung cấp nút "Xác nhận kích hoạt" rõ ràng để gửi yêu cầu tiêu thụ token, ngăn email security scanner/prefetcher tự kích hoạt. | Nằm trong `PublicLayout` ngoài `GuestRoute` để người dùng có thể kích hoạt khi đang hoặc chưa đăng nhập. Xác thực thành công hiển thị nút chuyển đến Đặt phòng hoặc Đăng nhập.                                                                                   |
 | `/`                     | Trang chào công khai: hiển thị trạng thái đăng nhập, nút Đăng xuất, liên kết Quản trị (nếu là `ADMIN`), liên kết Lịch sử đặt phòng (nếu là `CUSTOMER`), và khám phá danh sách phòng làm việc.       | Truy cập công khai cho cả khách vãng lai và người dùng đã đăng nhập.                                                                                                                                                                                                                              |
 | `/admin`                | Trang quản trị phòng làm việc dành cho vai trò `ADMIN`: danh sách phòng phân trang, xem tiện ích/ảnh, form inline tạo và chỉnh sửa phòng dùng chung, quản lý danh sách URL ảnh thủ công.            | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
 | `/admin/bookings`       | Trang quản trị đặt phòng dành cho vai trò `ADMIN`: tra cứu đơn theo mã, lọc theo ngày sử dụng phòng (giờ VN), lọc theo trạng thái (kết hợp logic AND); form đặt phòng trực tiếp cho khách vãng lai. | Khách chưa đăng nhập → chuyển hướng sang `/login` (lưu vị trí `from`). Tài khoản `CUSTOMER` truy cập → hiển thị giao diện **403 - Không có quyền truy cập**, không tự đăng xuất và không chuyển hướng login.                                                                                      |
@@ -88,15 +89,30 @@ Vì ứng dụng sử dụng React Router với HTML5 History API (`BrowserRoute
 - **Đăng ký tài khoản (Customer):** `POST /api/v1/auth/register`
   - Body: `{ email, password, fullName, phoneNumber? }`
   - Mật khẩu tối thiểu 8 ký tự, tối đa 72 UTF-8 bytes. Role luôn là `CUSTOMER`.
+  - Tài khoản mới được khởi tạo ở trạng thái chưa xác thực email (`emailVerifiedAt: null`). Trong cùng database transaction tạo user, hệ thống ghi một sự kiện outbox `EMAIL_VERIFICATION` để gửi email kích hoạt tài khoản kèm token một lần (CWB-87).
   - Rate limit (CWB-78) 10 yêu cầu/IP/1 giờ; mọi yêu cầu đều được tính (kể cả lỗi validation). Vượt ngưỡng trả `429 TOO_MANY_REQUESTS`.
+  - **Quyết định Product & Trade-off (CWB-87 - AC4):** Hệ thống quyết định giữ nguyên phản hồi `409 EMAIL_ALREADY_EXISTS` và chuẩn hóa email (chữ thường, cắt khoảng trắng thừa) khi đăng ký trùng email nhằm bảo toàn tính tương thích API và tối ưu trải nghiệm người dùng (ngay lập tức biết email đã có tài khoản để chuyển sang đăng nhập hoặc khôi phục mật khẩu). Quyết định này chấp nhận việc endpoint đăng ký tiết lộ sự tồn tại của email (không trung tính hóa để chống account enumeration); ngược lại, luồng quên mật khẩu (`POST /api/v1/auth/forgot-password`) và gửi lại email xác thực (`POST /api/v1/auth/resend-verification`) duy trì phản hồi trung tính (generic response) để bảo vệ quyền riêng tư người dùng.
 - **Đăng nhập:** `POST /api/v1/auth/login`
   - Body: `{ email, password }`
   - Password không rỗng và tối đa 72 UTF-8 bytes; vượt giới hạn trả `400 VALIDATION_ERROR`.
-  - Trả về JWT Access Token (HS256), mặc định 1 giờ, chứa `{ sub, role, iat, exp }`; `data.expiresIn` luôn khớp thời hạn token (giây).
+  - Trả về JWT Access Token (HS256), mặc định 1 giờ, chứa `{ sub, role, iat, exp }`; `data.expiresIn` luôn khớp thời hạn token (giây). Dữ liệu `user` trả về kiểu `SafeUser` chứa `emailVerifiedAt` (`string | null`).
   - Tài khoản bị admin khóa (CWB-79) trả `403 ACCOUNT_LOCKED`, không có token. Trạng thái khóa chỉ lộ ra khi mật khẩu đúng; sai mật khẩu vẫn là `401 INVALID_CREDENTIALS`.
+  - Người dùng chưa xác thực email vẫn có thể đăng nhập bình thường và xem phòng/hồ sơ cá nhân, nhưng bị chặn khi đặt phòng cho đến khi hoàn tất xác thực.
 
 Email, `fullName` và `phoneNumber` giới hạn 191 ký tự theo schema MySQL. Email trùng trả `409 EMAIL_ALREADY_EXISTS`; unique constraint khác trả `409 RESOURCE_CONFLICT`.
 
+- **Xác thực email (CWB-87):** `POST /api/v1/auth/verify-email` với body `{ token }`.
+  - Endpoint công khai (không yêu cầu đăng nhập) để tiêu thụ token xác thực gửi trong email kích hoạt.
+  - Token là 32 byte ngẫu nhiên (base64url, 43 ký tự). Bảng `email_verification_tokens` lưu SHA-256 của token, `userId`, thời điểm hết hạn `expiresAt` (30 phút kể từ lúc cấp).
+  - Tiêu thụ token nguyên tử trong database transaction: tìm bản ghi token chưa hết hạn và chưa dùng, cập nhật `emailVerifiedAt = now()` trên bảng `users`, xóa/đánh dấu tiêu thụ token để chống replay, và xóa mọi token xác thực khác còn tồn đọng của tài khoản.
+  - Token sai/hết hạn/đã dùng trả `400 INVALID_VERIFICATION_TOKEN`.
+  - Rate limit: 10 lần thất bại / 15 phút / IP (`verifyEmailRateLimiter`); các lần gọi thành công không bị tính vào giới hạn này.
+- **Gửi lại email xác thực (CWB-87):** `POST /api/v1/auth/resend-verification`.
+  - Endpoint yêu cầu xác thực người dùng (`verifyToken`). Người dùng có thể yêu cầu gửi lại từ thông báo banner tại trang Tài khoản hoặc màn hình đặt phòng.
+  - Phản hồi trung tính: Luôn trả về `200` kèm thông điệp chung (`"Nếu tài khoản chưa xác thực, email xác thực mới đã được gửi. Vui lòng kiểm tra hộp thư."`) để không tiết lộ trạng thái tài khoản.
+  - Nếu tài khoản đã xác thực (`emailVerifiedAt !== null`) hoặc không tìm thấy người dùng, hệ thống âm thầm bỏ qua (no-op) mà không gửi email hay báo lỗi.
+  - Khi chưa xác thực: ghi nhận bản ghi `EMAIL_VERIFICATION` vào bảng `email_outbox` kèm `userId` trong database transaction, sau đó kích hoạt worker nền sinh token mới và gửi email chứa đường link xác thực.
+  - Rate limit: 5 yêu cầu / 15 phút / tài khoản (`resendVerificationRateLimiter`). Vượt ngưỡng trả `429 TOO_MANY_REQUESTS`.
 - **Quên mật khẩu (CWB-64):** `POST /api/v1/auth/forgot-password` với body `{ email }`.
   - Luôn trả `200` cùng một thông điệp, và trả ngay, dù email có đăng ký hay không. Việc tìm tài khoản, tạo token và gửi email chạy nền (được graceful shutdown chờ), nên thời gian phản hồi không tiết lộ email có tồn tại.
   - Token là 32 byte ngẫu nhiên (base64url, 43 ký tự). Bảng `password_reset_tokens` chỉ lưu SHA-256 của token; hiệu lực 30 phút; yêu cầu mới thay thế link cũ chưa dùng.
@@ -136,7 +152,7 @@ Integration tests từ chối chạy nếu thiếu URL hoặc dùng schema khôn
 
 | Endpoint                     | Body                                                           | Thành công                                                                     | Lỗi                                                                                                                   |
 | ---------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/v1/me`             | —                                                              | `200` `SafeUser` (`id`, `email`, `fullName`, `phoneNumber`, `role`)            | `401`                                                                                                                 |
+| `GET /api/v1/me`             | —                                                              | `200` `SafeUser` (`id`, `email`, `fullName`, `phoneNumber`, `role`, `emailVerifiedAt`) | `401`                                                                                                                 |
 | `PATCH /api/v1/me`           | `fullName?` (1–191 ký tự), `phoneNumber?` (`""`/`null` để xóa) | `200` `SafeUser` đã cập nhật                                                   | `400 VALIDATION_ERROR` với body rỗng hoặc field khác (`role`, `email`, `id`, `passwordHash`...)                       |
 | `POST /api/v1/me/password`   | `currentPassword`, `newPassword` (8–72 byte, khác mật khẩu cũ) | `200` `{ accessToken, tokenType, expiresIn, user }`                            | `400 INVALID_CURRENT_PASSWORD`; `400 VALIDATION_ERROR`; `429 TOO_MANY_REQUESTS` sau 5 lần sai trong 15 phút/tài khoản |
 | `POST /api/v1/me/logout-all` | — (body/query phải rỗng)                                       | `200` `data: null`; mọi token của tài khoản (kể cả token đang dùng) bị thu hồi | `400 VALIDATION_ERROR` nếu có field; `401`                                                                            |
@@ -557,6 +573,8 @@ Endpoint dành cho người dùng có vai trò `CUSTOMER` thực hiện đặt p
   - `400 ADVANCE_NOTICE`: Thời gian đặt trước không đủ 30 phút (`startTime - now < 30m`).
   - `401 UNAUTHORIZED`: Thiếu hoặc sai token JWT.
   - `403 FORBIDDEN`: Đăng nhập với vai trò không phải `CUSTOMER` (ví dụ `ADMIN`).
+  - `403 ACCOUNT_LOCKED`: Tài khoản customer đã bị admin khóa (CWB-79).
+  - `403 EMAIL_NOT_VERIFIED`: Tài khoản customer chưa xác thực địa chỉ email (`emailVerifiedAt` là `null`, CWB-87). Người dùng cần hoàn tất xác thực email để mở khóa tính năng đặt phòng.
   - `404 ROOM_NOT_FOUND`: Phòng không tồn tại trong hệ thống.
   - `409 ROOM_NOT_AVAILABLE`: Phòng đang ở trạng thái `MAINTENANCE`.
   - `409 ROOM_CLOSED`: Khoảng thời gian yêu cầu giao với khung đóng cửa của phòng hoặc toàn cơ sở (CWB-86).

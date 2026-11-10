@@ -20,6 +20,7 @@ describe('CWB-38 booking lifecycle (real MySQL)', () => {
         email: `lifecycle-${randomUUID()}@example.com`,
         passwordHash: 'test-hash',
         fullName: 'Lifecycle customer',
+        emailVerifiedAt: new Date(),
       },
     });
     userId = user.id;

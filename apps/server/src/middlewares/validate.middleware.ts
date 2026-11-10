@@ -2,7 +2,14 @@ import { Request, Response, NextFunction } from 'express';
 import { ZodSchema, ZodError } from 'zod';
 import { sendError } from '../utils/response.util.js';
 
-export const validateBody = (schema: ZodSchema) => {
+export interface ValidateOptions {
+  errorCode?: string;
+  message?: string;
+}
+
+export const validateBody = (schema: ZodSchema, options?: ValidateOptions) => {
+  const errorCode = options?.errorCode ?? 'VALIDATION_ERROR';
+  const defaultMessage = options?.message ?? 'Dữ liệu đầu vào không hợp lệ';
   return (req: Request, res: Response, next: NextFunction) => {
     const result = schema.safeParse(req.body);
     if (!result.success) {
@@ -11,7 +18,7 @@ export const validateBody = (schema: ZodSchema) => {
         field: issue.path.join('.'),
         message: issue.message,
       }));
-      return sendError(res, 'VALIDATION_ERROR', 'Dữ liệu đầu vào không hợp lệ', 400, details);
+      return sendError(res, errorCode, defaultMessage, 400, details);
     }
     req.body = result.data;
     return next();

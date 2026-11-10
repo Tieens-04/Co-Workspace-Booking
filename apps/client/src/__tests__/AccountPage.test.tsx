@@ -20,6 +20,7 @@ const user: SafeUser = {
   fullName: 'Nguyễn Thu Lan',
   phoneNumber: '0901234567',
   role: 'CUSTOMER',
+  emailVerifiedAt: '2026-10-25T00:00:00.000Z',
 };
 const ok = <T,>(data: T) => ({ success: true as const, message: 'OK', data });
 

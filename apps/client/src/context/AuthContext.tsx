@@ -59,6 +59,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       role: user.role,
       email: user.email,
       fullName: user.fullName,
+      emailVerifiedAt: user.emailVerifiedAt,
     });
     setSessionExpired(false);
     return true;
@@ -172,14 +173,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Only merge display fields into the matching session; id/role always come from the token.
     setPrincipal((current) =>
       current && current.id === user.id
-        ? { ...current, email: user.email, fullName: user.fullName }
+        ? {
+            ...current,
+            email: user.email,
+            fullName: user.fullName,
+            emailVerifiedAt: user.emailVerifiedAt,
+          }
         : current,
     );
   }, []);
 
-  // A restored token only carries id/role; load name/email from the API for this session.
+  const refreshProfile = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await meApi.getMe();
+      applyProfile(res.data);
+    } catch {
+      // Display-only enrichment: 401 is handled by the interceptor, other errors keep the fallback.
+    }
+  }, [token, applyProfile]);
+
+  // A restored token only carries id/role; load name/email/verification from the API for this session.
   const principalId = principal?.id;
-  const needsProfile = Boolean(token && principal && !principal.fullName);
+  const needsProfile = Boolean(token && principal && (!principal.fullName || principal.emailVerifiedAt === undefined));
   useEffect(() => {
     if (!needsProfile || !principalId) return;
     const controller = new AbortController();
@@ -204,6 +220,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearSessionExpiredNotice,
       login,
       applyProfile,
+      refreshProfile,
       logout,
     }),
     [
@@ -214,6 +231,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearSessionExpiredNotice,
       login,
       applyProfile,
+      refreshProfile,
       logout,
     ],
   );

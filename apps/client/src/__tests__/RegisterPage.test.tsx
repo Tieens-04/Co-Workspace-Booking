@@ -122,6 +122,7 @@ describe('RegisterPage', () => {
         fullName: 'Nguyen Van A',
         phoneNumber: '0912345678',
         role: 'CUSTOMER',
+        emailVerifiedAt: null,
       },
     });
 

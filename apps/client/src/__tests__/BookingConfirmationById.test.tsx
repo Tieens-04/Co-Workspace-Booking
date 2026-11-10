@@ -35,6 +35,7 @@ const auth = (id: string, role: 'CUSTOMER' | 'ADMIN' = 'CUSTOMER'): AuthContextT
   clearSessionExpiredNotice: vi.fn(),
   login: vi.fn(),
   applyProfile: vi.fn(),
+  refreshProfile: vi.fn().mockResolvedValue(undefined),
   logout: vi.fn(),
 });
 

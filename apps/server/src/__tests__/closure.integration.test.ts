@@ -26,6 +26,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Closure Test Customer',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUserId = user.id;
@@ -417,6 +418,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
           passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
           fullName: 'Closure Test Customer 2',
           role: Role.CUSTOMER,
+          emailVerifiedAt: new Date(),
         },
       });
       const customer2Token = accounts.token(Role.CUSTOMER, user2.id);
@@ -589,6 +591,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
           passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
           fullName: 'Concurrency Customer',
           role: Role.CUSTOMER,
+          emailVerifiedAt: new Date(),
         },
       });
       const concToken = accounts.token(Role.CUSTOMER, userConc.id);

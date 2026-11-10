@@ -60,6 +60,16 @@ Admin có thể thiết lập các khoảng đóng cửa (`Closure`) áp dụng 
 - **Bảo toàn booking hiện có**: Nếu khoảng đóng cửa giao với các booking `CONFIRMED` đang có và request chưa gửi `acknowledgeConflictingBookings: true`, server trả về `409 CLOSURE_HAS_CONFLICTING_BOOKINGS` kèm danh sách các booking trùng (`bookingCode`, `roomId`, `roomName`, `startTime`, `endTime`, `userEmail`, `guestName`). Khi gửi kèm `acknowledgeConflictingBookings: true`, khung đóng cửa được lưu và **tuyệt đối không tự động hủy** các booking `CONFIRMED` hiện có.
 - **Hiển thị lịch trống (`GET /api/v1/rooms/:id/availability` & `GET /api/v1/admin/dashboard/schedule`)**: Các slot 30 phút giao với `Closure` (và chưa có booking `CONFIRMED` chiếm chỗ) mang trạng thái `CLOSED` kèm `closureReason`.
 
+### Bắt buộc xác thực email khi đặt phòng (CWB-87)
+
+Tài khoản khách hàng (`CUSTOMER`) sau khi đăng ký mới có `emailVerifiedAt = null`.
+- **Chặn đặt phòng khi chưa xác thực:** Khi gọi `POST /api/v1/bookings`, hệ thống kiểm tra trạng thái xác thực trong transaction tạo booking, ngay sau khi khóa dòng `users` (`SELECT locked_at, email_verified_at FROM users WHERE id = ? FOR UPDATE`). Nếu tài khoản bị khóa (`locked_at IS NOT NULL`), hệ thống ưu tiên trả `403 ACCOUNT_LOCKED`. Nếu tài khoản chưa xác thực email (`email_verified_at IS NULL`), request bị từ chối với `403 EMAIL_NOT_VERIFIED` ("Vui lòng xác thực email trước khi đặt phòng").
+- **Guest booking:** Luồng đặt phòng cho khách vãng lai của admin (`POST /api/v1/admin/bookings/guest`) không bị giới hạn này vì `userId` là `null`.
+- **Token xác thực email:** Token là chuỗi 32 byte base64url ngẫu nhiên, bảng `email_verification_tokens` lưu bản băm SHA-256, thời hạn 30 phút, cơ chế one-time use chống replay. Khi một token được tiêu thụ thành công, `emailVerifiedAt` được cập nhật và toàn bộ token xác thực còn lại của người dùng đó bị xóa/hủy.
+- **Tương thích dữ liệu cũ:** Tài khoản tạo trước CWB-87 được migration backfill `email_verified_at = CURRENT_TIMESTAMP(3)` nên không bị gián đoạn quyền đặt phòng.
+- **Rate limits:** `POST /api/v1/auth/verify-email` giới hạn 10 lần thất bại / 15 phút / IP; `POST /api/v1/auth/resend-verification` giới hạn 5 lần / 15 phút / tài khoản.
+- **Quyết định Product về đăng ký và chống dò email (AC4):** Giữ nguyên mã lỗi `409 EMAIL_ALREADY_EXISTS` và chuẩn hóa email (chữ thường, cắt khoảng trắng thừa) khi đăng ký tài khoản trùng lặp để đảm bảo tính tương thích với API và frontend hiện hành. Hệ thống chấp nhận việc đăng ký tiết lộ email đã tồn tại để người dùng có thể nhận biết và chuyển sang đăng nhập; ngược lại, các luồng quên mật khẩu (`forgot-password`) và gửi lại email xác thực (`resend-verification`) luôn trả về phản hồi trung tính (`200` với thông điệp chung) để chống dò quét trạng thái tài khoản.
+
 ### Thay đổi đã thay thế (superseded)
 
 | Quy tắc           | Mô tả cũ (Jira CWB-19, CWB-26) | Hiệu lực hiện tại                   |
@@ -103,6 +113,7 @@ Chi tiết request/response từng endpoint: [application-reference.md](applicat
 | Lưu `cancelledAt`, `cancelledBy` và hiển thị lý do hủy cho khách hàng (CWB-82) | `booking-cancellation.test.ts`, `booking-cancellation.integration.test.ts`, `admin-booking.test.ts`, `admin-booking.integration.test.ts`, `booking-history.test.ts`, `BookingDetailPage.test.tsx`, `BookingHistoryPage.test.tsx`, `status.test.ts` |
 | Ghi nhận hoàn tiền, locking, audit, doanh thu và cảnh báo khách hàng (CWB-83) | `booking-revenue.test.ts`, `admin-booking.test.ts`, `admin-booking.integration.test.ts`, `RefundBookingDialog.test.tsx`, `AdminBookingsPage.test.tsx`, `BookingDetailPage.test.tsx` |
 | Quản lý khung đóng cửa toàn cơ sở / theo phòng, khóa đồng thời, chặn đặt/dời lịch, cảnh báo xung đột và audit (CWB-86) | `admin-closure.validator.test.ts`, `closure.service.test.ts`, `closure.integration.test.ts`, `AdminClosuresPage.test.tsx`, `BookingForm.test.tsx`, `AdminGuestBookingForm.test.tsx`, `BookingDetailPage.test.tsx`, `RoomOverviewGrid.test.tsx`, `AdminAuditPage.test.tsx`, `e2e/closure.spec.ts` |
+| Bắt buộc xác thực email khi đặt phòng, tiêu thụ token một lần, resend và rate limit (CWB-87) | `email-verification.test.ts`, `email-verification.integration.test.ts`, `EmailVerification.test.tsx`, `BookingForm.test.tsx`, `e2e/email-verification.spec.ts` |
 
 ## 4. QA checklist (FE/BE/docs khớp nhau)
 
@@ -120,5 +131,6 @@ Kiểm trên giao diện và API với giờ Việt Nam; ghi lại kết quả v
 - [ ] Customer có đủ 5 booking sắp tới: lượt thứ 6 bị từ chối (`409 ACTIVE_BOOKING_LIMIT`) với thông báo rõ trên form; hủy một booking thì đặt lại được. Admin đặt hộ khách vãng lai không bị giới hạn.
 - [ ] Admin khóa một khách có booking sắp tới: khách bị đăng xuất, đăng nhập trả "Tài khoản của bạn đã bị khóa", booking vẫn `CONFIRMED` và được liệt kê trong cảnh báo; mở khóa thì đăng nhập lại được. Không có nút khóa cho tài khoản ADMIN.
 - [ ] Request thứ 21 tạo booking trong 15 phút của cùng tài khoản và request đăng ký thứ 11 trong 1 giờ cùng IP trả `429 TOO_MANY_REQUESTS`.
+- [ ] Đăng ký tài khoản mới: tài khoản có thể đăng nhập nhưng chưa đặt được phòng (hiển thị banner xác thực và báo lỗi `403 EMAIL_NOT_VERIFIED` nếu cố đặt); sau khi kích hoạt qua link/nút xác nhận thì đặt phòng bình thường (CWB-87).
 - [ ] Trình duyệt đặt múi giờ khác (ví dụ UTC) vẫn hiển thị và gửi đúng giờ Việt Nam.
 - [ ] Tổng tiền hiển thị ở FE bằng `totalAmount` do server trả về.

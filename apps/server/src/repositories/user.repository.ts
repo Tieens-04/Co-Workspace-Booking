@@ -1,4 +1,4 @@
-import { User, Role } from '@prisma/client';
+import { User, Role, Prisma } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 
 export interface CreateUserData {
@@ -56,8 +56,9 @@ export class UserRepository {
     return result.count === 1;
   }
 
-  async create(data: CreateUserData): Promise<User> {
-    return prisma.user.create({
+  async create(data: CreateUserData, tx?: Prisma.TransactionClient): Promise<User> {
+    const client = tx ?? prisma;
+    return client.user.create({
       data: {
         email: data.email,
         passwordHash: data.passwordHash,

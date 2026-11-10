@@ -49,6 +49,13 @@ export const accountLockedError = (): AppError =>
     403,
   );
 
+export const emailNotVerifiedError = (): AppError =>
+  new AppError(
+    'EMAIL_NOT_VERIFIED',
+    'Vui lòng xác thực email trước khi đặt phòng',
+    403,
+  );
+
 export const activeBookingLimitError = (limit: number): AppError =>
   new AppError(
     'ACTIVE_BOOKING_LIMIT',
@@ -453,15 +460,20 @@ export class BookingRepository
   async createBooking(data: CreateBookingRepoInput): Promise<CreatedBookingResult> {
     assertValidBookingIdentity(data);
     return prisma.$transaction(async (tx) => {
-      // 0. CWB-78: lock the customer's row first (always user -> room, no path locks the reverse)
+      // 0. CWB-78, CWB-87: lock the customer's row first (always user -> room, no path locks the reverse)
       // so one customer's concurrent requests for different rooms serialize on the booking cap.
       if (data.userId) {
-        const [account] = await tx.$queryRaw<Array<{ locked_at: Date | null }>>(
-          Prisma.sql`SELECT locked_at FROM users WHERE id = ${data.userId} FOR UPDATE`,
+        const [account] = await tx.$queryRaw<
+          Array<{ locked_at: Date | null; email_verified_at: Date | null }>
+        >(
+          Prisma.sql`SELECT locked_at, email_verified_at FROM users WHERE id = ${data.userId} FOR UPDATE`,
         );
+        if (!account) throw emailNotVerifiedError();
         // CWB-79: the session check runs before this transaction; re-check under the row lock so
         // a request that passed authentication just before an admin lock cannot still book.
-        if (account?.locked_at) throw accountLockedError();
+        if (account.locked_at) throw accountLockedError();
+        // CWB-87: unverified customer accounts cannot book rooms (403 EMAIL_NOT_VERIFIED)
+        if (!account.email_verified_at) throw emailNotVerifiedError();
       }
 
       // 1. Lock room row in MySQL with FOR UPDATE

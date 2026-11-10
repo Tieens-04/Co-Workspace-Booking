@@ -78,6 +78,7 @@ describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
           email: `idem_${tag}_${label}@example.com`,
           passwordHash: await hashPassword('Password123!'),
           fullName: `Khách ${label}`,
+          emailVerifiedAt: new Date(),
         },
       });
       userIds.push(user.id);

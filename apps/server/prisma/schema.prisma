@@ -49,6 +49,7 @@ enum EmailOutboxKind {
   BOOKING_CANCELLATION
   BOOKING_REMINDER
   BOOKING_RESCHEDULED
+  EMAIL_VERIFICATION
 }
 
 enum PaymentMethod {
@@ -72,12 +73,16 @@ model User {
   // CWB-79: set while an admin has locked the account (null = active); reason shown to admins.
   lockedAt     DateTime? @map("locked_at")
   lockReason   String?   @map("lock_reason") @db.VarChar(500)
+  // CWB-87: timestamp of email verification (null = unverified; new registrations remain null).
+  emailVerifiedAt DateTime? @map("email_verified_at")
   createdAt    DateTime @default(now()) @map("created_at")
   updatedAt    DateTime @updatedAt @map("updated_at")
 
-  bookings            Booking[]
-  passwordResetTokens PasswordResetToken[]
-  createdClosures     Closure[]            @relation("UserCreatedClosures")
+  bookings                Booking[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  emailOutbox             EmailOutbox[]
+  createdClosures         Closure[]            @relation("UserCreatedClosures")
 
   @@map("users")
 }
@@ -95,6 +100,21 @@ model PasswordResetToken {
 
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+// One-time email verification tokens (CWB-87). Only the SHA-256 hash of the emailed token is stored.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash") @db.Char(64)
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("email_verification_tokens")
 }
 
 model Room {
@@ -250,13 +270,15 @@ model AuditEvent {
   @@map("audit_events")
 }
 
-/// CWB-68: durable email outbox written in the booking transaction. Stores no recipient or
-/// token; the email is rendered from the booking at send time. Delivery is at-least-once.
+/// CWB-68, CWB-87: durable email outbox written in the booking or registration transaction.
+/// Stores no recipient or token; the email is rendered at send time. Delivery is at-least-once.
 model EmailOutbox {
   id            String            @id @default(uuid())
   kind          EmailOutboxKind
-  bookingId     String            @map("booking_id")
-  booking       Booking           @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  bookingId     String?           @map("booking_id")
+  booking       Booking?          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  userId        String?           @map("user_id")
+  user          User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
   status        EmailOutboxStatus @default(QUEUED)
   attempts      Int               @default(0)
   nextAttemptAt DateTime          @default(now()) @map("next_attempt_at")
@@ -268,6 +290,7 @@ model EmailOutbox {
   @@unique([kind, bookingId], map: "email_outbox_kind_booking_key")
   @@index([status, nextAttemptAt])
   @@index([bookingId])
+  @@index([userId])
   @@map("email_outbox")
 }
 

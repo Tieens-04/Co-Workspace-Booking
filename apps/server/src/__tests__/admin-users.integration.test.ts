@@ -39,6 +39,7 @@ describe('Admin customer management (CWB-79, real MySQL)', () => {
         passwordHash: await hashPassword(password),
         fullName: `Khách ${label} ${tag}`,
         phoneNumber,
+        emailVerifiedAt: new Date(),
       },
     });
     userIds.push(user.id);

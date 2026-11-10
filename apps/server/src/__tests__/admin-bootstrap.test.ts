@@ -34,6 +34,7 @@ describe('Admin bootstrap (CWB-59)', () => {
         phoneNumber: null,
         passwordHash: `hashed(${PASSWORD.length})`,
         role: Role.ADMIN,
+        emailVerifiedAt: expect.any(Date),
       },
     });
     expect(JSON.stringify(users.create.mock.calls)).not.toContain(PASSWORD);

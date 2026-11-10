@@ -38,6 +38,7 @@ describe('Cancellation revenue integration (real MySQL)', () => {
         fullName: 'Revenue cancellation customer',
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     userId = user.id;

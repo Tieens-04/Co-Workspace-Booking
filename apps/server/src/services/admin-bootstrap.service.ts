@@ -27,6 +27,7 @@ export interface AdminBootstrapUserStore {
       phoneNumber: string | null;
       passwordHash: string;
       role: Role;
+      emailVerifiedAt?: Date | null;
     };
   }): Promise<unknown>;
 }
@@ -79,6 +80,7 @@ export async function bootstrapAdmin(
         phoneNumber: input.phoneNumber ?? null,
         passwordHash: await hashPassword(input.password),
         role: Role.ADMIN,
+        emailVerifiedAt: new Date(),
       },
     });
   } catch (err) {

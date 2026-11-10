@@ -8,7 +8,9 @@ import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.j
 
 const db = vi.hoisted(() => {
   const tx = {
-    $queryRaw: vi.fn(async () => [{ id: 'customer-id' }]),
+    $queryRaw: vi.fn(async () => [
+      { id: 'customer-id', locked_at: null, email_verified_at: new Date() },
+    ]),
     booking: { findMany: vi.fn(), create: vi.fn(), count: vi.fn(async () => 0) },
     auditEvent: { create: vi.fn() },
     emailOutbox: { createMany: vi.fn() },

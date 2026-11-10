@@ -32,6 +32,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Test Customer One',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUserId = user1.id;
@@ -43,6 +44,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Test Customer Two',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     testUser2Id = user2.id;
