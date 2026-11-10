@@ -1,11 +1,11 @@
 import express, { Express } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
-import morgan from 'morgan';
 import { ENV } from './config/env.config.js';
 import apiRouter from './routes/index.js';
 import { errorHandler } from './middlewares/error.middleware.js';
 import { notFoundHandler } from './middlewares/not-found.middleware.js';
+import { createRequestLogger } from './middlewares/request-log.middleware.js';
 import { HealthController } from './controllers/health.controller.js';
 
 const app: Express = express();
@@ -23,7 +23,9 @@ app.use(
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(morgan('dev'));
+// CWB-90: dev line in development, one JSON object per request otherwise, silent under test.
+const requestLogger = createRequestLogger(ENV.NODE_ENV);
+if (requestLogger) app.use(requestLogger);
 
 // Root liveness check endpoint
 app.get('/health', HealthController.checkLiveness);
