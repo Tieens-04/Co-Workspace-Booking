@@ -18,7 +18,10 @@ export const EMAIL_MAX_ATTEMPTS = 5;
 export const EMAIL_CLAIM_LEASE_MS = 2 * 60_000;
 const BASE_BACKOFF_MS = 30_000;
 const MAX_BACKOFF_MS = 60 * 60_000;
-const BATCH_SIZE = 10;
+// ~20s/email is an estimate (5s connect + 5s greeting + 10s idle socketTimeout per command),
+// sized below EMAIL_CLAIM_LEASE_MS (120s); if a slow batch still overruns the lease, finish()
+// is claim-guarded so delivery degrades to at-least-once duplicates, never lost/clobbered state.
+const BATCH_SIZE = 5;
 /** Upper bound of reminders queued per pass; the next pass picks up the rest. */
 const REMINDER_ENQUEUE_LIMIT = 200;
 
@@ -101,7 +104,7 @@ export class EmailOutboxService {
   ) {}
 
   /** Claims due rows and pushes their lease forward, so a crash leaves them retryable later. */
-  private async claimDue(now: Date, limit: number): Promise<string[]> {
+  private async claimDue(now: Date, limit: number, leaseUntil: Date): Promise<string[]> {
     return this.db.$transaction(async (tx) => {
       const rows = await tx.$queryRaw<{ id: string }[]>`
         SELECT id FROM email_outbox
@@ -115,7 +118,7 @@ export class EmailOutboxService {
           where: { id: { in: ids } },
           data: {
             attempts: { increment: 1 },
-            nextAttemptAt: new Date(now.getTime() + EMAIL_CLAIM_LEASE_MS),
+            nextAttemptAt: leaseUntil,
           },
         });
       }
@@ -123,15 +126,29 @@ export class EmailOutboxService {
     });
   }
 
-  private async finish(id: string, data: Prisma.EmailOutboxUpdateManyMutationInput): Promise<void> {
-    // Only a still-queued row is finalized; an admin action in between is never overwritten.
-    await this.db.emailOutbox.updateMany({ where: { id, status: 'QUEUED' }, data });
+  private async finish(
+    claim: Pick<OutboxRecord, 'id' | 'attempts' | 'nextAttemptAt'>,
+    data: Prisma.EmailOutboxUpdateManyMutationInput,
+  ): Promise<void> {
+    // Only finalize if the row still belongs to this claim; a reschedule upsert or a newer claim
+    // after lease expiry is never overwritten.
+    await this.db.emailOutbox.updateMany({
+      where: {
+        id: claim.id,
+        status: 'QUEUED',
+        attempts: claim.attempts,
+        nextAttemptAt: claim.nextAttemptAt,
+      },
+      data,
+    });
   }
 
   private async deliverVerification(
     userId: string,
     now: Date,
-  ): Promise<{ status: 'DELIVERED' } | { status: 'FAILED' } | { status: 'SKIPPED'; reason: string }> {
+  ): Promise<
+    { status: 'DELIVERED' } | { status: 'FAILED' } | { status: 'SKIPPED'; reason: string }
+  > {
     const issueResult = await emailVerificationRepository.issueToken(userId, now);
     if (issueResult.status === 'ALREADY_VERIFIED') {
       return { status: 'SKIPPED', reason: 'ALREADY_VERIFIED' };
@@ -238,12 +255,13 @@ export class EmailOutboxService {
 
   async processDue(now = new Date(), limit = BATCH_SIZE): Promise<ProcessResult> {
     const result: ProcessResult = { claimed: 0, sent: 0, retried: 0, failed: 0, skipped: 0 };
-    const ids = await this.claimDue(now, limit);
+    const leaseUntil = new Date(now.getTime() + EMAIL_CLAIM_LEASE_MS);
+    const ids = await this.claimDue(now, limit, leaseUntil);
     result.claimed = ids.length;
     if (ids.length === 0) return result;
 
     const rows = await this.db.emailOutbox.findMany({
-      where: { id: { in: ids } },
+      where: { id: { in: ids }, status: 'QUEUED', nextAttemptAt: leaseUntil },
       include: outboxInclude,
     });
     for (const row of rows) {
@@ -267,8 +285,10 @@ export class EmailOutboxService {
           // Checked on every attempt, including admin retries: a reminder only goes out for a
           // booking that is still CONFIRMED and has not started yet.
           if (row.booking.status === BookingStatus.CANCELLED) skipReason = 'BOOKING_CANCELLED';
-          else if (row.booking.status !== BookingStatus.CONFIRMED) skipReason = 'BOOKING_NOT_ACTIVE';
-          else if (row.booking.startTime.getTime() <= now.getTime()) skipReason = 'REMINDER_EXPIRED';
+          else if (row.booking.status !== BookingStatus.CONFIRMED)
+            skipReason = 'BOOKING_NOT_ACTIVE';
+          else if (row.booking.startTime.getTime() <= now.getTime())
+            skipReason = 'REMINDER_EXPIRED';
         } else if (row.kind === 'PAYMENT_RECEIPT' && row.booking.paymentStatus !== 'PAID') {
           // CWB-89: never send a receipt for a booking that is not (or no longer) paid.
           skipReason = 'BOOKING_NOT_PAID';
@@ -276,7 +296,7 @@ export class EmailOutboxService {
       }
 
       if (skipReason) {
-        await this.finish(row.id, { status: 'SKIPPED', lastError: skipReason });
+        await this.finish(row, { status: 'SKIPPED', lastError: skipReason });
         result.skipped++;
         continue;
       }
@@ -285,7 +305,7 @@ export class EmailOutboxService {
       if (row.kind === 'EMAIL_VERIFICATION') {
         const deliverResult = await this.deliverVerification(row.userId!, now);
         if (deliverResult.status === 'SKIPPED') {
-          await this.finish(row.id, { status: 'SKIPPED', lastError: deliverResult.reason });
+          await this.finish(row, { status: 'SKIPPED', lastError: deliverResult.reason });
           result.skipped++;
           continue;
         }
@@ -296,13 +316,13 @@ export class EmailOutboxService {
       }
 
       if (delivered) {
-        await this.finish(row.id, { status: 'SENT', sentAt: new Date(), lastError: null });
+        await this.finish(row, { status: 'SENT', sentAt: new Date(), lastError: null });
         result.sent++;
       } else if (row.attempts >= EMAIL_MAX_ATTEMPTS) {
-        await this.finish(row.id, { status: 'FAILED', lastError: 'SMTP_ERROR' });
+        await this.finish(row, { status: 'FAILED', lastError: 'SMTP_ERROR' });
         result.failed++;
       } else {
-        await this.finish(row.id, {
+        await this.finish(row, {
           lastError: 'SMTP_ERROR',
           nextAttemptAt: new Date(now.getTime() + emailRetryDelayMs(row.attempts)),
         });

@@ -21,6 +21,12 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
   const createdRoomIds: string[] = [];
   let testRoomId: string;
 
+  const isolateOutboxRow = (id: string) =>
+    prisma.emailOutbox.updateMany({
+      where: { status: 'QUEUED', id: { not: id } },
+      data: { status: 'SKIPPED', lastError: 'TEST_ISOLATION' },
+    });
+
   beforeAll(async () => {
     await accounts.persist();
 
@@ -161,13 +167,14 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
     createdUserIds.push(user.id);
 
     // Enqueue outbox row
-    await prisma.emailOutbox.create({
+    const outbox = await prisma.emailOutbox.create({
       data: {
         kind: 'EMAIL_VERIFICATION',
         userId: user.id,
         status: 'QUEUED',
       },
     });
+    await isolateOutboxRow(outbox.id);
 
     const sentTokens = new Map<string, string>();
     const mockNotification = {
@@ -497,6 +504,7 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
     const worker = new EmailOutboxService(mockNotification, prisma);
 
     // Pass 1: Delivery fails (e.g. SMTP connection timeout / failure)
+    await isolateOutboxRow(outbox.id);
     shouldSucceed = false;
     const pass1Result = await worker.processDue();
     expect(pass1Result.retried).toBeGreaterThanOrEqual(1);
@@ -516,6 +524,7 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
     expect(userAfterPass1.emailVerifiedAt).toBeNull();
 
     // Pass 2: Retry after delay succeeds
+    await isolateOutboxRow(outbox.id);
     shouldSucceed = true;
     const pass2Result = await worker.processDue(new Date(Date.now() + 60 * 1000));
     expect(pass2Result.sent).toBeGreaterThanOrEqual(1);

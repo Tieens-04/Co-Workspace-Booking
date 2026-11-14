@@ -10,9 +10,11 @@ import {
   EMAIL_MAX_ATTEMPTS,
   EmailOutboxService,
   emailRetryDelayMs,
+  type ProcessResult,
 } from '../services/email-outbox.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { ENV } from '../config/env.config.js';
+import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 describe('CWB-68 durable email outbox (real MySQL)', () => {
   // These scenarios reuse one customer for many upcoming bookings (overlap, code collisions,
@@ -46,16 +48,18 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
   };
 
   /** Notification double; `canDeliver` true so the worker really attempts delivery. */
-  type Payload = { bookingCode: string };
+  type Payload = { bookingCode: string; startTime: Date; endTime: Date };
   const fakeNotifier = (outcome: (payload: Payload) => Promise<boolean> = async () => true) => {
     const confirmation = vi.fn(outcome);
     const cancellation = vi.fn(outcome);
+    const rescheduled = vi.fn(outcome);
     const notifier = {
       canDeliver: () => true,
       sendBookingConfirmation: confirmation,
       sendBookingCancellation: cancellation,
+      sendBookingRescheduled: rescheduled,
     } as unknown as NotificationService;
-    return { notifier, confirmation, cancellation };
+    return { notifier, confirmation, cancellation, rescheduled };
   };
 
   const outboxFor = (bookingId: string) =>
@@ -65,6 +69,15 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
   const isolateQueue = () =>
     prisma.emailOutbox.updateMany({
       where: { status: 'QUEUED', booking: { roomId: { not: roomId } } },
+      data: { status: 'SKIPPED', lastError: 'TEST_ISOLATION' },
+    });
+
+  const isolateOnly = (bookingIds: string[]) =>
+    prisma.emailOutbox.updateMany({
+      where: {
+        status: 'QUEUED',
+        OR: [{ bookingId: null }, { bookingId: { notIn: bookingIds } }],
+      },
       data: { status: 'SKIPPED', lastError: 'TEST_ISOLATION' },
     });
 
@@ -114,9 +127,21 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
     roomId = room.id;
   });
 
-  afterEach(() => vi.restoreAllMocks());
+  afterEach(async () => {
+    vi.restoreAllMocks();
+    await createBookingRateLimiter.resetKey(`user:${customerId}`);
+  });
 
   afterAll(async () => {
+    const roomBookings = await prisma.booking.findMany({
+      where: { roomId },
+      select: { id: true },
+    });
+    if (roomBookings.length > 0) {
+      await prisma.auditEvent.deleteMany({
+        where: { entityId: { in: roomBookings.map((b) => b.id) } },
+      });
+    }
     // email_outbox rows cascade with their bookings.
     await prisma.booking.deleteMany({ where: { roomId } });
     await prisma.room.deleteMany({ where: { id: roomId } });
@@ -342,6 +367,161 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
           .set(auth(adminToken));
         expect(bad.status).toBe(400);
       }
+    });
+  });
+
+  describe('CWB-110 claim guard & batch size', () => {
+    it('does not swallow a second reschedule queued while the first reschedule email is in flight', async () => {
+      const booking = await book();
+      const slot1 = nextSlot();
+      const r1 = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}`)
+        .set(auth(customerToken))
+        .send(slot1);
+      expect(r1.status).toBe(200);
+
+      await prisma.emailOutbox.updateMany({
+        where: { bookingId: booking.id, kind: 'BOOKING_CONFIRMATION' },
+        data: { status: 'SENT', attempts: 1, sentAt: new Date() },
+      });
+      await isolateOnly([booking.id]);
+
+      const slot2 = nextSlot();
+      let firstCall = true;
+      let secondRescheduleStatus: number | undefined;
+      const { notifier, rescheduled } = fakeNotifier(async () => {
+        if (firstCall) {
+          firstCall = false;
+          const r2 = await request(app)
+            .patch(`/api/v1/bookings/${booking.id}`)
+            .set(auth(customerToken))
+            .send(slot2);
+          secondRescheduleStatus = r2.status;
+        }
+        return true;
+      });
+
+      const worker = new EmailOutboxService(notifier);
+      await worker.processDue();
+      expect(secondRescheduleStatus).toBe(200);
+
+      const afterPass1 = await prisma.emailOutbox.findUniqueOrThrow({
+        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+      });
+      expect(afterPass1).toMatchObject({
+        status: 'QUEUED',
+        attempts: 0,
+        sentAt: null,
+        lastError: null,
+      });
+
+      await worker.processDue();
+
+      expect(rescheduled).toHaveBeenCalledTimes(2);
+      expect(rescheduled.mock.calls[0]?.[0]).toMatchObject({
+        bookingCode: booking.bookingCode,
+        startTime: new Date(slot1.startTime),
+      });
+      expect(rescheduled.mock.calls[1]?.[0]).toMatchObject({
+        bookingCode: booking.bookingCode,
+        startTime: new Date(slot2.startTime),
+      });
+
+      const afterPass2 = await prisma.emailOutbox.findUniqueOrThrow({
+        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+      });
+      expect(afterPass2).toMatchObject({ status: 'SENT', attempts: 1, lastError: null });
+      expect(afterPass2.sentAt).toBeInstanceOf(Date);
+    });
+
+    it('guards against ABA lease collision when a re-queued row is re-claimed and fails before worker 1 finishes', async () => {
+      const booking = await book();
+      const slot1 = nextSlot();
+      const r1 = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}`)
+        .set(auth(customerToken))
+        .send(slot1);
+      expect(r1.status).toBe(200);
+
+      await prisma.emailOutbox.updateMany({
+        where: { bookingId: booking.id, kind: 'BOOKING_CONFIRMATION' },
+        data: { status: 'SENT', attempts: 1, sentAt: new Date() },
+      });
+      await isolateOnly([booking.id]);
+
+      const slot2 = nextSlot();
+      // Simulate worker 1 having claimed the first reschedule 5s ago (>1s skew before PATCH #2's
+      // wall-clock evaluationTime), while t2 (+60s) stays well within worker 1's 120s claim lease.
+      const t1 = new Date(Date.now() - 5_000);
+      await prisma.emailOutbox.update({
+        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+        data: { nextAttemptAt: t1 },
+      });
+      const t2 = new Date(t1.getTime() + 60_000);
+      const worker2 = new EmailOutboxService(fakeNotifier(async () => false).notifier);
+
+      let firstCall = true;
+      let secondRescheduleStatus: number | undefined;
+      let worker2Result: ProcessResult | undefined;
+      const worker1Double = fakeNotifier(async () => {
+        if (firstCall) {
+          firstCall = false;
+          const r2 = await request(app)
+            .patch(`/api/v1/bookings/${booking.id}`)
+            .set(auth(customerToken))
+            .send(slot2);
+          secondRescheduleStatus = r2.status;
+          if (r2.status === 200) {
+            worker2Result = await worker2.processDue(t2);
+          }
+        }
+        return true;
+      });
+      const worker1 = new EmailOutboxService(worker1Double.notifier);
+      await worker1.processDue(t1);
+      expect(secondRescheduleStatus).toBe(200);
+      expect(worker2Result).toMatchObject({ claimed: 1, retried: 1 });
+
+      const expectedNextAttemptAt = new Date(t2.getTime() + emailRetryDelayMs(1));
+      const afterCollision = await prisma.emailOutbox.findUniqueOrThrow({
+        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+      });
+      expect(afterCollision).toMatchObject({
+        status: 'QUEUED',
+        attempts: 1,
+        lastError: 'SMTP_ERROR',
+        sentAt: null,
+      });
+      expect(afterCollision.nextAttemptAt.getTime()).toBe(expectedNextAttemptAt.getTime());
+
+      const healthy = fakeNotifier();
+      const worker3 = new EmailOutboxService(healthy.notifier);
+      await worker3.processDue(expectedNextAttemptAt);
+
+      expect(healthy.rescheduled).toHaveBeenCalledTimes(1);
+      expect(healthy.rescheduled).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookingCode: booking.bookingCode,
+          startTime: new Date(slot2.startTime),
+        }),
+      );
+      const afterRetry = await prisma.emailOutbox.findUniqueOrThrow({
+        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+      });
+      expect(afterRetry).toMatchObject({ status: 'SENT', attempts: 2, lastError: null });
+    });
+
+    it('claims at most 5 due emails per default pass so batch delivery stays within the claim lease', async () => {
+      const bookings = [];
+      for (let i = 0; i < 6; i++) bookings.push(await book());
+      await isolateOnly(bookings.map((b) => b.id));
+
+      const worker = new EmailOutboxService(fakeNotifier().notifier);
+      const first = await worker.processDue();
+      expect(first).toMatchObject({ claimed: 5, sent: 5 });
+
+      const second = await worker.processDue();
+      expect(second).toMatchObject({ claimed: 1, sent: 1 });
     });
   });
 });
