@@ -12,6 +12,7 @@ import { useToast } from '../hooks/useToast';
 import {
   adminEmailOutboxApi,
   EmailOutboxItem,
+  EmailOutboxKind,
   EmailOutboxStatus,
 } from '../services/admin-email-outbox.api';
 import { PaginationMeta } from '../types/room';
@@ -30,15 +31,21 @@ const KIND_LABELS: Record<string, string> = {
   BOOKING_CANCELLATION: 'Thông báo hủy',
   BOOKING_REMINDER: 'Nhắc lịch',
   BOOKING_RESCHEDULED: 'Đổi lịch',
+  PAYMENT_RECEIPT: 'Biên lai thanh toán',
+  BOOKING_ROOM_UNAVAILABLE: 'Cảnh báo phòng không khả dụng',
   EMAIL_VERIFICATION: 'Xác thực tài khoản',
 };
 const REASON_LABELS: Record<string, string> = {
   SMTP_ERROR: 'Lỗi máy chủ email',
   SMTP_DISABLED: 'Chưa cấu hình SMTP',
   NO_RECIPIENT: 'Không có địa chỉ nhận',
+  ACCOUNT_DELETED: 'Tài khoản đã xóa',
   BOOKING_CANCELLED: 'Đơn đã hủy trước khi gửi',
   BOOKING_NOT_ACTIVE: 'Đơn không còn ở trạng thái đã xác nhận',
   REMINDER_EXPIRED: 'Đã qua giờ bắt đầu',
+  ROOM_UNAVAILABLE: 'Phòng đang bảo trì hoặc đóng cửa',
+  BOOKING_NOT_PAID: 'Đơn chưa thanh toán',
+  BOOKING_NOT_AFFECTED: 'Đơn không còn bị ảnh hưởng',
   ALREADY_VERIFIED: 'Tài khoản đã xác thực',
 };
 const STATUS_VARIANT: Record<
@@ -55,6 +62,7 @@ export const AdminEmailsPage: React.FC = () => {
   const [items, setItems] = useState<EmailOutboxItem[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [page, setPage] = useState(1);
+  const [kind, setKind] = useState<EmailOutboxKind | ''>('');
   const [status, setStatus] = useState<EmailOutboxStatus | ''>('');
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -69,7 +77,12 @@ export const AdminEmailsPage: React.FC = () => {
     setLoadError(null);
     try {
       const res = await adminEmailOutboxApi.list(
-        { page, limit: PAGE_SIZE, status: status || undefined },
+        {
+          page,
+          limit: PAGE_SIZE,
+          ...(kind ? { kind } : {}),
+          ...(status ? { status } : {}),
+        },
         controller.signal,
       );
       if (controller.signal.aborted) return;
@@ -81,7 +94,7 @@ export const AdminEmailsPage: React.FC = () => {
     } finally {
       if (requestRef.current === controller) setIsLoading(false);
     }
-  }, [page, status]);
+  }, [page, kind, status]);
 
   useEffect(() => {
     void load();
@@ -108,10 +121,28 @@ export const AdminEmailsPage: React.FC = () => {
       <PageHeader
         eyebrow="Quản trị"
         title="Email thông báo"
-        description="Trạng thái gửi email xác nhận, nhắc lịch và hủy đặt phòng. Hệ thống tự gửi lại khi lỗi; email thất bại hoặc bị bỏ qua có thể được gửi lại thủ công."
+        description="Trạng thái gửi email xác nhận, nhắc lịch, cảnh báo phòng không khả dụng và hủy đặt phòng. Hệ thống tự gửi lại khi lỗi; email thất bại hoặc bị bỏ qua có thể được gửi lại thủ công."
       />
 
-      <div className="max-w-xs">
+      <div className="grid max-w-xl gap-4 sm:grid-cols-2">
+        <Field id="email-kind-filter" label="Loại email">
+          <NativeSelect
+            value={kind}
+            onChange={(e) => {
+              setPage(1);
+              setKind(e.target.value as EmailOutboxKind | '');
+            }}
+            data-testid="email-kind-filter"
+          >
+            <option value="">Tất cả loại email</option>
+            {Object.entries(KIND_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </NativeSelect>
+        </Field>
+
         <Field id="email-status-filter" label="Trạng thái">
           <NativeSelect
             value={status}

@@ -285,10 +285,7 @@ export const BookingDetailPage: React.FC = () => {
 
   const cancellationActorLabel =
     effectiveBooking?.status === 'CANCELLED'
-      ? getCancellationActorLabel(
-          effectiveBooking.cancelledBy,
-          effectiveBooking.cancellationReason,
-        )
+      ? getCancellationActorLabel(effectiveBooking.cancelledBy, effectiveBooking.cancellationReason)
       : null;
 
   const isCancelDialogOpen = Boolean(
@@ -453,6 +450,31 @@ export const BookingDetailPage: React.FC = () => {
 
               {!isCancelDialogOpen && renderCancelFeedback()}
 
+              {effectiveBooking.status === 'CONFIRMED' && effectiveBooking.roomUnavailable && (
+                <Notice tone="warning" role="status" data-testid="room-unavailable-banner">
+                  <div className="grid gap-1">
+                    <p className="font-semibold">
+                      {effectiveBooking.roomUnavailableCause === 'CLOSURE'
+                        ? 'Khung giờ bạn đặt bị ảnh hưởng bởi lịch đóng cửa.'
+                        : effectiveBooking.roomUnavailableCause === 'ROOM_ARCHIVED'
+                          ? 'Phòng bạn đặt đã ngừng kinh doanh.'
+                          : 'Phòng bạn đặt hiện đang ở trạng thái bảo trì.'}
+                    </p>
+                    {effectiveBooking.roomUnavailableReason && (
+                      <p className="text-sm wrap-anywhere">
+                        Lý do: <strong>{effectiveBooking.roomUnavailableReason}</strong>
+                      </p>
+                    )}
+                    <p className="text-sm">
+                      Đơn đặt phòng của bạn <strong>vẫn được giữ</strong> (không bị tự động hủy).{' '}
+                      {effectiveBooking.paymentStatus === 'UNPAID' && !isWithin1Hour
+                        ? 'Bạn có thể nhấn "Đổi lịch đặt phòng" bên dưới để chuyển sang phòng hoặc khung giờ khác còn trống, hoặc tự hủy nếu cần.'
+                        : 'Đơn đã thanh toán hoặc sát giờ bắt đầu nên không thể tự đổi trực tuyến; vui lòng liên hệ quầy lễ tân để được hỗ trợ chuyển phòng tương đương hoặc hoàn tiền.'}
+                    </p>
+                  </div>
+                </Notice>
+              )}
+
               {effectiveBooking.status === 'CANCELLED' && (
                 <Notice tone="error" data-testid="cancellation-info-banner" role="status">
                   <span>
@@ -470,9 +492,7 @@ export const BookingDetailPage: React.FC = () => {
                       <>
                         {' '}
                         – Lý do:{' '}
-                        <span className="wrap-anywhere">
-                          {effectiveBooking.cancellationReason}
-                        </span>
+                        <span className="wrap-anywhere">{effectiveBooking.cancellationReason}</span>
                       </>
                     ) : null}
                   </span>

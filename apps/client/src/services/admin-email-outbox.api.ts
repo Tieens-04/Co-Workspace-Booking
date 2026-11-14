@@ -7,6 +7,8 @@ export type EmailOutboxKind =
   | 'BOOKING_CANCELLATION'
   | 'BOOKING_REMINDER'
   | 'BOOKING_RESCHEDULED'
+  | 'PAYMENT_RECEIPT'
+  | 'BOOKING_ROOM_UNAVAILABLE'
   | 'EMAIL_VERIFICATION';
 
 /** Delivery record; the server never returns the recipient address. */
@@ -27,6 +29,7 @@ export interface EmailOutboxItem {
 export interface EmailOutboxQuery {
   page?: number;
   limit?: number;
+  kind?: EmailOutboxKind;
   status?: EmailOutboxStatus;
 }
 
