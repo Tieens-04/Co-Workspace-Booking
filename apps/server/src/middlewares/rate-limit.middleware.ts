@@ -8,33 +8,78 @@ export const getClientRateLimitKey = (req: Request): string => {
   return ipKeyGenerator(req.ip || req.socket.remoteAddress || '127.0.0.1', 56);
 };
 
-/**
- * Rate limiter for login endpoint to prevent brute-force attacks.
- * Conforms to CWB-33 Acceptance Criteria:
- * - Rate limit blocks after 10 consecutive failed logins.
- * - Successful logins (status < 400) are not counted (skipSuccessfulRequests = true).
- * - Window: 15 minutes.
- */
-export const loginRateLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10, // Max 10 consecutive failed attempts per window
-  skipSuccessfulRequests: true, // Only count failed requests (status >= 400)
-  standardHeaders: true, // Return RateLimit-* headers
-  legacyHeaders: false, // Disable X-RateLimit-* headers
-  keyGenerator: (req) => getClientRateLimitKey(req),
-  handler: (_req, res) => {
-    return sendError(
-      res,
-      'TOO_MANY_REQUESTS',
-      'Quá nhiều lần đăng nhập không thành công. Vui lòng thử lại sau 15 phút.',
-      429,
-    );
-  },
-});
+const LOGIN_LOCKOUT_MESSAGE =
+  'Quá nhiều lần đăng nhập không thành công. Vui lòng thử lại sau 15 phút.';
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+
+const tooManyAttempts = (message: string) => (_req: Request, res: Response) =>
+  sendError(res, 'TOO_MANY_REQUESTS', message, 429);
+
+// Normalized here as well, so the key never depends on `validateBody(loginSchema)` having run.
+// An email always contains '@' and an IP key never does, so the composite key cannot collide.
+const getLoginEmailKey = (req: Request): string => {
+  const email: unknown = req.body?.email;
+  return typeof email === 'string' ? email.trim().toLowerCase() : '';
+};
+const getLoginClientEmailKey = (req: Request): string =>
+  `${getClientRateLimitKey(req)}:${getLoginEmailKey(req)}`;
 
 /**
- * Middleware that resets the consecutive failed attempt counter for the client
- * when a login request succeeds (2xx), guaranteeing the "10 consecutive failed" invariant.
+ * Counts only real authentication failures (4xx other than 429). A request rejected by another
+ * limiter (429) or by a server fault (5xx) is given back: otherwise one throttled client could
+ * exhaust the shared per-email / per-IP allowance without guessing a single password.
+ * `clearedOnSuccess` limiters are wiped by `resetLoginRateLimitOnSuccess`, so they must not also
+ * decrement on 2xx: the store's `decrement` would recreate the key that was just deleted and
+ * restart its 15-minute window.
+ */
+const loginFailureLimiter = (
+  max: number,
+  keyGenerator: (req: Request) => string,
+  clearedOnSuccess: boolean,
+) =>
+  rateLimit({
+    windowMs: LOGIN_WINDOW_MS,
+    max,
+    skipSuccessfulRequests: true,
+    requestWasSuccessful: (_req, res) =>
+      res.statusCode === 429 ||
+      res.statusCode >= 500 ||
+      (!clearedOnSuccess && res.statusCode < 400),
+    standardHeaders: true, // Return RateLimit-* headers
+    legacyHeaders: false, // Disable X-RateLimit-* headers
+    keyGenerator,
+    // One shared message so the error body never reveals which limiter blocked the client.
+    handler: tooManyAttempts(LOGIN_LOCKOUT_MESSAGE),
+  });
+
+/**
+ * Rate limiter for login endpoint to prevent brute-force attacks.
+ * CWB-33: blocks after 10 consecutive failed logins per window (15 minutes), successful logins
+ * are not counted. CWB-108: the counter is keyed by IP + email, so a success on account B never
+ * erases the failures accumulated against account A from the same IP.
+ */
+export const loginRateLimiter = loginFailureLimiter(10, getLoginClientEmailKey, true);
+
+/**
+ * CWB-108: 20 failed logins per email across every IP per window, so a botnet cannot guess one
+ * account's password by spreading attempts over many addresses. Cleared only by that account's
+ * successful login (only the password owner can produce one). Trade-off: an attacker can
+ * deliberately lock a victim's login for up to 15 minutes. Mounted after `loginRateLimiter`, so
+ * requests already blocked for an IP + email pair never reach (or count against) this limiter.
+ */
+export const loginEmailRateLimiter = loginFailureLimiter(20, getLoginEmailKey, true);
+
+/**
+ * CWB-108: 50 failed logins per client IP (IPv6 grouped by /56) regardless of email. Never
+ * reset by a successful login, so a client cannot launder its failure count by signing in to an
+ * account it owns. Kept high so several users behind one NAT do not block each other.
+ */
+export const loginIpRateLimiter = loginFailureLimiter(50, getClientRateLimitKey, false);
+
+/**
+ * Middleware that resets the consecutive failed attempt counters of the authenticated account
+ * (IP + email pair and email-wide) when a login request succeeds (2xx). The IP-wide ceiling is
+ * intentionally left untouched.
  */
 export const resetLoginRateLimitOnSuccess = (
   req: Request,
@@ -43,8 +88,8 @@ export const resetLoginRateLimitOnSuccess = (
 ): void => {
   res.on('finish', () => {
     if (res.statusCode >= 200 && res.statusCode < 300) {
-      const key = getClientRateLimitKey(req);
-      loginRateLimiter.resetKey(key);
+      void loginRateLimiter.resetKey(getLoginClientEmailKey(req));
+      void loginEmailRateLimiter.resetKey(getLoginEmailKey(req));
     }
   });
   next();
@@ -71,9 +116,6 @@ export const changePasswordRateLimiter = rateLimit({
     );
   },
 });
-
-const tooManyAttempts = (message: string) => (_req: Request, res: Response) =>
-  sendError(res, 'TOO_MANY_REQUESTS', message, 429);
 
 /** Every forgot-password request counts (responses are always 200): 5 per IP per 15 minutes. */
 export const forgotPasswordRateLimiter = rateLimit({

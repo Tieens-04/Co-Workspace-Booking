@@ -11,6 +11,8 @@ import {
   resendVerificationSchema,
 } from '../validators/auth.validator.js';
 import {
+  loginEmailRateLimiter,
+  loginIpRateLimiter,
   loginRateLimiter,
   resetLoginRateLimitOnSuccess,
   forgotPasswordRateLimiter,
@@ -32,7 +34,13 @@ router.post(
   '/login',
   validateBody(loginSchema),
   resetLoginRateLimitOnSuccess,
+  // Broadest first, then IP + email, then email: a request already blocked by one limiter is
+  // given back by the earlier ones and never reaches the later ones, so a single client cannot
+  // inflate a shared (per-email / per-IP) counter. Whichever limiter blocks writes the last
+  // `RateLimit-*` headers.
+  loginIpRateLimiter,
   loginRateLimiter,
+  loginEmailRateLimiter,
   authController.login,
 );
 

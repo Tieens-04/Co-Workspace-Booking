@@ -9,7 +9,12 @@ import { generateToken, verifyToken } from '../utils/jwt.util.js';
 import { ENV } from '../config/env.config.js';
 import { errorHandler } from '../middlewares/error.middleware.js';
 import { ipKeyGenerator } from 'express-rate-limit';
-import { loginRateLimiter, registerRateLimiter } from '../middlewares/rate-limit.middleware.js';
+import {
+  loginEmailRateLimiter,
+  loginIpRateLimiter,
+  loginRateLimiter,
+  registerRateLimiter,
+} from '../middlewares/rate-limit.middleware.js';
 
 // Any accidental persistence access fails: these tests cannot connect to a real DB.
 vi.mock('../utils/prisma.util.js', () => {
@@ -50,9 +55,12 @@ const uniqueError = (target: unknown) =>
 beforeEach(async () => {
   // Every register request from 127.0.0.1 counts toward the CWB-78 limiter; start each test fresh.
   for (const address of ['127.0.0.1', '::ffff:127.0.0.1', '::1']) {
-    await registerRateLimiter.resetKey(ipKeyGenerator(address, 56));
-    await loginRateLimiter.resetKey(ipKeyGenerator(address, 56));
+    const ipKey = ipKeyGenerator(address, 56);
+    await registerRateLimiter.resetKey(ipKey);
+    await loginIpRateLimiter.resetKey(ipKey);
+    await loginRateLimiter.resetKey(`${ipKey}:${registration.email}`);
   }
+  await loginEmailRateLimiter.resetKey(registration.email);
   vi.spyOn(userRepository, 'findByEmail').mockResolvedValue(null);
   vi.spyOn(userRepository, 'create').mockImplementation(async (data) => ({
     ...fixture(data.passwordHash),
