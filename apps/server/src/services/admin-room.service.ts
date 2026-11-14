@@ -1,9 +1,8 @@
+import { RoomStatus } from '@prisma/client';
 import type { AuditActor } from '../repositories/audit.repository.js';
-import {
-  RoomRepositoryContract,
-  roomRepository,
-} from '../repositories/room.repository.js';
+import { RoomRepositoryContract, roomRepository } from '../repositories/room.repository.js';
 import { MediaStorageServiceContract, cloudinaryMediaService } from './cloudinary-media.service.js';
+import { emailOutboxService, type EmailOutboxService } from './email-outbox.service.js';
 import { CreateRoomInput, UpdateRoomInput } from '../validators/admin-room.validator.js';
 import { RoomDetail } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
@@ -15,6 +14,7 @@ export class AdminRoomService {
   constructor(
     private readonly roomRepo: RoomRepositoryContract = roomRepository,
     private readonly mediaStorage: MediaStorageServiceContract = cloudinaryMediaService,
+    private readonly emailOutbox: Pick<EmailOutboxService, 'kick'> = emailOutboxService,
   ) {}
 
   async getRoomById(id: string): Promise<RoomDetail> {
@@ -49,6 +49,13 @@ export class AdminRoomService {
       acknowledgeFutureBookings: data.acknowledgeFutureBookings,
       ...(actor ? { auditActor: actor } : {}),
     });
+
+    if (
+      data.acknowledgeFutureBookings &&
+      (data.status === RoomStatus.MAINTENANCE || data.status === RoomStatus.ARCHIVED)
+    ) {
+      this.emailOutbox.kick();
+    }
 
     if (removedPublicIds && removedPublicIds.length > 0) {
       this.mediaStorage.destroyManyImages(removedPublicIds).catch((err) => {

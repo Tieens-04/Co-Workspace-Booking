@@ -1,10 +1,18 @@
-import { BookingStatus, PaymentMethod, PaymentStatus, Prisma, Role } from '@prisma/client';
+import {
+  BookingStatus,
+  PaymentMethod,
+  PaymentStatus,
+  Prisma,
+  Role,
+  RoomStatus,
+} from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { summarizeRevenueGroups, toRevenueGroups } from '../utils/booking-revenue.util.js';
 import { lockRoomRow, type LockedRoomRecord } from './room.repository.js';
 import {
   BLOCKING_BOOKING_STATUSES,
   BookingResponseDto,
+  BookingRoomUnavailableCause,
   FindUserBookingsFilter,
 } from '../types/booking.type.js';
 import {
@@ -53,11 +61,7 @@ export const accountDeletedError = (): AppError =>
   new AppError('UNAUTHORIZED', 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại', 401);
 
 export const emailNotVerifiedError = (): AppError =>
-  new AppError(
-    'EMAIL_NOT_VERIFIED',
-    'Vui lòng xác thực email trước khi đặt phòng',
-    403,
-  );
+  new AppError('EMAIL_NOT_VERIFIED', 'Vui lòng xác thực email trước khi đặt phòng', 403);
 
 export const activeBookingLimitError = (limit: number): AppError =>
   new AppError(
@@ -108,11 +112,7 @@ export type CreateBookingRepoInput = {
 
 function assertRoomBookable(lockedRoom: Pick<LockedRoomRecord, 'status'>): void {
   if (lockedRoom.status === 'ARCHIVED') {
-    throw new AppError(
-      'ROOM_NOT_AVAILABLE',
-      'Phòng đã ngừng kinh doanh, không thể đặt phòng',
-      409,
-    );
+    throw new AppError('ROOM_NOT_AVAILABLE', 'Phòng đã ngừng kinh doanh, không thể đặt phòng', 409);
   }
   if (lockedRoom.status === 'MAINTENANCE') {
     throw new AppError(
@@ -172,6 +172,9 @@ function toBookingResponse(
     paymentStatus: booking.paymentStatus,
     paymentMethod: booking.paymentMethod,
     paidAt: booking.paidAt,
+    roomUnavailable: false,
+    roomUnavailableReason: null,
+    roomUnavailableCause: null,
   };
 }
 
@@ -186,6 +189,134 @@ export function assertValidBookingIdentity(data: BookingIdentity): void {
   }
 }
 
+export interface ClosureOverlapCandidate {
+  id: string;
+  roomId: string | null;
+  startTime: Date;
+  endTime: Date;
+  reason: string;
+}
+
+export interface BookingUnavailabilitySummary {
+  roomUnavailable: boolean;
+  roomUnavailableReason: string | null;
+  roomUnavailableCause: BookingRoomUnavailableCause | null;
+}
+
+export function resolveBookingRoomUnavailability(
+  booking: {
+    status: BookingStatus;
+    room: { id: string; status?: RoomStatus };
+    startTime: Date;
+    endTime: Date;
+  },
+  closures: readonly ClosureOverlapCandidate[] = [],
+  preferredClosureId?: string,
+  now: Date = new Date(),
+): BookingUnavailabilitySummary {
+  if (booking.status !== BookingStatus.CONFIRMED || booking.endTime.getTime() <= now.getTime()) {
+    return {
+      roomUnavailable: false,
+      roomUnavailableReason: null,
+      roomUnavailableCause: null,
+    };
+  }
+
+  const overlapping = closures.filter(
+    (closure) =>
+      (closure.roomId === null || closure.roomId === booking.room.id) &&
+      closure.startTime < booking.endTime &&
+      closure.endTime > booking.startTime,
+  );
+
+  if (overlapping.length > 0) {
+    const matched = preferredClosureId
+      ? (overlapping.find((closure) => closure.id === preferredClosureId) ?? overlapping[0])
+      : overlapping[0];
+    return {
+      roomUnavailable: true,
+      roomUnavailableReason: matched.reason?.trim() ? matched.reason : 'Khung giờ đóng cửa',
+      roomUnavailableCause: 'CLOSURE',
+    };
+  }
+
+  const roomStatus = booking.room.status ?? RoomStatus.AVAILABLE;
+  if (roomStatus === RoomStatus.ARCHIVED) {
+    return {
+      roomUnavailable: true,
+      roomUnavailableReason: 'Phòng đã ngừng kinh doanh',
+      roomUnavailableCause: 'ROOM_ARCHIVED',
+    };
+  }
+
+  if (roomStatus === RoomStatus.MAINTENANCE) {
+    return {
+      roomUnavailable: true,
+      roomUnavailableReason: 'Phòng đang bảo trì',
+      roomUnavailableCause: 'ROOM_MAINTENANCE',
+    };
+  }
+
+  return {
+    roomUnavailable: false,
+    roomUnavailableReason: null,
+    roomUnavailableCause: null,
+  };
+}
+
+type ClosureFindManyDb = {
+  closure?: {
+    findMany: Prisma.ClosureDelegate['findMany'];
+  };
+};
+
+export async function loadOverlappingClosuresForConfirmed(
+  db: ClosureFindManyDb,
+  records: ReadonlyArray<{
+    status: BookingStatus;
+    room: { id: string };
+    startTime: Date;
+    endTime: Date;
+  }>,
+  now: Date = new Date(),
+): Promise<ClosureOverlapCandidate[]> {
+  const confirmed = records.filter(
+    (record) =>
+      record.status === BookingStatus.CONFIRMED && record.endTime.getTime() > now.getTime(),
+  );
+  if (confirmed.length === 0 || !db.closure?.findMany) {
+    return [];
+  }
+
+  let minStart = confirmed[0].startTime;
+  let maxEnd = confirmed[0].endTime;
+  const roomIds = new Set<string>();
+
+  for (const booking of confirmed) {
+    roomIds.add(booking.room.id);
+    if (booking.startTime < minStart) minStart = booking.startTime;
+    if (booking.endTime > maxEnd) maxEnd = booking.endTime;
+  }
+
+  return db.closure.findMany({
+    where: {
+      AND: [
+        { OR: [{ roomId: null }, { roomId: { in: Array.from(roomIds) } }] },
+        { startTime: { lt: maxEnd } },
+        { endTime: { gt: minStart } },
+      ],
+    },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: {
+      id: true,
+      roomId: true,
+      startTime: true,
+      endTime: true,
+      reason: true,
+    },
+  });
+}
+
 export const bookingReadSelect = {
   id: true,
   bookingCode: true,
@@ -193,6 +324,7 @@ export const bookingReadSelect = {
     select: {
       id: true,
       name: true,
+      status: true,
     },
   },
   startTime: true,
@@ -223,8 +355,13 @@ const formatAmount = (amt: unknown): string =>
     ? (amt as { toFixed: (digits: number) => string }).toFixed(2)
     : Number(amt).toFixed(2);
 
-export function mapBookingRecordToDto(record: BookingReadRecord): BookingResponseDto {
+export function mapBookingRecordToDto(
+  record: BookingReadRecord,
+  closures: readonly ClosureOverlapCandidate[] = [],
+  now: Date = new Date(),
+): BookingResponseDto {
   const totalAmount = formatAmount(record.totalAmount);
+  const unavailability = resolveBookingRoomUnavailability(record, closures, undefined, now);
 
   return {
     id: record.id,
@@ -247,6 +384,7 @@ export function mapBookingRecordToDto(record: BookingReadRecord): BookingRespons
     cancelledAt: record.cancelledAt ?? null,
     cancelledBy: record.cancelledBy ?? null,
     refundedAmount: formatAmount(record.refundedAmount),
+    ...unavailability,
   };
 }
 
@@ -257,6 +395,7 @@ export const adminBookingReadSelect = {
     select: {
       id: true,
       name: true,
+      status: true,
     },
   },
   startTime: true,
@@ -337,8 +476,11 @@ async function auditBookingChange(
 
 export function mapAdminBookingRecordToDto(
   record: AdminBookingReadRecord,
+  closures: readonly ClosureOverlapCandidate[] = [],
+  now: Date = new Date(),
 ): AdminBookingResponseDto {
   const totalAmount = formatAmount(record.totalAmount);
+  const unavailability = resolveBookingRoomUnavailability(record, closures, undefined, now);
 
   const customer: AdminBookingCustomerDto = record.user
     ? {
@@ -384,6 +526,7 @@ export function mapAdminBookingRecordToDto(
           createdAt: r.createdAt,
         }))
       : undefined,
+    ...unavailability,
     customer,
   };
 }
@@ -395,7 +538,7 @@ export interface BookingRepositoryContract {
     filter: FindUserBookingsFilter,
     now: Date,
   ): Promise<[number, BookingResponseDto[]]>;
-  findByIdForUser(userId: string, id: string): Promise<BookingResponseDto | null>;
+  findByIdForUser(userId: string, id: string, now?: Date): Promise<BookingResponseDto | null>;
   cancelBooking(
     userId: string,
     id: string,
@@ -419,6 +562,7 @@ export interface RescheduleBookingRepoInput {
 export interface AdminBookingRepositoryContract {
   findManyAndCountForAdmin(
     filter: FindAdminBookingsFilter,
+    now?: Date,
   ): Promise<[number, AdminBookingResponseDto[]]>;
   confirmPaymentForAdmin(
     id: string,
@@ -505,11 +649,16 @@ export class BookingRepository
         );
         if (previous) {
           if (previous.idempotency_hash !== data.idempotency.hash) throw idempotencyKeyReused();
+          const replayNow = new Date();
           const original = await tx.booking.findUniqueOrThrow({
             where: { id: previous.id },
-            include: createdBookingInclude,
+            select: bookingReadSelect,
           });
-          return { ...toBookingResponse(original), idempotentReplay: true };
+          const closures = await loadOverlappingClosuresForConfirmed(tx, [original], replayNow);
+          return {
+            ...mapBookingRecordToDto(original, closures, replayNow),
+            idempotentReplay: true,
+          };
         }
       }
 
@@ -644,11 +793,16 @@ export class BookingRepository
       }),
     ]);
 
-    return [total, records.map(mapBookingRecordToDto)];
+    const closures = await loadOverlappingClosuresForConfirmed(prisma, records, now);
+    return [total, records.map((record) => mapBookingRecordToDto(record, closures, now))];
   }
 
-  async findByIdForUser(userId: string, id: string): Promise<BookingResponseDto | null> {
-    await this.evaluateNoShowBookings(undefined, userId, id);
+  async findByIdForUser(
+    userId: string,
+    id: string,
+    now: Date = new Date(),
+  ): Promise<BookingResponseDto | null> {
+    await this.evaluateNoShowBookings(now, userId, id);
     const record = await prisma.booking.findFirst({
       where: {
         id,
@@ -657,7 +811,12 @@ export class BookingRepository
       select: bookingReadSelect,
     });
 
-    return record ? mapBookingRecordToDto(record) : null;
+    if (!record) {
+      return null;
+    }
+
+    const closures = await loadOverlappingClosuresForConfirmed(prisma, [record], now);
+    return mapBookingRecordToDto(record, closures, now);
   }
 
   async cancelBooking(
@@ -866,14 +1025,16 @@ export class BookingRepository
 
       await tx.emailOutbox.upsert({
         where: {
-          kind_bookingId: {
+          kind_bookingId_eventKey: {
             kind: 'BOOKING_RESCHEDULED',
             bookingId: id,
+            eventKey: '',
           },
         },
         create: {
           kind: 'BOOKING_RESCHEDULED',
           bookingId: id,
+          eventKey: '',
           status: 'QUEUED',
           attempts: 0,
           nextAttemptAt: evaluationTime,
@@ -889,14 +1050,53 @@ export class BookingRepository
         },
       });
 
-      return mapBookingRecordToDto(updated);
+      const closures = await loadOverlappingClosuresForConfirmed(tx, [updated], evaluationTime);
+      return mapBookingRecordToDto(updated, closures, evaluationTime);
     });
   }
 
   async findManyAndCountForAdmin(
     filter: FindAdminBookingsFilter,
+    now: Date = new Date(),
   ): Promise<[number, AdminBookingResponseDto[]]> {
+    const orderBy: Prisma.BookingOrderByWithRelationInput[] = [
+      { startTime: 'desc' },
+      { id: 'desc' },
+    ];
+
+    const skip = (filter.page - 1) * filter.limit;
+    const take = filter.limit;
+
     const where: Prisma.BookingWhereInput = {};
+
+    if (filter.needsAttention !== undefined) {
+      const attentionRows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+        SELECT b.id
+        FROM bookings b
+        INNER JOIN rooms r ON r.id = b.room_id
+        WHERE b.status = ${BookingStatus.CONFIRMED}
+          AND b.end_time > ${now}
+          AND (
+            r.status <> ${RoomStatus.AVAILABLE}
+            OR EXISTS (
+              SELECT 1
+              FROM closures c
+              WHERE (c.room_id IS NULL OR c.room_id = b.room_id)
+                AND c.start_time < b.end_time
+                AND c.end_time > b.start_time
+            )
+          )
+      `);
+      const attentionIds = attentionRows.map((row) => row.id);
+      if (filter.needsAttention) {
+        if (attentionIds.length === 0) {
+          return [0, []];
+        }
+        where.id = { in: attentionIds };
+      } else if (attentionIds.length > 0) {
+        where.id = { notIn: attentionIds };
+      }
+    }
 
     if (filter.bookingCode) {
       where.bookingCode = filter.bookingCode;
@@ -926,14 +1126,6 @@ export class BookingRepository
       ];
     }
 
-    const orderBy: Prisma.BookingOrderByWithRelationInput[] = [
-      { startTime: 'desc' },
-      { id: 'desc' },
-    ];
-
-    const skip = (filter.page - 1) * filter.limit;
-    const take = filter.limit;
-
     const [total, records] = await Promise.all([
       prisma.booking.count({ where }),
       prisma.booking.findMany({
@@ -945,9 +1137,9 @@ export class BookingRepository
       }),
     ]);
 
-    return [total, records.map(mapAdminBookingRecordToDto)];
+    const closures = await loadOverlappingClosuresForConfirmed(prisma, records, now);
+    return [total, records.map((record) => mapAdminBookingRecordToDto(record, closures, now))];
   }
-
 
   async recordRefundForAdmin(
     id: string,
@@ -1113,7 +1305,8 @@ export class BookingRepository
         if (!existing) {
           throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
         }
-        return mapAdminBookingRecordToDto(existing);
+        const closures = await loadOverlappingClosuresForConfirmed(tx, [existing]);
+        return mapAdminBookingRecordToDto(existing, closures);
       }
 
       // 4. Update payment status to PAID with the specified payment method
@@ -1136,7 +1329,8 @@ export class BookingRepository
         await enqueueBookingEmail(tx, 'PAYMENT_RECEIPT', id);
       }
 
-      return mapAdminBookingRecordToDto(updated);
+      const closures = await loadOverlappingClosuresForConfirmed(tx, [updated]);
+      return mapAdminBookingRecordToDto(updated, closures);
     });
   }
 
@@ -1267,7 +1461,8 @@ export class BookingRepository
           select: adminBookingReadSelect,
         });
         if (!existing) throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
-        return mapAdminBookingRecordToDto(existing);
+        const closures = await loadOverlappingClosuresForConfirmed(tx, [existing], now);
+        return mapAdminBookingRecordToDto(existing, closures, now);
       }
       if (
         booking.status !== BookingStatus.CONFIRMED ||
@@ -1289,7 +1484,8 @@ export class BookingRepository
         select: adminBookingReadSelect,
       });
       await auditBookingChange(tx, actor, 'BOOKING_CHECKED_IN', id, auditBefore, updated);
-      return mapAdminBookingRecordToDto(updated);
+      const closures = await loadOverlappingClosuresForConfirmed(tx, [updated], now);
+      return mapAdminBookingRecordToDto(updated, closures, now);
     });
   }
 

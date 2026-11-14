@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { EmailOutboxStatus } from '@prisma/client';
+import { EmailOutboxKind, EmailOutboxStatus } from '@prisma/client';
 import { positiveIntSchema, MYSQL_INT_MAX } from './room.validator.js';
 
 export const getEmailOutboxQuerySchema = z
@@ -8,6 +8,7 @@ export const getEmailOutboxQuerySchema = z
     limit: positiveIntSchema('limit')
       .refine((n) => n >= 1 && n <= 100, 'limit phải từ 1 đến 100')
       .default(20),
+    kind: z.nativeEnum(EmailOutboxKind).optional(),
     status: z.nativeEnum(EmailOutboxStatus).optional(),
     bookingId: z.string().uuid('bookingId phải là UUID hợp lệ').optional(),
   })
