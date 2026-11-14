@@ -34,6 +34,7 @@ Booking mặc định `UNPAID` (trả tại quầy), nên server giới hạn vi
 | Booking sắp tới mỗi customer | tối đa `BOOKING_MAX_ACTIVE_PER_CUSTOMER` (mặc định **5**, env 1–100) booking `CONFIRMED` có `start ≥ now` | customer; guest booking của admin không bị giới hạn | `409 ACTIVE_BOOKING_LIMIT` |
 | `POST /api/v1/bookings`      | 20 request / 15 phút, tính mọi request                                                                    | theo tài khoản đã xác thực (không theo IP)          | `429 TOO_MANY_REQUESTS`    |
 | `POST /api/v1/auth/register` | 10 request / 1 giờ, tính mọi request                                                                      | theo IP (qua `TRUST_PROXY`, IPv6 gom theo /56)      | `429 TOO_MANY_REQUESTS`    |
+| `POST /api/v1/auth/login`    | 10 lần sai (IP + email), 20 lần sai (email), 50 lần sai (IP) / 15 phút; chỉ tính xác thực sai             | cặp IP + email; email (mọi IP); IP (IPv6 /56)       | `429 TOO_MANY_REQUESTS`    |
 
 Booking đã hủy, hoàn tất, no-show hoặc đã qua giờ bắt đầu không tính vào giới hạn; hủy một booking sắp tới giải
 phóng một lượt. Kiểm tra giới hạn nằm trong transaction tạo booking, sau khi khóa dòng `users` của customer

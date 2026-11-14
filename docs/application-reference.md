@@ -98,6 +98,8 @@ Vì ứng dụng sử dụng React Router với HTML5 History API (`BrowserRoute
   - Trả về JWT Access Token (HS256), mặc định 1 giờ, chứa `{ sub, role, iat, exp }`; `data.expiresIn` luôn khớp thời hạn token (giây). Dữ liệu `user` trả về kiểu `SafeUser` chứa `emailVerifiedAt` (`string | null`).
   - Tài khoản bị admin khóa (CWB-79) trả `403 ACCOUNT_LOCKED`, không có token. Trạng thái khóa chỉ lộ ra khi mật khẩu đúng; sai mật khẩu vẫn là `401 INVALID_CREDENTIALS`.
   - Người dùng chưa xác thực email vẫn có thể đăng nhập bình thường và xem phòng/hồ sơ cá nhân, nhưng bị chặn khi đặt phòng cho đến khi hoàn tất xác thực.
+  - **Rate limit (CWB-33, CWB-108):** chỉ tính lần xác thực thất bại thật (`401`/`403` sau validation; request bị limiter khác chặn `429` hoặc lỗi server `5xx` không bị tính), cửa sổ 15 phút; vượt ngưỡng trả `429 TOO_MANY_REQUESTS` (cùng một thông báo cho mọi limiter): 10 lần sai / cặp IP + email (thành công reset đúng cặp đó, không reset tài khoản khác cùng IP), 20 lần sai / email trên mọi IP (thành công của tài khoản đó reset), 50 lần sai / IP (không reset khi thành công; IPv6 gom `/56`). Đánh đổi đã chấp nhận: giới hạn theo email cho phép kẻ tấn công cố ý khóa đăng nhập của một email tối đa 15 phút.
+  - Khi email không tồn tại/đã ẩn danh, server vẫn so sánh mật khẩu với một hash giả sinh lúc nạp module bằng đúng `BCRYPT_SALT_ROUNDS`, nên thời gian phản hồi không lộ sự tồn tại của email.
 
 Email, `fullName` và `phoneNumber` giới hạn 191 ký tự theo schema MySQL. Email trùng trả `409 EMAIL_ALREADY_EXISTS`; unique constraint khác trả `409 RESOURCE_CONFLICT`.
 

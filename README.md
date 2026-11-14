@@ -113,7 +113,7 @@ Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). AP
 
 **Reverse proxy:** chạy trực tiếp giữ `TRUST_PROXY=false`, kể cả production. Compose đặt `true` để tin đúng một Nginx; Nginx ghi đè header chuyển tiếp bằng IP kết nối. Chỉ bật khi đã chặn truy cập trực tiếp backend; cần đánh giá lại nếu thêm CDN/load balancer.
 
-**Giới hạn đăng nhập:** sau 10 lần sai liên tiếp trong 15 phút, lượt tiếp theo trả `429`; đăng nhập thành công reset bộ đếm, lỗi validation không tính. IPv6 cùng `/56` dùng chung giới hạn.
+**Giới hạn đăng nhập:** chỉ tính lần đăng nhập sai (lỗi validation không tính), cửa sổ 15 phút, vượt ngưỡng trả `429`: (1) 10 lần sai liên tiếp theo cặp IP + email — đăng nhập thành công chỉ reset đúng cặp đó, không xóa bộ đếm của tài khoản khác cùng IP; (2) 20 lần sai theo email trên mọi IP (chống rải nhiều IP; thành công của chính tài khoản đó reset); (3) 50 lần sai theo IP, không bao giờ reset khi đăng nhập thành công. IPv6 cùng `/56` dùng chung giới hạn IP. Đánh đổi: kẻ tấn công có thể cố ý khiến một email bị khóa đăng nhập tối đa 15 phút. Hash giả chống dò email (`DUMMY_HASH`) dùng cùng `BCRYPT_SALT_ROUNDS` với mật khẩu thật.
 
 ## Kiểm tra
 
