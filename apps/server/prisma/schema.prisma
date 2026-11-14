@@ -51,6 +51,7 @@ enum EmailOutboxKind {
   BOOKING_RESCHEDULED
   EMAIL_VERIFICATION
   PAYMENT_RECEIPT
+  BOOKING_ROOM_UNAVAILABLE
 }
 
 enum PaymentMethod {
@@ -281,6 +282,7 @@ model EmailOutbox {
   id            String            @id @default(uuid())
   kind          EmailOutboxKind
   bookingId     String?           @map("booking_id")
+  eventKey      String            @default("") @map("event_key") @db.VarChar(191)
   booking       Booking?          @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   userId        String?           @map("user_id")
   user          User?             @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -292,7 +294,7 @@ model EmailOutbox {
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
 
-  @@unique([kind, bookingId], map: "email_outbox_kind_booking_key")
+  @@unique([kind, bookingId, eventKey], map: "email_outbox_kind_booking_event_key")
   @@index([status, nextAttemptAt])
   @@index([bookingId])
   @@index([userId])
