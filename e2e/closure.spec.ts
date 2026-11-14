@@ -139,3 +139,78 @@ test('admin creates closure with conflict warning when confirmed booking exists'
   });
   expect(keptBooking.status).toBe('CONFIRMED');
 });
+
+test('closure acknowledgement alerts affected booking in admin & customer UI and supports cross-room reschedule (CWB-91)', async ({
+  page,
+  browser,
+  scenario,
+}) => {
+  const alternateRoom = await scenario.createRoom();
+  const bookingStart = tomorrowAt(10);
+  const booking = await scenario.booking({
+    startTime: bookingStart,
+    endTime: new Date(bookingStart.getTime() + 2 * HOUR),
+  });
+
+  // 1. Admin creates a closure overlapping the existing booking and acknowledges conflicts
+  await login(page, scenario.admin);
+  await page.goto('/admin/closures');
+  await page.getByTestId('btn-add-closure').click();
+  await page.getByTestId('closure-scope-select').selectOption('ROOM');
+  await page.getByTestId('closure-room-select').selectOption(scenario.room.id);
+
+  await page.getByTestId('closure-start-time').fill(localInput(tomorrowAt(9)));
+  await page.getByTestId('closure-end-time').fill(localInput(tomorrowAt(13)));
+  await page.getByTestId('closure-reason').fill('Khung đóng cửa E2E CWB-91');
+  await page.getByTestId('btn-submit-closure').click();
+
+  await expect(page.getByText('Cảnh báo xung đột đặt phòng')).toBeVisible();
+  await page.getByTestId('btn-confirm-conflict-closure').click();
+  await expect(page.getByTestId('closures-table')).toContainText('Khung đóng cửa E2E CWB-91');
+
+  // Verify DB state: EmailOutbox queued BOOKING_ROOM_UNAVAILABLE without mutating booking/payment
+  const outboxRow = await scenario.db.emailOutbox.findFirst({
+    where: { bookingId: booking.id, kind: 'BOOKING_ROOM_UNAVAILABLE' },
+  });
+  expect(outboxRow).not.toBeNull();
+  const keptBooking = await scenario.db.booking.findUniqueOrThrow({
+    where: { id: booking.id },
+  });
+  expect(keptBooking.status).toBe('CONFIRMED');
+  expect(keptBooking.paymentStatus).toBe('UNPAID');
+
+  // 2. Admin inspects /admin/bookings and filters needsAttention=true
+  await page.goto('/admin/bookings');
+  await expect(page.getByTestId('admin-bookings-table')).toBeVisible();
+  await page.getByTestId('filter-needs-attention').check();
+  await expect(page.getByTestId(`admin-booking-unavailable-badge-${booking.id}`)).toBeVisible();
+  await expect(page.getByTestId('admin-bookings-table')).toContainText('Khung đóng cửa E2E CWB-91');
+
+  // 3. Customer views booking detail, sees alert banner, and reschedules to alternateRoom
+  const customerContext = await browser.newContext();
+  try {
+    const customerPage = await customerContext.newPage();
+    await login(customerPage, scenario.customer);
+    await customerPage.goto(`/bookings/${booking.id}`);
+
+    const banner = customerPage.getByTestId('room-unavailable-banner');
+    await expect(banner).toBeVisible();
+    await expect(banner).toContainText('Khung đóng cửa E2E CWB-91');
+
+    await customerPage.getByTestId('reschedule-booking-init-btn').click();
+    await expect(customerPage.getByTestId('reschedule-dialog-content')).toBeVisible();
+
+    const roomSelect = customerPage.getByTestId('reschedule-room-select');
+    await expect(roomSelect).toBeVisible();
+    await roomSelect.selectOption(alternateRoom.id);
+
+    await customerPage.getByTestId('time-slot-10:00').click();
+    await customerPage.getByTestId('time-slot-11:30').click();
+    await customerPage.getByTestId('reschedule-confirm-btn').click();
+
+    await expect(customerPage.getByTestId('room-unavailable-banner')).toBeHidden();
+    await expect(customerPage.getByTestId('booking-room-value')).toContainText(alternateRoom.name);
+  } finally {
+    await customerContext.close();
+  }
+});

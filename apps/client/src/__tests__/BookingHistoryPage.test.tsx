@@ -629,4 +629,53 @@ describe('BookingHistoryPage', () => {
     const timeContainers = screen.getAllByTestId('booking-time-value');
     expect(timeContainers[0]).toHaveTextContent(/25\/10\/2026.*26\/10\/2026/);
   });
+
+  describe('CWB-91: Room unavailability alerts in customer history', () => {
+    it('shows warning badge and reason only on CONFIRMED bookings with roomUnavailable=true', async () => {
+      const items: BookingResult[] = [
+        {
+          ...mockBookings[0],
+          id: 'b-unavailable',
+          bookingCode: 'CS-CWB91-WARN',
+          status: 'CONFIRMED',
+          roomUnavailable: true,
+          roomUnavailableCause: 'CLOSURE',
+          roomUnavailableReason: 'Bảo trì hệ thống điện',
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-normal',
+          bookingCode: 'CS-CWB91-OK',
+          status: 'CONFIRMED',
+          roomUnavailable: false,
+          roomUnavailableCause: null,
+          roomUnavailableReason: null,
+        },
+        {
+          ...mockBookings[1],
+          id: 'b-cancelled',
+          bookingCode: 'CS-CWB91-CANC',
+          status: 'CANCELLED',
+          roomUnavailable: false,
+          roomUnavailableCause: null,
+          roomUnavailableReason: null,
+        },
+      ];
+
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(items, 3, 1));
+      renderComponent();
+
+      const warnRow = await screen.findByTestId('booking-item-b-unavailable');
+      expect(within(warnRow).getByTestId('booking-unavailable-badge')).toBeInTheDocument();
+      expect(warnRow).toHaveTextContent('Bảo trì hệ thống điện');
+
+      const normalRow = screen.getByTestId('booking-item-b-normal');
+      expect(within(normalRow).queryByTestId('booking-unavailable-badge')).not.toBeInTheDocument();
+
+      const cancelledRow = screen.getByTestId('booking-item-b-cancelled');
+      expect(
+        within(cancelledRow).queryByTestId('booking-unavailable-badge'),
+      ).not.toBeInTheDocument();
+    });
+  });
 });

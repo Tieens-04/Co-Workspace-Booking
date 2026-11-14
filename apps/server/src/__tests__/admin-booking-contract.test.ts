@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { BookingStatus, PaymentStatus, Prisma } from '@prisma/client';
+import { BookingStatus, PaymentStatus, Prisma, RoomStatus } from '@prisma/client';
 import {
   AdminBookingReadRecord,
   mapAdminBookingRecordToDto,
@@ -11,7 +11,7 @@ function fixture(): AdminBookingReadRecord {
   return {
     id: 'booking-id',
     bookingCode: 'CS-20261115-ABCD',
-    room: { id: 'room-id', name: 'Meeting room' },
+    room: { id: 'room-id', name: 'Meeting room', status: RoomStatus.AVAILABLE },
     startTime: new Date('2026-11-15T02:00:00Z'),
     endTime: new Date('2026-11-15T04:00:00Z'),
     checkedInAt: null,
@@ -78,6 +78,9 @@ describe('Public admin booking customer contract (CWB-46)', () => {
         'cancelledAt',
         'cancelledBy',
         'customer',
+        'roomUnavailable',
+        'roomUnavailableReason',
+        'roomUnavailableCause',
       ].sort(),
     );
     expect(dto.totalAmount).toBe('400.00');
