@@ -32,11 +32,11 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
 
 Định dạng chọn theo `NODE_ENV` (không thêm biến môi trường mới):
 
-| `NODE_ENV` | Định dạng |
-| --- | --- |
-| `development` | Dòng ngắn dễ đọc: `GET /api/v1/rooms 200 12.345 ms - 512` (không mã màu) |
+| `NODE_ENV`                         | Định dạng                                                                                                                                                               |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `development`                      | Dòng ngắn dễ đọc: `GET /api/v1/rooms 200 12.345 ms - 512` (không mã màu)                                                                                                |
 | `production` (và mọi giá trị khác) | Một object JSON mỗi dòng trên stdout: `{"time":"<ISO 8601 UTC>","method":"GET","path":"/api/v1/rooms","status":200,"durationMs":12.345,"bytes":512,"ip":"203.0.113.7"}` |
-| `test` | Tắt log request |
+| `test`                             | Tắt log request                                                                                                                                                         |
 
 - Chỉ ghi các trường trên: **không** ghi query string, header (`Authorization`, cookie), body (token đặt lại mật khẩu/xác thực email gửi trong body) hay user agent. Segment đường dẫn dạng chuỗi mờ dài ≥ 24 ký tự (không phải UUID) được thay bằng `:redacted`.
 - `ip` là `req.ip`, nên phụ thuộc `TRUST_PROXY` (sau nginx của Compose là IP thật của khách).
@@ -58,18 +58,25 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
    Kiểm tra file khác rỗng và kết thúc bằng dòng `-- Dump completed`. Sao chép ra ngoài host (kho lưu trữ có mã hóa); không commit file dump.
 
    - **Lưu ý migration CWB-76 (`20261107140000_cwb76_room_unique_name`):** Trước khi deploy, kiểm tra phòng trùng tên trong database:
+
      ```bash
      docker compose exec -T db mysql -u root -p"$MYSQL_ROOT_PASSWORD" "$MYSQL_DATABASE" \
        -e "SELECT name, COUNT(*) AS count FROM rooms GROUP BY name HAVING count > 1;"
      ```
+
      Nếu có kết quả trả về, thực hiện đổi tên các phòng trùng lặp (ví dụ nối thêm hậu tố phân biệt) trước khi chạy `prisma migrate deploy` để tránh MySQL văng lỗi `ERROR 1062 (23000): Duplicate entry` làm gián đoạn triển khai.
 
    - **Lưu ý migration CWB-87 (`20261109150000_cwb87_email_verification`):**
      Migration thêm cột `email_verified_at` vào bảng `users` (mặc định NULL cho tài khoản đăng ký mới) và tự động chạy câu lệnh backfill:
+
      ```sql
      UPDATE `users` SET `email_verified_at` = CURRENT_TIMESTAMP(3);
      ```
+
      để toàn bộ tài khoản legacy hiện có không bị gián đoạn quyền đặt phòng. Đồng thời migration tạo bảng `email_verification_tokens`, bổ sung giá trị `EMAIL_VERIFICATION` vào enum `EmailOutboxKind`, và nới lỏng cột `booking_id` trong `email_outbox` sang nullable cùng khóa ngoại `user_id` liên kết `users(id)`. Không yêu cầu can thiệp thủ công trước khi deploy.
+
+   - **Lưu ý migration CWB-91 (`20261114210000_cwb91_booking_room_unavailable_alerts`):**
+     Migration bổ sung giá trị `BOOKING_ROOM_UNAVAILABLE` vào enum `email_outbox.kind`, thêm cột `event_key VARCHAR(191) NOT NULL DEFAULT ''`, và thay chỉ mục duy nhất `(kind, booking_id)` thành `(kind, booking_id, event_key)` (giữ nguyên các hàng `email_outbox` cũ với `event_key = ''`). Tương thích ngược hoàn toàn, không yêu cầu backfill hoặc can thiệp thủ công trước khi deploy.
 
 3. **Triển khai:**
 

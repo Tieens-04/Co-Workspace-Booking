@@ -167,7 +167,9 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       expect(duplicateRes.status).toBe(409);
       expect(duplicateRes.body.code).toBe('ROOM_NAME_CONFLICT');
       expect(duplicateRes.body.message).toBe('Tên phòng đã tồn tại');
-      expect(duplicateRes.body.details).toEqual([{ field: 'name', message: 'Tên phòng đã tồn tại' }]);
+      expect(duplicateRes.body.details).toEqual([
+        { field: 'name', message: 'Tên phòng đã tồn tại' },
+      ]);
     });
   });
 
@@ -251,7 +253,9 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       expect(conflictRes.status).toBe(409);
       expect(conflictRes.body.code).toBe('ROOM_NAME_CONFLICT');
       expect(conflictRes.body.message).toBe('Tên phòng đã tồn tại');
-      expect(conflictRes.body.details).toEqual([{ field: 'name', message: 'Tên phòng đã tồn tại' }]);
+      expect(conflictRes.body.details).toEqual([
+        { field: 'name', message: 'Tên phòng đã tồn tại' },
+      ]);
 
       // Updating room without changing name succeeds
       const keepNameRes = await request(app)
@@ -809,7 +813,9 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       expect(revenueRes.body.data).toHaveProperty('potentialRevenue');
 
       // 9. Booking of ARCHIVED room appears in admin CSV export (AC6)
-      const dateStr = futureStart.toISOString().slice(0, 10);
+      const dateStr = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
+        futureStart,
+      );
       const csvRes = await request(app)
         .get(
           `/api/v1/admin/reports/bookings.csv?startDate=${dateStr}&endDate=${dateStr}&roomId=${createdRoomId}`,

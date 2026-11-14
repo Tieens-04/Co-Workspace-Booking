@@ -56,6 +56,9 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       'isNewlyCancelled',
       'refundedAmount',
       'refunds',
+      'roomUnavailable',
+      'roomUnavailableReason',
+      'roomUnavailableCause',
     ];
     expect(Object.keys(booking).every((key) => allowed.includes(key))).toBe(true);
     const room = booking.room as Record<string, unknown>;
@@ -1575,5 +1578,4 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(updated?.refunds).toHaveLength(1);
     });
   });
-
 });

@@ -50,6 +50,14 @@ vi.mock('../services/room.api', () => {
           },
         }),
       ),
+      getRooms: vi.fn().mockResolvedValue({
+        success: true,
+        message: 'Lấy danh sách phòng thành công',
+        data: {
+          items: [],
+          pagination: { page: 1, limit: 100, total: 0, totalPages: 0 },
+        },
+      }),
     },
   };
 });
@@ -1152,6 +1160,297 @@ describe('BookingDetailPage', () => {
 
       expect(await screen.findByTestId('refunded-amount-value')).toBeInTheDocument();
       expect(screen.getByTestId('refunded-amount-value')).toHaveTextContent('500.000 đ');
+    });
+  });
+
+  describe('CWB-91: Room unavailability banner & room switching reschedule', () => {
+    it('shows warning banner for affected UNPAID booking, allows picking an AVAILABLE room in reschedule dialog, and clears banner after submit', async () => {
+      const { roomApi } = await import('../services/room.api');
+      const futureStart = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
+
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: futureStart,
+          endTime: futureEnd,
+          paymentStatus: 'UNPAID',
+          roomUnavailable: true,
+          roomUnavailableCause: 'ROOM_MAINTENANCE',
+          roomUnavailableReason: 'Phòng đang bảo trì',
+        }),
+      );
+
+      vi.mocked(roomApi.getRooms).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [
+            {
+              id: mockDetailData.room.id,
+              name: mockDetailData.room.name,
+              capacity: 6,
+              pricePerHour: '250000.00',
+              status: 'MAINTENANCE',
+              coverImage: null,
+              amenities: [],
+            },
+            {
+              id: 'room-beta-uuid',
+              name: 'Phòng Họp Beta',
+              capacity: 8,
+              pricePerHour: '300000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+          ],
+          pagination: { page: 1, limit: 100, total: 2, totalPages: 1 },
+        },
+      });
+
+      vi.mocked(bookingApi.rescheduleBooking).mockResolvedValueOnce({
+        success: true,
+        message: 'Đổi lịch đặt phòng thành công',
+        data: {
+          ...mockDetailData,
+          room: { id: 'room-beta-uuid', name: 'Phòng Họp Beta' },
+          startTime: '2026-10-25T01:00:00.000Z',
+          endTime: '2026-10-25T03:00:00.000Z',
+          totalAmount: '600000.00',
+          roomUnavailable: false,
+          roomUnavailableCause: null,
+          roomUnavailableReason: null,
+        },
+      });
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('room-unavailable-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent('Phòng đang bảo trì');
+      expect(banner).toHaveTextContent(/đổi/i);
+
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('reschedule-booking-init-btn'));
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+
+      const roomSelect = await screen.findByTestId('reschedule-room-select');
+      expect(roomSelect).toBeInTheDocument();
+      await user.selectOptions(roomSelect, 'room-beta-uuid');
+
+      const slotStart = await screen.findByTestId('time-slot-08:00');
+      const slotEnd = screen.getByTestId('time-slot-10:00');
+      await user.click(slotStart);
+      await user.click(slotEnd);
+
+      await user.click(screen.getByTestId('reschedule-confirm-btn'));
+
+      await waitFor(() => {
+        expect(bookingApi.rescheduleBooking).toHaveBeenCalledWith(
+          validBookingId,
+          expect.objectContaining({
+            roomId: 'room-beta-uuid',
+          }),
+          expect.any(AbortSignal),
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('room-unavailable-banner')).not.toBeInTheDocument();
+      });
+      expect(screen.getByTestId('booking-room-value')).toHaveTextContent('Phòng Họp Beta');
+    });
+
+    it('shows front-desk contact guidance when affected booking is already PAID', async () => {
+      const futureStart = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
+
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: futureStart,
+          endTime: futureEnd,
+          paymentStatus: 'PAID',
+          paymentMethod: 'QR',
+          roomUnavailable: true,
+          roomUnavailableCause: 'CLOSURE',
+          roomUnavailableReason: 'Cắt điện bảo trì',
+        }),
+      );
+
+      renderComponent();
+
+      const banner = await screen.findByTestId('room-unavailable-banner');
+      expect(banner).toHaveTextContent('Cắt điện bảo trì');
+      expect(banner).toHaveTextContent(/quầy lễ tân/i);
+      expect(screen.getByTestId('reschedule-booking-init-btn')).toBeDisabled();
+    });
+
+    it('R04 & R05: handles Closure + MAINTENANCE combined without querying maintenance room availability, preserves paymentInstructions, and shows selected room name in description', async () => {
+      const { roomApi } = await import('../services/room.api');
+      const getAvailabilitySpy = vi.mocked(roomApi.getAvailability);
+      getAvailabilitySpy.mockClear();
+
+      const futureStart = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
+
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: futureStart,
+          endTime: futureEnd,
+          paymentStatus: 'UNPAID',
+          roomUnavailable: true,
+          // Combined state: Closure overlaps while Alpha is also moved to MAINTENANCE
+          roomUnavailableCause: 'CLOSURE',
+          roomUnavailableReason: 'Cắt điện phòng Alpha',
+          paymentInstructions: {
+            bankName: 'Vietcombank',
+            accountNumber: '0123456789',
+            accountName: 'CONG TY CO SPACE',
+            transferContent: 'CS-20261025-ABCD',
+            amount: '500000.00',
+          },
+        }),
+      );
+
+      vi.mocked(roomApi.getRooms).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [
+            {
+              id: mockDetailData.room.id,
+              name: mockDetailData.room.name,
+              capacity: 6,
+              pricePerHour: '250000.00',
+              status: 'MAINTENANCE',
+              coverImage: null,
+              amenities: [],
+            },
+            {
+              id: 'room-beta-uuid',
+              name: 'Phòng Họp Beta',
+              capacity: 8,
+              pricePerHour: '300000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+          ],
+          pagination: { page: 1, limit: 100, total: 2, totalPages: 1 },
+        },
+      });
+
+      vi.mocked(bookingApi.rescheduleBooking).mockResolvedValueOnce({
+        success: true,
+        message: 'Đổi lịch đặt phòng thành công',
+        data: {
+          ...mockDetailData,
+          room: { id: 'room-beta-uuid', name: 'Phòng Họp Beta' },
+          startTime: '2026-10-25T01:00:00.000Z',
+          endTime: '2026-10-25T03:00:00.000Z',
+          totalAmount: '600000.00',
+          roomUnavailable: false,
+          roomUnavailableCause: null,
+          roomUnavailableReason: null,
+          paymentInstructions: {
+            bankName: 'Vietcombank',
+            accountNumber: '0123456789',
+            accountName: 'CONG TY CO SPACE',
+            transferContent: 'CS-20261025-ABCD',
+            amount: '600000.00',
+          },
+        },
+      });
+
+      renderComponent();
+      const user = userEvent.setup();
+      await user.click(await screen.findByTestId('reschedule-booking-init-btn'));
+
+      const dialog = await screen.findByTestId('reschedule-dialog-content');
+      const roomSelect = (await screen.findByTestId('reschedule-room-select')) as HTMLSelectElement;
+
+      // Auto-switches to AVAILABLE Beta without ever calling getAvailability for MAINTENANCE Alpha
+      await waitFor(() => {
+        expect(roomSelect.value).toBe('room-beta-uuid');
+      });
+      expect(roomSelect.querySelector(`option[value="${mockDetailData.room.id}"]`)).toBeNull();
+      expect(dialog).toHaveTextContent('Phòng Họp Beta');
+      for (const call of getAvailabilitySpy.mock.calls) {
+        expect(call[0]).not.toBe(mockDetailData.room.id);
+      }
+
+      const slotStart = await screen.findByTestId('time-slot-08:00');
+      const slotEnd = screen.getByTestId('time-slot-10:00');
+      await user.click(slotStart);
+      await user.click(slotEnd);
+      await user.click(screen.getByTestId('reschedule-confirm-btn'));
+
+      await waitFor(() => {
+        expect(screen.queryByTestId('reschedule-dialog-content')).not.toBeInTheDocument();
+      });
+
+      // PaymentInstructions remain visible with updated server amount
+      expect(screen.getByTestId('payment-transfer-instructions')).toBeInTheDocument();
+      expect(screen.getByTestId('payment-transfer-amount')).toHaveTextContent('600.000');
+    });
+
+    it('R04: shows error notice with Retry instead of fake empty state when roomApi.getRooms rejects', async () => {
+      const { roomApi } = await import('../services/room.api');
+      const futureStart = new Date(Date.now() + 24 * 3600 * 1000).toISOString();
+      const futureEnd = new Date(Date.now() + 26 * 3600 * 1000).toISOString();
+
+      vi.mocked(bookingApi.getBookingById).mockResolvedValue(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: futureStart,
+          endTime: futureEnd,
+          paymentStatus: 'UNPAID',
+          roomUnavailable: true,
+          roomUnavailableCause: 'ROOM_MAINTENANCE',
+          roomUnavailableReason: 'Phòng đang bảo trì',
+        }),
+      );
+
+      vi.mocked(roomApi.getRooms)
+        .mockRejectedValueOnce(new Error('Lỗi mạng tạm thời'))
+        .mockResolvedValueOnce({
+          success: true,
+          message: 'OK',
+          data: {
+            items: [
+              {
+                id: 'room-beta-uuid',
+                name: 'Phòng Họp Beta',
+                capacity: 8,
+                pricePerHour: '300000.00',
+                status: 'AVAILABLE',
+                coverImage: null,
+                amenities: [],
+              },
+            ],
+            pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+          },
+        });
+
+      renderComponent();
+      const user = userEvent.setup();
+      await user.click(await screen.findByTestId('reschedule-booking-init-btn'));
+
+      expect(await screen.findByTestId('reschedule-rooms-error')).toHaveTextContent(
+        'Lỗi mạng tạm thời',
+      );
+      expect(screen.queryByTestId('reschedule-no-available-rooms')).not.toBeInTheDocument();
+
+      await user.click(screen.getByTestId('reschedule-rooms-retry-btn'));
+
+      const roomSelect = (await screen.findByTestId('reschedule-room-select')) as HTMLSelectElement;
+      await waitFor(() => {
+        expect(roomSelect.value).toBe('room-beta-uuid');
+      });
+      expect(screen.queryByTestId('reschedule-rooms-error')).not.toBeInTheDocument();
     });
   });
 });

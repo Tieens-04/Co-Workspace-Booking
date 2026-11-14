@@ -406,7 +406,13 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
       expect(secondRescheduleStatus).toBe(200);
 
       const afterPass1 = await prisma.emailOutbox.findUniqueOrThrow({
-        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+        where: {
+          kind_bookingId_eventKey: {
+            kind: 'BOOKING_RESCHEDULED',
+            bookingId: booking.id,
+            eventKey: '',
+          },
+        },
       });
       expect(afterPass1).toMatchObject({
         status: 'QUEUED',
@@ -428,7 +434,13 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
       });
 
       const afterPass2 = await prisma.emailOutbox.findUniqueOrThrow({
-        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+        where: {
+          kind_bookingId_eventKey: {
+            kind: 'BOOKING_RESCHEDULED',
+            bookingId: booking.id,
+            eventKey: '',
+          },
+        },
       });
       expect(afterPass2).toMatchObject({ status: 'SENT', attempts: 1, lastError: null });
       expect(afterPass2.sentAt).toBeInstanceOf(Date);
@@ -454,7 +466,13 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
       // wall-clock evaluationTime), while t2 (+60s) stays well within worker 1's 120s claim lease.
       const t1 = new Date(Date.now() - 5_000);
       await prisma.emailOutbox.update({
-        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+        where: {
+          kind_bookingId_eventKey: {
+            kind: 'BOOKING_RESCHEDULED',
+            bookingId: booking.id,
+            eventKey: '',
+          },
+        },
         data: { nextAttemptAt: t1 },
       });
       const t2 = new Date(t1.getTime() + 60_000);
@@ -484,7 +502,13 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
 
       const expectedNextAttemptAt = new Date(t2.getTime() + emailRetryDelayMs(1));
       const afterCollision = await prisma.emailOutbox.findUniqueOrThrow({
-        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+        where: {
+          kind_bookingId_eventKey: {
+            kind: 'BOOKING_RESCHEDULED',
+            bookingId: booking.id,
+            eventKey: '',
+          },
+        },
       });
       expect(afterCollision).toMatchObject({
         status: 'QUEUED',
@@ -506,7 +530,13 @@ describe('CWB-68 durable email outbox (real MySQL)', () => {
         }),
       );
       const afterRetry = await prisma.emailOutbox.findUniqueOrThrow({
-        where: { kind_bookingId: { kind: 'BOOKING_RESCHEDULED', bookingId: booking.id } },
+        where: {
+          kind_bookingId_eventKey: {
+            kind: 'BOOKING_RESCHEDULED',
+            bookingId: booking.id,
+            eventKey: '',
+          },
+        },
       });
       expect(afterRetry).toMatchObject({ status: 'SENT', attempts: 2, lastError: null });
     });

@@ -12,6 +12,8 @@ export interface BookingRoomDto {
   name: string;
 }
 
+export type BookingRoomUnavailableCause = 'CLOSURE' | 'ROOM_MAINTENANCE' | 'ROOM_ARCHIVED';
+
 /** CWB-89: bank transfer details for a CONFIRMED + UNPAID booking (server-calculated amount). */
 export interface PaymentInstructions {
   bankName: string;
@@ -40,6 +42,9 @@ export interface BookingResult {
   cancelledAt?: string | null;
   cancelledBy?: 'CUSTOMER' | 'ADMIN' | null;
   refundedAmount?: string;
+  roomUnavailable?: boolean;
+  roomUnavailableReason?: string | null;
+  roomUnavailableCause?: BookingRoomUnavailableCause | null;
 }
 
 export type CreateBookingResponse = ApiResponse<BookingResult>;
