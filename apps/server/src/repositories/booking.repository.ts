@@ -652,11 +652,12 @@ export class BookingRepository
           const replayNow = new Date();
           const original = await tx.booking.findUniqueOrThrow({
             where: { id: previous.id },
-            select: bookingReadSelect,
+            include: { room: { select: { id: true, name: true, status: true } } },
           });
           const closures = await loadOverlappingClosuresForConfirmed(tx, [original], replayNow);
           return {
-            ...mapBookingRecordToDto(original, closures, replayNow),
+            ...toBookingResponse(original),
+            ...resolveBookingRoomUnavailability(original, closures, undefined, replayNow),
             idempotentReplay: true,
           };
         }
