@@ -56,10 +56,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
   afterAll(async () => {
     await prisma.closure.deleteMany({
       where: {
-        OR: [
-          { roomId: { in: [testRoomAId, testRoomBId] } },
-          { reason: { contains: testPrefix } },
-        ],
+        OR: [{ roomId: { in: [testRoomAId, testRoomBId] } }, { reason: { contains: testPrefix } }],
       },
     });
     await prisma.booking.deleteMany({
@@ -111,7 +108,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .send({
           roomId: null,
           startTime: '2026-12-25T01:00:00.000Z', // 08:00 VN
-          endTime: '2026-12-25T11:00:00.000Z',   // 18:00 VN
+          endTime: '2026-12-25T11:00:00.000Z', // 18:00 VN
           reason: `${testPrefix} Nghỉ lễ Giáng sinh toàn cơ sở`,
         });
 
@@ -197,7 +194,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
 
   describe('3. AC 3: Warning on Conflicting CONFIRMED Bookings', () => {
     const bookingStart = new Date('2026-11-20T03:00:00.000Z'); // 10:00 VN
-    const bookingEnd = new Date('2026-11-20T05:00:00.000Z');   // 12:00 VN
+    const bookingEnd = new Date('2026-11-20T05:00:00.000Z'); // 12:00 VN
     let conflictingBookingCode: string;
 
     beforeAll(async () => {
@@ -223,7 +220,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .send({
           roomId: testRoomAId,
           startTime: '2026-11-20T02:00:00.000Z', // 09:00 VN
-          endTime: '2026-11-20T06:00:00.000Z',   // 13:00 VN
+          endTime: '2026-11-20T06:00:00.000Z', // 13:00 VN
           reason: `${testPrefix} Sửa phòng đột xuất`,
         });
 
@@ -264,12 +261,16 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
 
   describe('4. AC 2: Availability Endpoint Reflects CLOSED with Reason', () => {
     it('returns CLOSED for slots covered by closure in GET /rooms/:id/availability', async () => {
-      const res = await request(app).get(`/api/v1/rooms/${testRoomAId}/availability?date=2026-11-20`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${testRoomAId}/availability?date=2026-11-20`,
+      );
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
 
       const slots = res.body.data.slots;
-      const closedSlots = slots.filter((s: { status: string; reason?: string }) => s.status === 'CLOSED');
+      const closedSlots = slots.filter(
+        (s: { status: string; reason?: string }) => s.status === 'CLOSED',
+      );
       // From 02:00 UTC to 06:00 UTC = 4 hours = 8 half-hour slots
       expect(closedSlots.length).toBe(8);
       expect(closedSlots[0].reason).toContain('Sửa phòng đột xuất');
@@ -286,7 +287,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .send({
           roomId: testRoomAId,
           startTime: '2026-11-20T02:00:00.000Z', // 09:00 VN
-          endTime: '2026-11-20T04:00:00.000Z',   // 11:00 VN
+          endTime: '2026-11-20T04:00:00.000Z', // 11:00 VN
         });
 
       expect(res.status).toBe(409);
@@ -301,7 +302,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .send({
           roomId: testRoomAId,
           startTime: '2026-11-20T01:00:00.000Z', // 08:00 VN
-          endTime: '2026-11-20T03:00:00.000Z',   // 10:00 VN (overlaps 02:00-03:00)
+          endTime: '2026-11-20T03:00:00.000Z', // 10:00 VN (overlaps 02:00-03:00)
         });
 
       expect(res.status).toBe(409);
@@ -315,7 +316,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .send({
           roomId: testRoomAId,
           startTime: '2026-11-20T05:00:00.000Z', // 12:00 VN
-          endTime: '2026-11-20T07:00:00.000Z',   // 14:00 VN (overlaps 05:00-06:00)
+          endTime: '2026-11-20T07:00:00.000Z', // 14:00 VN (overlaps 05:00-06:00)
         });
 
       expect(res.status).toBe(409);
@@ -521,9 +522,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
-      expect(
-        res.body.data.items.some((c: { id: string }) => c.id === pastClosure.id),
-      ).toBe(false);
+      expect(res.body.data.items.some((c: { id: string }) => c.id === pastClosure.id)).toBe(false);
     });
 
     it('skips CLOSURE_UPDATED audit event when PATCH payload does not change any field and returns details on single-bound time violation', async () => {
@@ -539,12 +538,28 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       expect(createdRes.status).toBe(201);
       const closureId = createdRes.body.data.id;
 
-      // 1. Update with identical reason -> 200 OK, 0 CLOSURE_UPDATED events
+      // 1. Update with identical reason (including surrounding whitespace) -> 200 OK, full DTO, 0 CLOSURE_UPDATED events
       const noopRes = await request(app)
         .patch(`/api/v1/admin/closures/${closureId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ reason: `${testPrefix} No-op test` });
+        .send({
+          roomId: testRoomBId,
+          startTime: '2026-11-22T02:00:00.000Z',
+          endTime: '2026-11-22T05:00:00.000Z',
+          reason: `  ${testPrefix} No-op test  `,
+        });
       expect(noopRes.status).toBe(200);
+      expect(noopRes.body.data).toMatchObject({
+        id: closureId,
+        roomId: testRoomBId,
+        room: { id: testRoomBId, name: `${testPrefix}_RoomB` },
+        reason: `${testPrefix} No-op test`,
+        createdBy: {
+          id: createdRes.body.data.createdById,
+          fullName: 'Integration ADMIN',
+        },
+        updatedAt: createdRes.body.data.updatedAt,
+      });
 
       const updateAudits = await prisma.auditEvent.count({
         where: {
@@ -574,9 +589,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
-      const roomASchedule = res.body.data.rooms.find(
-        (r: { id: string }) => r.id === testRoomAId,
-      );
+      const roomASchedule = res.body.data.rooms.find((r: { id: string }) => r.id === testRoomAId);
       expect(roomASchedule).toBeDefined();
       const closedSlots = roomASchedule.slots.filter(
         (s: { status: string }) => s.status === 'CLOSED',
@@ -599,14 +612,11 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       try {
         // Fire both requests concurrently on 2026-11-23 02:00-04:00 UTC on testRoomBId
         const [bookingRes, closureRes] = await Promise.all([
-          request(app)
-            .post('/api/v1/bookings')
-            .set('Authorization', `Bearer ${concToken}`)
-            .send({
-              roomId: testRoomBId,
-              startTime: '2026-11-23T02:00:00.000Z',
-              endTime: '2026-11-23T04:00:00.000Z',
-            }),
+          request(app).post('/api/v1/bookings').set('Authorization', `Bearer ${concToken}`).send({
+            roomId: testRoomBId,
+            startTime: '2026-11-23T02:00:00.000Z',
+            endTime: '2026-11-23T04:00:00.000Z',
+          }),
           request(app)
             .post('/api/v1/admin/closures')
             .set('Authorization', `Bearer ${adminToken}`)
@@ -631,6 +641,329 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       } finally {
         await prisma.booking.deleteMany({ where: { userId: userConc.id } });
         await prisma.user.deleteMany({ where: { id: userConc.id } });
+      }
+    });
+
+    const DAY_MS = 24 * 60 * 60 * 1000;
+    function futureUtcSlot(
+      daysAhead: number,
+      startHourUtc: number,
+      endHourUtc: number,
+    ): { startTime: string; endTime: string; dateCompact: string } {
+      const day = new Date(Date.now() + daysAhead * DAY_MS);
+      const start = new Date(day);
+      start.setUTCHours(startHourUtc, 0, 0, 0);
+      const end = new Date(day);
+      end.setUTCHours(endHourUtc, 0, 0, 0);
+      return {
+        startTime: start.toISOString(),
+        endTime: end.toISOString(),
+        dateCompact: start.toISOString().slice(0, 10).replace(/-/g, ''),
+      };
+    }
+
+    it('CWB-109: detects a concurrent booking committed while PATCH /api/v1/admin/closures/:id waits on the room lock under REPEATABLE READ', async () => {
+      async function waitForRowLocked(
+        probe: () => Promise<unknown>,
+        label: string,
+        timeoutMs = 3000,
+      ): Promise<void> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          try {
+            await probe();
+          } catch (err) {
+            const msg = String(err);
+            if (msg.includes('3572') || msg.toLowerCase().includes('nowait')) {
+              return;
+            }
+            throw err;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 15));
+        }
+        throw new Error(`Timed out waiting for row lock: ${label}`);
+      }
+
+      const initialSlot = futureUtcSlot(10, 8, 10);
+      const contestedSlot = futureUtcSlot(10, 2, 4);
+      const dummySlot = futureUtcSlot(10, 12, 14);
+
+      const localAccounts = new TestAccounts();
+      const raceUserId = randomUUID();
+      let raceRoomId: string | undefined;
+      let closureId: string | undefined;
+      const pending: Array<Promise<unknown>> = [];
+
+      let releaseBlocker!: () => void;
+      const blockerGate = new Promise<void>((resolve) => {
+        releaseBlocker = resolve;
+      });
+      let markBlockerArmed!: () => void;
+      const blockerArmed = new Promise<void>((resolve) => {
+        markBlockerArmed = resolve;
+      });
+
+      try {
+        const raceToken = await localAccounts.create(Role.CUSTOMER, raceUserId);
+        const raceRoom = await prisma.room.create({
+          data: {
+            name: `${testPrefix}_MVCCRaceRoom`,
+            capacity: 8,
+            pricePerHour: new Prisma.Decimal('150.00'),
+            status: RoomStatus.AVAILABLE,
+          },
+        });
+        raceRoomId = raceRoom.id;
+
+        const idemKey = `mvcc_race_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
+        const dummyBooking = await prisma.booking.create({
+          data: {
+            bookingCode: `CS-${dummySlot.dateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`,
+            userId: raceUserId,
+            roomId: testRoomAId,
+            startTime: new Date(dummySlot.startTime),
+            endTime: new Date(dummySlot.endTime),
+            totalAmount: new Prisma.Decimal('200.00'),
+            status: BookingStatus.CANCELLED,
+            paymentStatus: PaymentStatus.UNPAID,
+            idempotencyScope: `user:${raceUserId}`,
+            idempotencyKey: idemKey,
+            idempotencyHash: '0'.repeat(64),
+          },
+        });
+
+        const createClosureRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: raceRoom.id,
+            startTime: initialSlot.startTime,
+            endTime: initialSlot.endTime,
+            reason: `${testPrefix} MVCC race initial slot`,
+          });
+        expect(createClosureRes.status).toBe(201);
+        closureId = createClosureRes.body.data.id as string;
+
+        // Hold an X lock on (idempotency_scope, idempotency_key) so POST /api/v1/bookings pauses
+        // immediately after locking `raceRoom` FOR UPDATE, before inserting its CONFIRMED row.
+        const blockerTx = prisma.$transaction(
+          async (tx) => {
+            await tx.booking.delete({ where: { id: dummyBooking.id } });
+            markBlockerArmed();
+            await blockerGate;
+          },
+          { timeout: 10000 },
+        );
+        void blockerTx.catch(() => {});
+        pending.push(blockerTx);
+        await blockerArmed;
+
+        const bookingPromise = request(app)
+          .post('/api/v1/bookings')
+          .set('Authorization', `Bearer ${raceToken}`)
+          .set('Idempotency-Key', idemKey)
+          .send({
+            roomId: raceRoom.id,
+            startTime: contestedSlot.startTime,
+            endTime: contestedSlot.endTime,
+          })
+          .then((res) => res);
+        void bookingPromise.catch(() => {});
+        pending.push(bookingPromise);
+
+        await waitForRowLocked(
+          () =>
+            prisma.$queryRaw(
+              Prisma.sql`SELECT id FROM rooms WHERE id = ${raceRoom.id} FOR UPDATE NOWAIT`,
+            ),
+          'raceRoom locked by POST /api/v1/bookings',
+        );
+
+        const patchPromise = request(app)
+          .patch(`/api/v1/admin/closures/${closureId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            startTime: contestedSlot.startTime,
+            endTime: contestedSlot.endTime,
+            acknowledgeConflictingBookings: false,
+          })
+          .then((res) => res);
+        void patchPromise.catch(() => {});
+        pending.push(patchPromise);
+
+        await waitForRowLocked(
+          () =>
+            prisma.$queryRaw(
+              Prisma.sql`SELECT id FROM closures WHERE id = ${closureId} FOR UPDATE NOWAIT`,
+            ),
+          'closure locked by PATCH /api/v1/admin/closures/:id',
+        );
+        // Allow PATCH to advance past any pre-room-lock query and block on `lockTargetRooms`.
+        await new Promise((resolve) => setTimeout(resolve, 40));
+
+        releaseBlocker();
+        const [, bookingRes, patchRes] = await Promise.all([
+          blockerTx,
+          bookingPromise,
+          patchPromise,
+        ]);
+
+        expect(bookingRes.status).toBe(201);
+        expect(patchRes.status).toBe(409);
+        expect(patchRes.body.code).toBe('CLOSURE_HAS_CONFLICTING_BOOKINGS');
+        expect(patchRes.body.details.conflictingBookingCount).toBe(1);
+        expect(patchRes.body.details.bookings[0].bookingCode).toBe(
+          bookingRes.body.data.bookingCode,
+        );
+
+        const persistedClosure = await prisma.closure.findUnique({ where: { id: closureId } });
+        expect(persistedClosure?.startTime.toISOString()).toBe(initialSlot.startTime);
+        expect(persistedClosure?.endTime.toISOString()).toBe(initialSlot.endTime);
+
+        const updateAudits = await prisma.auditEvent.count({
+          where: {
+            entityType: 'CLOSURE',
+            entityId: closureId,
+            action: 'CLOSURE_UPDATED',
+          },
+        });
+        expect(updateAudits).toBe(0);
+      } finally {
+        releaseBlocker();
+        await Promise.allSettled(pending);
+        if (closureId) {
+          await prisma.closure.deleteMany({ where: { id: closureId } });
+        }
+        await prisma.booking.deleteMany({
+          where: {
+            OR: [{ userId: raceUserId }, ...(raceRoomId ? [{ roomId: raceRoomId }] : [])],
+          },
+        });
+        if (raceRoomId) {
+          await prisma.room.deleteMany({ where: { id: raceRoomId } });
+        }
+        await localAccounts.cleanup();
+      }
+    });
+
+    it('CWB-109: serializes concurrent PATCH /api/v1/admin/closures/:id (time shift and facility-wide expansion) against POST /api/v1/bookings', async () => {
+      const shiftInitialSlot = futureUtcSlot(11, 8, 10);
+      const shiftContestedSlot = futureUtcSlot(11, 2, 4);
+      const facilityContestedSlot = futureUtcSlot(12, 2, 4);
+
+      const localAccounts = new TestAccounts();
+      const parUserId = randomUUID();
+      const pending: Array<Promise<unknown>> = [];
+      let shiftClosureId: string | undefined;
+      let facilityClosureId: string | undefined;
+
+      try {
+        const parToken = await localAccounts.create(Role.CUSTOMER, parUserId);
+
+        // Case A: Shifting an existing room closure into a concurrently booked slot
+        const createdShift = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: testRoomBId,
+            startTime: shiftInitialSlot.startTime,
+            endTime: shiftInitialSlot.endTime,
+            reason: `${testPrefix} Shift closure`,
+          });
+        expect(createdShift.status).toBe(201);
+        shiftClosureId = createdShift.body.data.id as string;
+
+        const shiftBookingReq = request(app)
+          .post('/api/v1/bookings')
+          .set('Authorization', `Bearer ${parToken}`)
+          .send({
+            roomId: testRoomBId,
+            startTime: shiftContestedSlot.startTime,
+            endTime: shiftContestedSlot.endTime,
+          })
+          .then((res) => res);
+        void shiftBookingReq.catch(() => {});
+        const shiftPatchReq = request(app)
+          .patch(`/api/v1/admin/closures/${shiftClosureId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            startTime: shiftContestedSlot.startTime,
+            endTime: shiftContestedSlot.endTime,
+            acknowledgeConflictingBookings: false,
+          })
+          .then((res) => res);
+        void shiftPatchReq.catch(() => {});
+        pending.push(shiftBookingReq, shiftPatchReq);
+
+        const [shiftBookingRes, shiftPatchRes] = await Promise.all([
+          shiftBookingReq,
+          shiftPatchReq,
+        ]);
+
+        if (shiftBookingRes.status === 201) {
+          expect(shiftPatchRes.status).toBe(409);
+          expect(shiftPatchRes.body.code).toBe('CLOSURE_HAS_CONFLICTING_BOOKINGS');
+        } else {
+          expect(shiftBookingRes.status).toBe(409);
+          expect(shiftBookingRes.body.code).toBe('ROOM_CLOSED');
+          expect(shiftPatchRes.status).toBe(200);
+        }
+
+        // Case B: Expanding a Room A closure into a facility-wide closure (roomId: null) while Room B is booked
+        const createdFacility = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: testRoomAId,
+            startTime: facilityContestedSlot.startTime,
+            endTime: facilityContestedSlot.endTime,
+            reason: `${testPrefix} Expand to facility closure`,
+          });
+        expect(createdFacility.status).toBe(201);
+        facilityClosureId = createdFacility.body.data.id as string;
+
+        const facilityBookingReq = request(app)
+          .post('/api/v1/bookings')
+          .set('Authorization', `Bearer ${parToken}`)
+          .send({
+            roomId: testRoomBId,
+            startTime: facilityContestedSlot.startTime,
+            endTime: facilityContestedSlot.endTime,
+          })
+          .then((res) => res);
+        void facilityBookingReq.catch(() => {});
+        const facilityPatchReq = request(app)
+          .patch(`/api/v1/admin/closures/${facilityClosureId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: null,
+            acknowledgeConflictingBookings: false,
+          })
+          .then((res) => res);
+        void facilityPatchReq.catch(() => {});
+        pending.push(facilityBookingReq, facilityPatchReq);
+
+        const [facilityBookingRes, facilityPatchRes] = await Promise.all([
+          facilityBookingReq,
+          facilityPatchReq,
+        ]);
+
+        if (facilityBookingRes.status === 201) {
+          expect(facilityPatchRes.status).toBe(409);
+          expect(facilityPatchRes.body.code).toBe('CLOSURE_HAS_CONFLICTING_BOOKINGS');
+        } else {
+          expect(facilityBookingRes.status).toBe(409);
+          expect(facilityBookingRes.body.code).toBe('ROOM_CLOSED');
+          expect(facilityPatchRes.status).toBe(200);
+        }
+      } finally {
+        await Promise.allSettled(pending);
+        const ids = [shiftClosureId, facilityClosureId].filter((id): id is string => Boolean(id));
+        if (ids.length > 0) {
+          await prisma.closure.deleteMany({ where: { id: { in: ids } } });
+        }
+        await prisma.booking.deleteMany({ where: { userId: parUserId } });
+        await localAccounts.cleanup();
       }
     });
   });

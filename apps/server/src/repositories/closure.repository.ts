@@ -30,6 +30,14 @@ type PrismaClosureWithRelations = Prisma.ClosureGetPayload<{
   include: typeof closureInclude;
 }>;
 
+type LockedClosureRow = {
+  id: string;
+  room_id: string | null;
+  start_time: Date | string;
+  end_time: Date | string;
+  reason: string;
+};
+
 function toClosureDto(record: PrismaClosureWithRelations): ClosureDto {
   return {
     id: record.id,
@@ -245,20 +253,23 @@ export class ClosureRepository {
 
   async update(id: string, data: UpdateClosureInput, actor: AuditActor): Promise<ClosureDto> {
     return prisma.$transaction(async (tx) => {
-      const lockedClosure = await tx.$queryRaw<Array<{ id: string }>>(
-        Prisma.sql`SELECT id FROM closures WHERE id = ${id} FOR UPDATE`,
+      // Read all required closure columns inside `FOR UPDATE` so no non-locking SELECT freezes
+      // InnoDB's REPEATABLE READ ReadView before `lockTargetRooms` serializes against bookings.
+      const lockedRows = await tx.$queryRaw<LockedClosureRow[]>(
+        Prisma.sql`SELECT id, room_id, start_time, end_time, reason FROM closures WHERE id = ${id} FOR UPDATE`,
       );
-      if (!lockedClosure || lockedClosure.length === 0) {
+      if (!lockedRows || lockedRows.length === 0) {
         throw new AppError('CLOSURE_NOT_FOUND', 'Không tìm thấy khung đóng cửa', 404);
       }
 
-      const existing = await tx.closure.findUnique({
-        where: { id },
-        include: closureInclude,
-      });
-      if (!existing) {
-        throw new AppError('CLOSURE_NOT_FOUND', 'Không tìm thấy khung đóng cửa', 404);
-      }
+      const locked = lockedRows[0];
+      const existing = {
+        id: locked.id,
+        roomId: locked.room_id,
+        startTime: new Date(locked.start_time),
+        endTime: new Date(locked.end_time),
+        reason: locked.reason,
+      };
 
       const targetRoomId = data.roomId !== undefined ? data.roomId : existing.roomId;
       const targetStartTime = data.startTime ? new Date(data.startTime) : existing.startTime;
@@ -294,7 +305,11 @@ export class ClosureRepository {
       const hasAnyChange = isTimeOrRoomChanged || trimmedReason !== existing.reason;
 
       if (!hasAnyChange) {
-        return toClosureDto(existing);
+        const unchanged = await tx.closure.findUniqueOrThrow({
+          where: { id },
+          include: closureInclude,
+        });
+        return toClosureDto(unchanged);
       }
 
       const updated = await tx.closure.update({
