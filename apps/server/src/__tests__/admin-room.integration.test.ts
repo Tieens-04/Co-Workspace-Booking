@@ -647,9 +647,13 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       expect(publicDetailRes.status).toBe(404);
       expect(publicDetailRes.body.code).toBe('ROOM_NOT_FOUND');
 
+      const futureSlotDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+      }).format(new Date(Date.now() + 25 * 24 * 60 * 60 * 1000));
+
       // Public GET /api/v1/rooms/:id/availability returns 404
       const publicAvailRes = await request(app).get(
-        `/api/v1/rooms/${createdRoomId}/availability?date=2026-12-10`,
+        `/api/v1/rooms/${createdRoomId}/availability?date=${futureSlotDate}`,
       );
       expect(publicAvailRes.status).toBe(404);
       expect(publicAvailRes.body.code).toBe('ROOM_NOT_FOUND');
@@ -661,8 +665,8 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: createdRoomId,
-          startTime: '2026-12-10T09:00:00.000+07:00',
-          endTime: '2026-12-10T11:00:00.000+07:00',
+          startTime: `${futureSlotDate}T09:00:00.000+07:00`,
+          endTime: `${futureSlotDate}T11:00:00.000+07:00`,
         });
       expect(bookRes.status).toBe(409);
       expect(bookRes.body.code).toBe('ROOM_NOT_AVAILABLE');
@@ -675,8 +679,8 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
           roomId: createdRoomId,
           guestName: 'Walk-in Guest',
           guestPhone: '0912345678',
-          startTime: '2026-12-10T09:00:00.000+07:00',
-          endTime: '2026-12-10T11:00:00.000+07:00',
+          startTime: `${futureSlotDate}T09:00:00.000+07:00`,
+          endTime: `${futureSlotDate}T11:00:00.000+07:00`,
         });
       expect(guestBookRes.status).toBe(409);
       expect(guestBookRes.body.code).toBe('ROOM_NOT_AVAILABLE');
@@ -722,7 +726,12 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       // 2. Create a future CONFIRMED booking
       const futureStart = new Date(Date.now() + 72 * 60 * 60 * 1000);
       const futureEnd = new Date(Date.now() + 74 * 60 * 60 * 1000);
-      const testCode = `CS-20261205-${randomUUID().slice(0, 4).toUpperCase()}`;
+      const futureDateCompact = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+      })
+        .format(futureStart)
+        .replace(/-/g, '');
+      const testCode = `CS-${futureDateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`;
 
       const booking = await prisma.booking.create({
         data: {
@@ -827,7 +836,7 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
 
       // 10. Filter combining status=ARCHIVED with time slot returns 0 rooms (Finding 2 Regression)
       const slotFilterRes = await request(app)
-        .get('/api/v1/admin/rooms?status=ARCHIVED&date=2026-12-10&startTime=09:00&endTime=11:00')
+        .get(`/api/v1/admin/rooms?status=ARCHIVED&date=${dateStr}&startTime=09:00&endTime=11:00`)
         .set('Authorization', `Bearer ${adminToken}`);
       expect(slotFilterRes.status).toBe(200);
       expect(slotFilterRes.body.data.items).toHaveLength(0);

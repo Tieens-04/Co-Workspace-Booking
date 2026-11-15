@@ -12,6 +12,12 @@ const validUuid2 = '22222222-2222-4222-8222-222222222222';
 const validUuid3 = '33333333-3333-4333-8333-333333333333';
 const roomId1 = '44444444-4444-4444-8444-444444444444';
 const roomId2 = '55555555-5555-4555-8555-555555555555';
+const vnFutureDate = (daysAhead: number) =>
+  new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
+    new Date(Date.now() + daysAhead * 24 * 60 * 60 * 1000),
+  );
+const futureDate = vnFutureDate(10);
+const futureDate2 = vnFutureDate(20);
 
 const mockRoomFixture = (override?: Partial<RoomDetailRecord>): RoomDetailRecord => ({
   id: roomId1,
@@ -207,9 +213,8 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
     });
 
     it('parses valid date, startTime, and endTime into UTC start/end dates', async () => {
-      // Future date e.g. 2026-11-20
       const res = await request(app).get(
-        '/api/v1/rooms?date=2026-11-20&startTime=09:00&endTime=11:30',
+        `/api/v1/rooms?date=${futureDate}&startTime=09:00&endTime=11:30`,
       );
 
       expect(res.status).toBe(200);
@@ -217,8 +222,8 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
         page: 1,
         limit: 10,
         sort: 'newest',
-        startDate: new Date('2026-11-20T09:00:00.000+07:00'),
-        endDate: new Date('2026-11-20T11:30:00.000+07:00'),
+        startDate: new Date(`${futureDate}T09:00:00.000+07:00`),
+        endDate: new Date(`${futureDate}T11:30:00.000+07:00`),
       });
     });
   });
@@ -255,21 +260,30 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       { query: '?sort=asc', desc: 'invalid sort value (sort=asc)' },
       { query: '?sort=price', desc: 'invalid sort value (sort=price)' },
       { query: `?q=${'a'.repeat(101)}`, desc: 'q exceeds 100 characters' },
-      { query: '?date=2026-11-20', desc: 'date provided without startTime and endTime' },
+      { query: `?date=${futureDate}`, desc: 'date provided without startTime and endTime' },
       { query: '?startTime=09:00', desc: 'startTime provided without date and endTime' },
       { query: '?endTime=11:00', desc: 'endTime provided without date and startTime' },
-      { query: '?date=2026-11-20&startTime=09:00', desc: 'missing endTime' },
-      { query: '?date=2026-11-20&endTime=11:00', desc: 'missing startTime' },
+      { query: `?date=${futureDate}&startTime=09:00`, desc: 'missing endTime' },
+      { query: `?date=${futureDate}&endTime=11:00`, desc: 'missing startTime' },
       { query: '?date=not-a-date&startTime=09:00&endTime=11:00', desc: 'malformed date' },
       { query: '?date=2026-02-30&startTime=09:00&endTime=11:00', desc: 'invalid calendar date' },
-      { query: '?date=2026-11-20&startTime=25:00&endTime=11:00', desc: 'malformed startTime' },
-      { query: '?date=2026-11-20&startTime=09:15&endTime=11:00', desc: 'unaligned 30-min slot' },
-      { query: '?date=2026-11-20&startTime=09:00&endTime=09:30', desc: 'duration under 1 hour' },
-      { query: '?date=2026-11-20&startTime=09:00&endTime=18:00', desc: 'duration over 8 hours' },
-      { query: '?date=2026-11-20&startTime=11:00&endTime=09:00', desc: 'endTime before startTime' },
+      { query: `?date=${futureDate}&startTime=25:00&endTime=11:00`, desc: 'malformed startTime' },
+      { query: `?date=${futureDate}&startTime=09:15&endTime=11:00`, desc: 'unaligned 30-min slot' },
+      { query: `?date=${futureDate}&startTime=09:00&endTime=09:30`, desc: 'duration under 1 hour' },
+      { query: `?date=${futureDate}&startTime=09:00&endTime=18:00`, desc: 'duration over 8 hours' },
+      {
+        query: `?date=${futureDate}&startTime=11:00&endTime=09:00`,
+        desc: 'endTime before startTime',
+      },
       { query: '?date=2020-01-01&startTime=09:00&endTime=10:00', desc: 'date in the past' },
-      { query: '?date=2026-11-20&startTime=06:00&endTime=08:00', desc: 'before opening hour 07:00' },
-      { query: '?date=2026-11-20&startTime=21:00&endTime=23:00', desc: 'after closing hour 22:00' },
+      {
+        query: `?date=${futureDate}&startTime=06:00&endTime=08:00`,
+        desc: 'before opening hour 07:00',
+      },
+      {
+        query: `?date=${futureDate}&startTime=21:00&endTime=23:00`,
+        desc: 'after closing hour 22:00',
+      },
       { query: '?order=desc', desc: 'unwhitelisted query key (order)' },
       { query: '?unknownParam=foo', desc: 'unwhitelisted query key (unknownParam)' },
     ])('rejects invalid query before database access: $desc', async ({ query }) => {
@@ -287,13 +301,14 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(res.status).toBe(400);
       expect(res.body.success).toBe(false);
       expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(roomRepository.findManyAndCount).not.toHaveBeenCalled();
       expect(roomRepository.findById).not.toHaveBeenCalled();
     });
 
     it('accurately maps error path to endTime when error is related to end time or duration (Finding 11 Regression)', async () => {
       // End time before start time -> path: endTime
       const res1 = await request(app).get(
-        '/api/v1/rooms?date=2026-11-20&startTime=11:00&endTime=09:00',
+        `/api/v1/rooms?date=${futureDate}&startTime=11:00&endTime=09:00`,
       );
       expect(res1.status).toBe(400);
       expect(res1.body.details).toEqual(
@@ -302,7 +317,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
 
       // Duration under 1h -> path: endTime
       const res2 = await request(app).get(
-        '/api/v1/rooms?date=2026-11-20&startTime=09:00&endTime=09:30',
+        `/api/v1/rooms?date=${futureDate}&startTime=09:00&endTime=09:30`,
       );
       expect(res2.status).toBe(400);
       expect(res2.body.details).toEqual(
@@ -311,7 +326,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
 
       // Exceeds closing hour (after 22:00) -> path: endTime
       const res3 = await request(app).get(
-        '/api/v1/rooms?date=2026-11-20&startTime=21:00&endTime=23:00',
+        `/api/v1/rooms?date=${futureDate}&startTime=21:00&endTime=23:00`,
       );
       expect(res3.status).toBe(400);
       expect(res3.body.details).toEqual(
@@ -320,7 +335,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
 
       // Before opening hour (before 07:00) -> path: startTime
       const res4 = await request(app).get(
-        '/api/v1/rooms?date=2026-11-20&startTime=06:00&endTime=08:00',
+        `/api/v1/rooms?date=${futureDate}&startTime=06:00&endTime=08:00`,
       );
       expect(res4.status).toBe(400);
       expect(res4.body.details).toEqual(
@@ -423,7 +438,9 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
         bookings: [],
       });
 
-      const res = await request(app).get(`/api/v1/rooms/${roomId1}/availability?date=2026-11-20`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${roomId1}/availability?date=${futureDate}`,
+      );
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);
@@ -529,8 +546,8 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       const whereArchived = roomRepository.buildWhere({
         page: 1,
         limit: 10,
-        startDate: new Date('2026-12-10T09:00:00.000+07:00'),
-        endDate: new Date('2026-12-10T11:00:00.000+07:00'),
+        startDate: new Date(`${futureDate2}T09:00:00.000+07:00`),
+        endDate: new Date(`${futureDate2}T11:00:00.000+07:00`),
         status: RoomStatus.ARCHIVED,
       });
       expect(whereArchived.id).toEqual({ in: [] });
@@ -538,8 +555,8 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       const whereMaintenance = roomRepository.buildWhere({
         page: 1,
         limit: 10,
-        startDate: new Date('2026-12-10T09:00:00.000+07:00'),
-        endDate: new Date('2026-12-10T11:00:00.000+07:00'),
+        startDate: new Date(`${futureDate2}T09:00:00.000+07:00`),
+        endDate: new Date(`${futureDate2}T11:00:00.000+07:00`),
         status: RoomStatus.MAINTENANCE,
       });
       expect(whereMaintenance.id).toEqual({ in: [] });
@@ -547,8 +564,8 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       const whereAvailable = roomRepository.buildWhere({
         page: 1,
         limit: 10,
-        startDate: new Date('2026-12-10T09:00:00.000+07:00'),
-        endDate: new Date('2026-12-10T11:00:00.000+07:00'),
+        startDate: new Date(`${futureDate2}T09:00:00.000+07:00`),
+        endDate: new Date(`${futureDate2}T11:00:00.000+07:00`),
         status: RoomStatus.AVAILABLE,
       });
       expect(whereAvailable.status).toBe(RoomStatus.AVAILABLE);
@@ -564,7 +581,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
         service.getRooms({
           page: 1,
           limit: 10,
-          startDate: new Date('2026-11-20T09:00:00.000+07:00'),
+          startDate: new Date(`${futureDate}T09:00:00.000+07:00`),
         }),
       ).rejects.toThrow('startDate và endDate phải đi cùng nhau');
 
@@ -572,7 +589,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
         service.getRooms({
           page: 1,
           limit: 10,
-          endDate: new Date('2026-11-20T11:00:00.000+07:00'),
+          endDate: new Date(`${futureDate}T11:00:00.000+07:00`),
         }),
       ).rejects.toThrow('startDate và endDate phải đi cùng nhau');
     });
