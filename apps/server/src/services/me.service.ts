@@ -3,7 +3,12 @@ import { ENV } from '../config/env.config.js';
 import { AppError } from '../utils/error.util.js';
 import { comparePassword, hashPassword } from '../utils/password.util.js';
 import { generateToken } from '../utils/jwt.util.js';
-import { UserRepository, userRepository } from '../repositories/user.repository.js';
+import {
+  accountDeletedError,
+  accountLockedError,
+  UserRepository,
+  userRepository,
+} from '../repositories/user.repository.js';
 import type { LoginResult, SafeUser } from './auth.service.js';
 import type {
   ChangePasswordInput,
@@ -20,10 +25,6 @@ const toSafeUser = (user: User): SafeUser => ({
   emailVerifiedAt: user.emailVerifiedAt,
 });
 
-// A valid token whose account no longer exists is treated as an invalid session.
-const sessionGone = () =>
-  new AppError('UNAUTHORIZED', 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại', 401);
-
 /**
  * Self-service account operations. The user id always comes from the verified JWT (`req.user.sub`),
  * never from the request, so one account can never read or change another (no IDOR).
@@ -33,18 +34,18 @@ export class MeService {
 
   async getProfile(userId: string): Promise<SafeUser> {
     const user = await this.userRepo.findById(userId);
-    if (!user) throw sessionGone();
+    if (!user || user.deletedAt || user.lockedAt) throw accountDeletedError();
     return toSafeUser(user);
   }
 
   async updateProfile(userId: string, input: UpdateMeInput): Promise<SafeUser> {
-    const user = await this.userRepo.findById(userId);
-    if (!user) throw sessionGone();
-    const updated = await this.userRepo.updateProfile(userId, {
+    const result = await this.userRepo.updateProfile(userId, {
       ...(input.fullName !== undefined ? { fullName: input.fullName } : {}),
       ...(input.phoneNumber !== undefined ? { phoneNumber: input.phoneNumber } : {}),
     });
-    return toSafeUser(updated);
+    if (result.status === 'NOT_FOUND') throw accountDeletedError();
+    if (result.status === 'LOCKED') throw accountLockedError();
+    return toSafeUser(result.user);
   }
 
   /**
@@ -54,30 +55,38 @@ export class MeService {
    */
   async changePassword(userId: string, input: ChangePasswordInput): Promise<LoginResult> {
     const user = await this.userRepo.findById(userId);
-    if (!user) throw sessionGone();
+    if (!user || user.deletedAt) throw accountDeletedError();
 
     const matches = await comparePassword(input.currentPassword, user.passwordHash);
     if (!matches) {
       // 400 (not 401): a wrong current password must not end the caller's session.
       throw new AppError('INVALID_CURRENT_PASSWORD', 'Mật khẩu hiện tại không chính xác', 400);
     }
+    if (user.lockedAt) throw accountLockedError();
 
-    const updated = await this.userRepo.updatePasswordHashAndRevokeSessions(
+    const result = await this.userRepo.updatePasswordHashAndRevokeSessions(
       userId,
       await hashPassword(input.newPassword),
     );
+    if (result.status === 'NOT_FOUND') throw accountDeletedError();
+    if (result.status === 'LOCKED') throw accountLockedError();
+
     return {
-      accessToken: generateToken({ sub: updated.id, role: updated.role, tv: updated.tokenVersion }),
+      accessToken: generateToken({
+        sub: result.user.id,
+        role: result.user.role,
+        tv: result.user.tokenVersion,
+      }),
       tokenType: 'Bearer',
       expiresIn: ENV.JWT_EXPIRES_IN_SECONDS,
-      user: toSafeUser(updated),
+      user: toSafeUser(result.user),
     };
   }
 
   /** "Log out everywhere": revokes every token of the account, including the caller's (CWB-77). */
   async logoutAll(userId: string): Promise<void> {
     const revoked = await this.userRepo.revokeSessions(userId);
-    if (!revoked) throw sessionGone();
+    if (!revoked) throw accountDeletedError();
   }
 
   /**
@@ -87,7 +96,7 @@ export class MeService {
    */
   async deleteAccount(userId: string, input: DeleteAccountInput, now = new Date()): Promise<void> {
     const user = await this.userRepo.findById(userId);
-    if (!user || user.deletedAt) throw sessionGone();
+    if (!user || user.deletedAt) throw accountDeletedError();
     if (user.role !== Role.CUSTOMER) {
       throw new AppError(
         'ACCOUNT_DELETION_FORBIDDEN',
@@ -100,9 +109,11 @@ export class MeService {
     if (!matches) {
       throw new AppError('INVALID_CURRENT_PASSWORD', 'Mật khẩu hiện tại không chính xác', 400);
     }
+    if (user.lockedAt) throw accountLockedError();
 
     const result = await this.userRepo.anonymizeAccount(userId, now);
-    if (result.status === 'NOT_FOUND') throw sessionGone();
+    if (result.status === 'NOT_FOUND') throw accountDeletedError();
+    if (result.status === 'LOCKED') throw accountLockedError();
     if (result.status === 'HAS_ACTIVE_BOOKINGS') {
       throw new AppError(
         'ACCOUNT_HAS_ACTIVE_BOOKINGS',

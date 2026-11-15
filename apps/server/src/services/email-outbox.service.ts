@@ -72,6 +72,7 @@ const outboxInclude = {
       fullName: true,
       emailVerifiedAt: true,
       deletedAt: true,
+      lockedAt: true,
     },
   },
 } satisfies Prisma.EmailOutboxInclude;
@@ -174,6 +175,12 @@ export class EmailOutboxService {
     const issueResult = await emailVerificationRepository.issueToken(userId, now);
     if (issueResult.status === 'ALREADY_VERIFIED') {
       return { status: 'SKIPPED', reason: 'ALREADY_VERIFIED' };
+    }
+    if (issueResult.status === 'ACCOUNT_DELETED') {
+      return { status: 'SKIPPED', reason: 'ACCOUNT_DELETED' };
+    }
+    if (issueResult.status === 'ACCOUNT_LOCKED') {
+      return { status: 'SKIPPED', reason: 'ACCOUNT_LOCKED' };
     }
     if (issueResult.status === 'USER_NOT_FOUND') {
       return { status: 'SKIPPED', reason: 'NO_RECIPIENT' };
@@ -331,8 +338,9 @@ export class EmailOutboxService {
       let skipReason: string | null = null;
       if (row.kind === 'EMAIL_VERIFICATION') {
         if (!row.user?.email) skipReason = 'NO_RECIPIENT';
-        // CWB-88: checked on every attempt, so an admin requeue never mails a deleted account.
+        // CWB-88, CWB-112: checked on every attempt, so an admin requeue never mails a deleted or locked account.
         else if (row.user.deletedAt) skipReason = 'ACCOUNT_DELETED';
+        else if (row.user.lockedAt) skipReason = 'ACCOUNT_LOCKED';
         else if (row.user.emailVerifiedAt) skipReason = 'ALREADY_VERIFIED';
         else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
       } else {

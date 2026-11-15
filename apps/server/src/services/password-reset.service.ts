@@ -41,12 +41,13 @@ export class PasswordResetService {
     try {
       if (!this.notificationService.canDeliver()) return;
       const user = await this.userRepo.findByEmail(normalizedEmail);
-      if (!user) return;
+      if (!user || user.deletedAt || user.lockedAt) return;
 
       const token = randomBytes(32).toString('base64url');
       const tokenHash = hashResetToken(token);
       const expiresAt = new Date(now.getTime() + RESET_TOKEN_TTL_MINUTES * 60 * 1000);
-      await this.resetRepo.replaceToken(user.id, tokenHash, expiresAt);
+      const issued = await this.resetRepo.replaceToken(user.id, tokenHash, expiresAt, now);
+      if (!issued) return;
 
       const resetUrl = `${ENV.CLIENT_URL.replace(/\/+$/, '')}/reset-password?token=${token}`;
       const sent = await this.notificationService.sendPasswordReset({
