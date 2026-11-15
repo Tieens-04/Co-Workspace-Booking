@@ -317,15 +317,27 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     let targetDateStr: string;
 
     beforeAll(async () => {
-      // Create user booking on 2026-11-15T09:00:00+07:00
-      // 09:00 VN (+07:00) is 02:00 UTC
-      targetDateStr = '2026-11-15';
-      const userStart = new Date('2026-11-15T02:00:00.000Z');
-      const userEnd = new Date('2026-11-15T04:00:00.000Z');
+      const DAY_MS = 24 * 60 * 60 * 1000;
+      const anchorMs = Date.now();
+      const vnDateAt = (daysAhead: number) =>
+        new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
+          new Date(anchorMs + daysAhead * DAY_MS),
+        );
+      const compact = (d: string) => d.replace(/-/g, '');
+
+      // Use +24/+25/+26 days in Vietnam (+07:00) so CONFIRMED fixtures stay active in the future
+      // (never auto-transitioned to NO_SHOW by lazy evaluation) and never collide with +60h..+360h tests.
+      const prevDateStr = vnDateAt(24);
+      targetDateStr = vnDateAt(25);
+      const nextDateStr = vnDateAt(26);
+
+      // Create user booking at 09:00–11:00 VN (+07:00) -> 02:00–04:00 UTC
+      const userStart = new Date(`${targetDateStr}T09:00:00.000+07:00`);
+      const userEnd = new Date(`${targetDateStr}T11:00:00.000+07:00`);
 
       const userBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261115-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: `CS-${compact(targetDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
           userId: testUserId,
           roomId: availableRoomId,
           startTime: userStart,
@@ -338,13 +350,13 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       });
       userBookingCode = userBooking.bookingCode;
 
-      // Create guest booking on the same VN day at 14:00 VN (+07:00) -> 07:00 UTC
-      const guestStart = new Date('2026-11-15T07:00:00.000Z');
-      const guestEnd = new Date('2026-11-15T09:00:00.000Z');
+      // Create guest booking on the same VN day at 14:00–16:00 VN (+07:00) -> 07:00–09:00 UTC
+      const guestStart = new Date(`${targetDateStr}T14:00:00.000+07:00`);
+      const guestEnd = new Date(`${targetDateStr}T16:00:00.000+07:00`);
 
       const guestBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261115-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: `CS-${compact(targetDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
           userId: null,
           guestName: 'Phạm Thị Khách',
           guestPhone: '0977889900',
@@ -359,14 +371,14 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       });
       guestBookingCode = guestBooking.bookingCode;
 
-      // Midnight start booking at exactly 00:00 VN on 2026-11-15 (17:00 UTC on 2026-11-14)
+      // Midnight start booking at exactly 00:00 VN on targetDateStr (17:00 UTC on prevDateStr)
       const midnightBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261115-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: `CS-${compact(targetDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
           userId: testUserId,
           roomId: availableRoomId,
-          startTime: new Date('2026-11-14T17:00:00.000Z'),
-          endTime: new Date('2026-11-14T19:00:00.000Z'),
+          startTime: new Date(`${targetDateStr}T00:00:00.000+07:00`),
+          endTime: new Date(`${targetDateStr}T02:00:00.000+07:00`),
           totalAmount: new Prisma.Decimal('400.00'),
           status: BookingStatus.CANCELLED,
           paymentStatus: PaymentStatus.UNPAID,
@@ -375,16 +387,16 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       });
       cancelledMidnightCode = midnightBooking.bookingCode;
 
-      // Next day midnight start booking at exactly 00:00 VN on 2026-11-16 (17:00 UTC on 2026-11-15) -> UPPER BOUND EXCLUSIVE
+      // Next day midnight start booking at exactly 00:00 VN on nextDateStr -> UPPER BOUND EXCLUSIVE
       const nextDayBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261116-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: `CS-${compact(nextDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
           userId: null,
           guestName: 'Khách Hôm Sau',
           guestPhone: '0933445566',
           roomId: availableRoomId,
-          startTime: new Date('2026-11-15T17:00:00.000Z'),
-          endTime: new Date('2026-11-15T19:00:00.000Z'),
+          startTime: new Date(`${nextDateStr}T00:00:00.000+07:00`),
+          endTime: new Date(`${nextDateStr}T02:00:00.000+07:00`),
           totalAmount: new Prisma.Decimal('400.00'),
           status: BookingStatus.NO_SHOW,
           paymentStatus: PaymentStatus.UNPAID,
@@ -393,14 +405,14 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       });
       noShowNextDayCode = nextDayBooking.bookingCode;
 
-      // Overnight booking starting on previous VN day at 23:00 VN (16:00 UTC) ending 01:00 VN on 2026-11-15
+      // Overnight booking starting on previous VN day at 23:00 VN ending 01:00 VN on targetDateStr
       const overnightBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261114-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: `CS-${compact(prevDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
           userId: testUserId,
           roomId: availableRoomId,
-          startTime: new Date('2026-11-14T16:00:00.000Z'),
-          endTime: new Date('2026-11-14T18:00:00.000Z'),
+          startTime: new Date(`${prevDateStr}T23:00:00.000+07:00`),
+          endTime: new Date(`${targetDateStr}T01:00:00.000+07:00`),
           totalAmount: new Prisma.Decimal('400.00'),
           status: BookingStatus.CONFIRMED,
           paymentStatus: PaymentStatus.PAID,
@@ -473,7 +485,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
     it('filters bookings by date using Vietnam (+07:00) day boundaries [dayStart, dayEnd)', async () => {
       const res = await request(app)
-        .get(`/api/v1/admin/bookings?date=${targetDateStr}`)
+        .get(`/api/v1/admin/bookings?date=${targetDateStr}&limit=100`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -492,7 +504,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
     it('filters bookings by status across all 4 BookingStatus values', async () => {
       const resConfirmed = await request(app)
-        .get('/api/v1/admin/bookings?status=CONFIRMED')
+        .get('/api/v1/admin/bookings?status=CONFIRMED&limit=100')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(resConfirmed.status).toBe(200);
       const confirmedCodes = resConfirmed.body.data.items.map(
@@ -502,7 +514,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(confirmedCodes).not.toContain(guestBookingCode);
 
       const resCompleted = await request(app)
-        .get('/api/v1/admin/bookings?status=COMPLETED')
+        .get('/api/v1/admin/bookings?status=COMPLETED&limit=100')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(resCompleted.status).toBe(200);
       const completedCodes = resCompleted.body.data.items.map(
@@ -512,7 +524,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(completedCodes).not.toContain(userBookingCode);
 
       const resCancelled = await request(app)
-        .get('/api/v1/admin/bookings?status=CANCELLED')
+        .get('/api/v1/admin/bookings?status=CANCELLED&limit=100')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(resCancelled.status).toBe(200);
       const cancelledCodes = resCancelled.body.data.items.map(
@@ -521,7 +533,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(cancelledCodes).toContain(cancelledMidnightCode);
 
       const resNoShow = await request(app)
-        .get('/api/v1/admin/bookings?status=NO_SHOW')
+        .get('/api/v1/admin/bookings?status=NO_SHOW&limit=100')
         .set('Authorization', `Bearer ${adminToken}`);
       expect(resNoShow.status).toBe(200);
       const noShowCodes = resNoShow.body.data.items.map(

@@ -7,6 +7,10 @@ import prisma from '../utils/prisma.util.js';
 
 describe('Room API Integration Tests (Real MySQL Database)', () => {
   const testPrefix = `test_${randomUUID()}`;
+  const testDate = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
+    new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+  );
+  const testDateCompact = testDate.replace(/-/g, '');
   let testUserId: string;
   let amenityAId: string;
   let amenityBId: string;
@@ -143,14 +147,14 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
     });
     testUserId = testUser.id;
 
-    // Confirmed booking on roomAll: 2026-11-25 10:00 - 12:00 VN (03:00 - 05:00 UTC)
+    // Confirmed booking on roomAll: testDate 10:00 - 12:00 VN (03:00 - 05:00 UTC)
     const bookingConfirmed = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261125-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: `CS-${testDateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`,
         userId: testUserId,
         roomId: roomAllId,
-        startTime: new Date('2026-11-25T03:00:00.000Z'),
-        endTime: new Date('2026-11-25T05:00:00.000Z'),
+        startTime: new Date(`${testDate}T03:00:00.000Z`),
+        endTime: new Date(`${testDate}T05:00:00.000Z`),
         totalAmount: 400.0,
         status: BookingStatus.CONFIRMED,
         paymentStatus: PaymentStatus.PAID,
@@ -158,14 +162,14 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
     });
     bookingConfirmedId = bookingConfirmed.id;
 
-    // Cancelled booking on roomPartial: 2026-11-25 10:00 - 12:00 VN (03:00 - 05:00 UTC)
+    // Cancelled booking on roomPartial: testDate 10:00 - 12:00 VN (03:00 - 05:00 UTC)
     const bookingCancelled = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261125-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: `CS-${testDateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`,
         userId: testUserId,
         roomId: roomPartialId,
-        startTime: new Date('2026-11-25T03:00:00.000Z'),
-        endTime: new Date('2026-11-25T05:00:00.000Z'),
+        startTime: new Date(`${testDate}T03:00:00.000Z`),
+        endTime: new Date(`${testDate}T05:00:00.000Z`),
         totalAmount: 200.0,
         status: BookingStatus.CANCELLED,
         paymentStatus: PaymentStatus.REFUNDED,
@@ -340,7 +344,9 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
 
     describe('Sort Options (sort)', () => {
       it('sorts rooms by price ascending (price_asc)', async () => {
-        const res = await request(app).get(`/api/v1/rooms?q=${testPrefix}&sort=price_asc&limit=100`);
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&sort=price_asc&limit=100`,
+        );
 
         expect(res.status).toBe(200);
         const items = res.body.data.items;
@@ -354,7 +360,9 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
       });
 
       it('sorts rooms by price descending (price_desc)', async () => {
-        const res = await request(app).get(`/api/v1/rooms?q=${testPrefix}&sort=price_desc&limit=100`);
+        const res = await request(app).get(
+          `/api/v1/rooms?q=${testPrefix}&sort=price_desc&limit=100`,
+        );
 
         expect(res.status).toBe(200);
         const items = res.body.data.items;
@@ -398,8 +406,7 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
     });
 
     describe('Availability Slot Filtering (date + startTime + endTime)', () => {
-      // Existing confirmed booking on roomAll is 2026-11-25 10:00 - 12:00 VN
-      const testDate = '2026-11-25';
+      // Existing confirmed booking on roomAll is testDate 10:00 - 12:00 VN
 
       it('excludes room with overlapping booking (fully inside requested slot)', async () => {
         // Requested 10:30 - 11:30 is inside existing 10:00 - 12:00

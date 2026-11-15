@@ -12,6 +12,17 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
   afterAll(() => accounts.cleanup());
 
   const testPrefix = `closure_test_${randomUUID().slice(0, 8)}`;
+  const SUITE_ANCHOR_MS = Date.now();
+  const vnFutureDate = (daysAhead: number) =>
+    new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
+      new Date(SUITE_ANCHOR_MS + daysAhead * 24 * 60 * 60 * 1000),
+    );
+  const day1 = vnFutureDate(20);
+  const day2 = vnFutureDate(21);
+  const day3 = vnFutureDate(22);
+  const day4 = vnFutureDate(23);
+  const holidayDate = vnFutureDate(35);
+  const compactDate = (d: string) => d.replace(/-/g, '');
   const adminToken = accounts.token(Role.ADMIN, `admin_${randomUUID().slice(0, 8)}`);
   let customerToken: string;
 
@@ -90,8 +101,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .post('/api/v1/admin/closures')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
-          startTime: '2026-12-25T08:00:00.000Z',
-          endTime: '2026-12-25T18:00:00.000Z',
+          startTime: `${holidayDate}T08:00:00.000Z`,
+          endTime: `${holidayDate}T18:00:00.000Z`,
           reason: 'Christmas Holiday',
         });
       expect(res.status).toBe(403);
@@ -107,8 +118,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           roomId: null,
-          startTime: '2026-12-25T01:00:00.000Z', // 08:00 VN
-          endTime: '2026-12-25T11:00:00.000Z', // 18:00 VN
+          startTime: `${holidayDate}T01:00:00.000Z`, // 08:00 VN
+          endTime: `${holidayDate}T11:00:00.000Z`, // 18:00 VN
           reason: `${testPrefix} Nghỉ lễ Giáng sinh toàn cơ sở`,
         });
 
@@ -193,12 +204,12 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
   });
 
   describe('3. AC 3: Warning on Conflicting CONFIRMED Bookings', () => {
-    const bookingStart = new Date('2026-11-20T03:00:00.000Z'); // 10:00 VN
-    const bookingEnd = new Date('2026-11-20T05:00:00.000Z'); // 12:00 VN
+    const bookingStart = new Date(`${day1}T03:00:00.000Z`); // 10:00 VN
+    const bookingEnd = new Date(`${day1}T05:00:00.000Z`); // 12:00 VN
     let conflictingBookingCode: string;
 
     beforeAll(async () => {
-      conflictingBookingCode = `CS-20261120-${randomUUID().slice(0, 4).toUpperCase()}`;
+      conflictingBookingCode = `CS-${compactDate(day1)}-${randomUUID().slice(0, 4).toUpperCase()}`;
       await prisma.booking.create({
         data: {
           bookingCode: conflictingBookingCode,
@@ -219,8 +230,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           roomId: testRoomAId,
-          startTime: '2026-11-20T02:00:00.000Z', // 09:00 VN
-          endTime: '2026-11-20T06:00:00.000Z', // 13:00 VN
+          startTime: `${day1}T02:00:00.000Z`, // 09:00 VN
+          endTime: `${day1}T06:00:00.000Z`, // 13:00 VN
           reason: `${testPrefix} Sửa phòng đột xuất`,
         });
 
@@ -242,8 +253,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           roomId: testRoomAId,
-          startTime: '2026-11-20T02:00:00.000Z',
-          endTime: '2026-11-20T06:00:00.000Z',
+          startTime: `${day1}T02:00:00.000Z`,
+          endTime: `${day1}T06:00:00.000Z`,
           reason: `${testPrefix} Sửa phòng đột xuất`,
           acknowledgeConflictingBookings: true,
         });
@@ -261,9 +272,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
 
   describe('4. AC 2: Availability Endpoint Reflects CLOSED with Reason', () => {
     it('returns CLOSED for slots covered by closure in GET /rooms/:id/availability', async () => {
-      const res = await request(app).get(
-        `/api/v1/rooms/${testRoomAId}/availability?date=2026-11-20`,
-      );
+      const res = await request(app).get(`/api/v1/rooms/${testRoomAId}/availability?date=${day1}`);
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
 
@@ -278,16 +287,15 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
   });
 
   describe('5. AC 2 & AC 5: Booking Creation & Reschedule Blocking in Transaction', () => {
-    // Closure is active on testRoomAId from 2026-11-20 02:00 UTC to 06:00 UTC (09:00 - 13:00 VN)
-    // Local time anchor for validation: 2026-11-20 00:00 UTC
+    // Closure is active on testRoomAId from day1 02:00 UTC to 06:00 UTC (09:00 - 13:00 VN)
     it('blocks booking creation inside closure with 409 ROOM_CLOSED', async () => {
       const res = await request(app)
         .post('/api/v1/bookings')
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: testRoomAId,
-          startTime: '2026-11-20T02:00:00.000Z', // 09:00 VN
-          endTime: '2026-11-20T04:00:00.000Z', // 11:00 VN
+          startTime: `${day1}T02:00:00.000Z`, // 09:00 VN
+          endTime: `${day1}T04:00:00.000Z`, // 11:00 VN
         });
 
       expect(res.status).toBe(409);
@@ -301,8 +309,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: testRoomAId,
-          startTime: '2026-11-20T01:00:00.000Z', // 08:00 VN
-          endTime: '2026-11-20T03:00:00.000Z', // 10:00 VN (overlaps 02:00-03:00)
+          startTime: `${day1}T01:00:00.000Z`, // 08:00 VN
+          endTime: `${day1}T03:00:00.000Z`, // 10:00 VN (overlaps 02:00-03:00)
         });
 
       expect(res.status).toBe(409);
@@ -315,8 +323,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: testRoomAId,
-          startTime: '2026-11-20T05:00:00.000Z', // 12:00 VN
-          endTime: '2026-11-20T07:00:00.000Z', // 14:00 VN (overlaps 05:00-06:00)
+          startTime: `${day1}T05:00:00.000Z`, // 12:00 VN
+          endTime: `${day1}T07:00:00.000Z`, // 14:00 VN (overlaps 05:00-06:00)
         });
 
       expect(res.status).toBe(409);
@@ -330,8 +338,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: testRoomAId,
-          startTime: '2026-11-20T00:00:00.000Z',
-          endTime: '2026-11-20T02:00:00.000Z',
+          startTime: `${day1}T00:00:00.000Z`,
+          endTime: `${day1}T02:00:00.000Z`,
         });
 
       expect(res.status).toBe(201);
@@ -345,8 +353,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: testRoomAId,
-          startTime: '2026-11-20T06:00:00.000Z',
-          endTime: '2026-11-20T08:00:00.000Z',
+          startTime: `${day1}T06:00:00.000Z`,
+          endTime: `${day1}T08:00:00.000Z`,
         });
 
       expect(res.status).toBe(201);
@@ -360,8 +368,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
           roomId: testRoomBId,
-          startTime: '2026-11-20T02:00:00.000Z',
-          endTime: '2026-11-20T04:00:00.000Z',
+          startTime: `${day1}T02:00:00.000Z`,
+          endTime: `${day1}T04:00:00.000Z`,
         });
 
       expect(res.status).toBe(201);
@@ -376,8 +384,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
           roomId: testRoomAId,
           guestName: 'Walk-in Guest',
           guestPhone: '0987654321',
-          startTime: '2026-11-20T03:00:00.000Z',
-          endTime: '2026-11-20T05:00:00.000Z',
+          startTime: `${day1}T03:00:00.000Z`,
+          endTime: `${day1}T05:00:00.000Z`,
         });
 
       expect(res.status).toBe(409);
@@ -385,14 +393,14 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
     });
 
     it('blocks reschedule into closed slot with 409 ROOM_CLOSED', async () => {
-      // Create a valid booking at 14:00-16:00 UTC (21:00-23:00 VN)
+      // Create a valid booking at 10:00-12:00 UTC (17:00-19:00 VN)
       const validBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261120-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: `CS-${compactDate(day1)}-${randomUUID().slice(0, 4).toUpperCase()}`,
           userId: testUserId,
           roomId: testRoomAId,
-          startTime: new Date('2026-11-20T10:00:00.000Z'),
-          endTime: new Date('2026-11-20T12:00:00.000Z'),
+          startTime: new Date(`${day1}T10:00:00.000Z`),
+          endTime: new Date(`${day1}T12:00:00.000Z`),
           totalAmount: new Prisma.Decimal('200.00'),
           status: BookingStatus.CONFIRMED,
           paymentStatus: PaymentStatus.UNPAID,
@@ -404,8 +412,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .patch(`/api/v1/bookings/${validBooking.id}`)
         .set('Authorization', `Bearer ${customerToken}`)
         .send({
-          startTime: '2026-11-20T02:00:00.000Z',
-          endTime: '2026-11-20T04:00:00.000Z',
+          startTime: `${day1}T02:00:00.000Z`,
+          endTime: `${day1}T04:00:00.000Z`,
         });
 
       expect(res.status).toBe(409);
@@ -425,21 +433,21 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       const customer2Token = accounts.token(Role.CUSTOMER, user2.id);
 
       try {
-        // Create facility-wide closure on 2026-11-21 02:00-05:00 UTC (09:00-12:00 VN)
+        // Create facility-wide closure on day2 02:00-05:00 UTC (09:00-12:00 VN)
         const createClosureRes = await request(app)
           .post('/api/v1/admin/closures')
           .set('Authorization', `Bearer ${adminToken}`)
           .send({
             roomId: null,
-            startTime: '2026-11-21T02:00:00.000Z',
-            endTime: '2026-11-21T05:00:00.000Z',
+            startTime: `${day2}T02:00:00.000Z`,
+            endTime: `${day2}T05:00:00.000Z`,
             reason: `${testPrefix} Khử khuẩn toàn cơ sở`,
           });
         expect(createClosureRes.status).toBe(201);
 
         // 1. Availability on Room B reflects CLOSED
         const availRes = await request(app).get(
-          `/api/v1/rooms/${testRoomBId}/availability?date=2026-11-21`,
+          `/api/v1/rooms/${testRoomBId}/availability?date=${day2}`,
         );
         expect(availRes.status).toBe(200);
         const closedSlots = availRes.body.data.slots.filter(
@@ -454,8 +462,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
           .set('Authorization', `Bearer ${customer2Token}`)
           .send({
             roomId: testRoomBId,
-            startTime: '2026-11-21T02:00:00.000Z',
-            endTime: '2026-11-21T04:00:00.000Z',
+            startTime: `${day2}T02:00:00.000Z`,
+            endTime: `${day2}T04:00:00.000Z`,
           });
         expect(bookRes.status).toBe(409);
         expect(bookRes.body.code).toBe('ROOM_CLOSED');
@@ -468,8 +476,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
             roomId: testRoomBId,
             guestName: 'Guest Facility Closure',
             guestPhone: '0911223344',
-            startTime: '2026-11-21T03:00:00.000Z',
-            endTime: '2026-11-21T05:00:00.000Z',
+            startTime: `${day2}T03:00:00.000Z`,
+            endTime: `${day2}T05:00:00.000Z`,
           });
         expect(guestRes.status).toBe(409);
         expect(guestRes.body.code).toBe('ROOM_CLOSED');
@@ -477,11 +485,11 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         // 4. Reschedule into facility-wide closure on Room B is blocked with 409 ROOM_CLOSED
         const openBooking = await prisma.booking.create({
           data: {
-            bookingCode: `CS-20261121-${randomUUID().slice(0, 4).toUpperCase()}`,
+            bookingCode: `CS-${compactDate(day2)}-${randomUUID().slice(0, 4).toUpperCase()}`,
             userId: user2.id,
             roomId: testRoomBId,
-            startTime: new Date('2026-11-21T07:00:00.000Z'),
-            endTime: new Date('2026-11-21T09:00:00.000Z'),
+            startTime: new Date(`${day2}T07:00:00.000Z`),
+            endTime: new Date(`${day2}T09:00:00.000Z`),
             totalAmount: new Prisma.Decimal('400.00'),
             status: BookingStatus.CONFIRMED,
             paymentStatus: PaymentStatus.UNPAID,
@@ -491,8 +499,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
           .patch(`/api/v1/bookings/${openBooking.id}`)
           .set('Authorization', `Bearer ${customer2Token}`)
           .send({
-            startTime: '2026-11-21T02:00:00.000Z',
-            endTime: '2026-11-21T04:00:00.000Z',
+            startTime: `${day2}T02:00:00.000Z`,
+            endTime: `${day2}T04:00:00.000Z`,
           });
         expect(reschedRes.status).toBe(409);
         expect(reschedRes.body.code).toBe('ROOM_CLOSED');
@@ -531,8 +539,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           roomId: testRoomBId,
-          startTime: '2026-11-22T02:00:00.000Z',
-          endTime: '2026-11-22T05:00:00.000Z',
+          startTime: `${day3}T02:00:00.000Z`,
+          endTime: `${day3}T05:00:00.000Z`,
           reason: `${testPrefix} No-op test`,
         });
       expect(createdRes.status).toBe(201);
@@ -544,8 +552,8 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         .set('Authorization', `Bearer ${adminToken}`)
         .send({
           roomId: testRoomBId,
-          startTime: '2026-11-22T02:00:00.000Z',
-          endTime: '2026-11-22T05:00:00.000Z',
+          startTime: `${day3}T02:00:00.000Z`,
+          endTime: `${day3}T05:00:00.000Z`,
           reason: `  ${testPrefix} No-op test  `,
         });
       expect(noopRes.status).toBe(200);
@@ -574,7 +582,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       const invalidTimeRes = await request(app)
         .patch(`/api/v1/admin/closures/${closureId}`)
         .set('Authorization', `Bearer ${adminToken}`)
-        .send({ endTime: '2026-11-22T01:00:00.000Z' });
+        .send({ endTime: `${day3}T01:00:00.000Z` });
       expect(invalidTimeRes.status).toBe(400);
       expect(invalidTimeRes.body.code).toBe('VALIDATION_ERROR');
       expect(invalidTimeRes.body.details).toEqual([
@@ -583,9 +591,9 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
     });
 
     it('includes CLOSED slots on GET /api/v1/admin/dashboard/schedule when room or facility is closed', async () => {
-      // On 2026-11-20, testRoomAId has a closure from 02:00 to 06:00 UTC (09:00-13:00 VN)
+      // On day1, testRoomAId has a closure from 02:00 to 06:00 UTC (09:00-13:00 VN)
       const res = await request(app)
-        .get('/api/v1/admin/dashboard/schedule?date=2026-11-20&limit=50')
+        .get(`/api/v1/admin/dashboard/schedule?date=${day1}&limit=50`)
         .set('Authorization', `Bearer ${adminToken}`);
 
       expect(res.status).toBe(200);
@@ -610,20 +618,23 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       const concToken = accounts.token(Role.CUSTOMER, userConc.id);
 
       try {
-        // Fire both requests concurrently on 2026-11-23 02:00-04:00 UTC on testRoomBId
+        // Fire both requests concurrently on day4 02:00-04:00 UTC on testRoomBId
         const [bookingRes, closureRes] = await Promise.all([
-          request(app).post('/api/v1/bookings').set('Authorization', `Bearer ${concToken}`).send({
-            roomId: testRoomBId,
-            startTime: '2026-11-23T02:00:00.000Z',
-            endTime: '2026-11-23T04:00:00.000Z',
-          }),
+          request(app)
+            .post('/api/v1/bookings')
+            .set('Authorization', `Bearer ${concToken}`)
+            .send({
+              roomId: testRoomBId,
+              startTime: `${day4}T02:00:00.000Z`,
+              endTime: `${day4}T04:00:00.000Z`,
+            }),
           request(app)
             .post('/api/v1/admin/closures')
             .set('Authorization', `Bearer ${adminToken}`)
             .send({
               roomId: testRoomBId,
-              startTime: '2026-11-23T02:00:00.000Z',
-              endTime: '2026-11-23T04:00:00.000Z',
+              startTime: `${day4}T02:00:00.000Z`,
+              endTime: `${day4}T04:00:00.000Z`,
               reason: `${testPrefix} Concurrent closure`,
               acknowledgeConflictingBookings: false,
             }),
