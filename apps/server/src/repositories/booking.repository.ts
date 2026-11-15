@@ -33,8 +33,11 @@ import { getDayBounds } from '../utils/room-availability.util.js';
 import { AppError } from '../utils/error.util.js';
 import { AuditAction, AuditActor, recordAuditEvent } from './audit.repository.js';
 import { enqueueBookingEmail } from './email-outbox.repository.js';
+import { accountDeletedError, accountLockedError } from './user.repository.js';
 import { BookingIdempotency, idempotencyKeyReused } from '../utils/idempotency.util.js';
 import { ENV } from '../config/env.config.js';
+
+export { accountDeletedError, accountLockedError };
 
 export type BookingUserIdentity = {
   userId: string;
@@ -50,18 +53,27 @@ export type BookingGuestIdentity = {
 
 export type BookingIdentity = BookingUserIdentity | BookingGuestIdentity;
 
-export const accountLockedError = (): AppError =>
-  new AppError(
-    'ACCOUNT_LOCKED',
-    'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.',
-    403,
-  );
-
-export const accountDeletedError = (): AppError =>
-  new AppError('UNAUTHORIZED', 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại', 401);
-
 export const emailNotVerifiedError = (): AppError =>
   new AppError('EMAIL_NOT_VERIFIED', 'Vui lòng xác thực email trước khi đặt phòng', 403);
+
+/**
+ * CWB-78, CWB-87, CWB-88, CWB-112: locks the customer's `users` row first (users -> bookings ->
+ * rooms) and enforces lifecycle guards inside the booking transaction.
+ */
+async function lockBookableCustomer(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+  const [account] = await tx.$queryRaw<
+    Array<{
+      locked_at: Date | null;
+      email_verified_at: Date | null;
+      deleted_at: Date | null;
+    }>
+  >(
+    Prisma.sql`SELECT locked_at, email_verified_at, deleted_at FROM users WHERE id = ${userId} FOR UPDATE`,
+  );
+  if (!account || account.deleted_at) throw accountDeletedError();
+  if (account.locked_at) throw accountLockedError();
+  if (!account.email_verified_at) throw emailNotVerifiedError();
+}
 
 export const activeBookingLimitError = (limit: number): AppError =>
   new AppError(
@@ -89,13 +101,15 @@ async function assertActiveBookingCapacity(
 }
 
 /**
- * Limits lazy no-show evaluation to bookings overlapping [from, to) (and a room) — the rows a
- * bounded report actually reads. Bookings outside the window are evaluated when they are read.
+ * Limits lazy no-show evaluation to bookings overlapping [from, to) (and a room or user set) — the
+ * rows a bounded report or admin listing actually reads. Bookings outside the scope are evaluated
+ * when they are read.
  */
 export interface NoShowScope {
   from?: Date;
   to?: Date;
   roomId?: string;
+  userIds?: string[];
 }
 
 export type CreateBookingRepoInput = {
@@ -613,23 +627,7 @@ export class BookingRepository
       // 0. CWB-78, CWB-87: lock the customer's row first (always user -> room, no path locks the reverse)
       // so one customer's concurrent requests for different rooms serialize on the booking cap.
       if (data.userId) {
-        const [account] = await tx.$queryRaw<
-          Array<{
-            locked_at: Date | null;
-            email_verified_at: Date | null;
-            deleted_at: Date | null;
-          }>
-        >(
-          Prisma.sql`SELECT locked_at, email_verified_at, deleted_at FROM users WHERE id = ${data.userId} FOR UPDATE`,
-        );
-        if (!account) throw emailNotVerifiedError();
-        // CWB-88: the account was deleted after this request passed authentication.
-        if (account.deleted_at) throw accountDeletedError();
-        // CWB-79: the session check runs before this transaction; re-check under the row lock so
-        // a request that passed authentication just before an admin lock cannot still book.
-        if (account.locked_at) throw accountLockedError();
-        // CWB-87: unverified customer accounts cannot book rooms (403 EMAIL_NOT_VERIFIED)
-        if (!account.email_verified_at) throw emailNotVerifiedError();
+        await lockBookableCustomer(tx, data.userId);
       }
 
       // 1. Lock room row in MySQL with FOR UPDATE
@@ -900,11 +898,8 @@ export class BookingRepository
     clock?: (() => Date) | Date,
   ): Promise<BookingResponseDto> {
     return prisma.$transaction(async (tx) => {
-      // 0. CWB-78: lock user row first (user -> booking -> room)
-      const [account] = await tx.$queryRaw<Array<{ locked_at: Date | null }>>(
-        Prisma.sql`SELECT locked_at FROM users WHERE id = ${userId} FOR UPDATE`,
-      );
-      if (account?.locked_at) throw accountLockedError();
+      // 0. CWB-78, CWB-112: lock user row first (user -> booking -> room) and enforce lifecycle guards
+      await lockBookableCustomer(tx, userId);
 
       // 1. Lock booking row in MySQL with FOR UPDATE
       const rows = await tx.$queryRaw<
@@ -1676,6 +1671,8 @@ export class BookingRepository
     id?: string,
     scope?: NoShowScope,
   ): Promise<number> {
+    if (scope?.userIds && scope.userIds.length === 0) return 0;
+    if (userId && scope?.userIds && !scope.userIds.includes(userId)) return 0;
     const where: Prisma.BookingWhereInput = {
       status: BookingStatus.CONFIRMED,
       checkedInAt: null,
@@ -1684,7 +1681,7 @@ export class BookingRepository
       endTime: { lte: now ?? new Date(), ...(scope?.from ? { gt: scope.from } : {}) },
       ...(scope?.to ? { startTime: { lt: scope.to } } : {}),
       ...(scope?.roomId ? { roomId: scope.roomId } : {}),
-      ...(userId ? { userId } : {}),
+      ...(userId ? { userId } : scope?.userIds ? { userId: { in: scope.userIds } } : {}),
       ...(id ? { id } : {}),
     };
     let count = 0;

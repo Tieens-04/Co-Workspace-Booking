@@ -2,6 +2,7 @@ import { BookingStatus, Prisma, Role } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { AppError } from '../utils/error.util.js';
 import { AuditActor, recordAuditEvent } from './audit.repository.js';
+import { BookingRepository, bookingRepository } from './booking.repository.js';
 import {
   AccountStatus,
   AdminUserDto,
@@ -45,11 +46,18 @@ const toAdminUser = (record: AdminUserRecord, stats: BookingStats = emptyStats):
 });
 
 export class AdminUserRepository {
+  constructor(
+    private readonly bookingRepo: Pick<
+      BookingRepository,
+      'evaluateNoShowBookings'
+    > = bookingRepository,
+  ) {}
+
   async findManyAndCount(
     filter: FindAdminUsersFilter,
     now: Date,
   ): Promise<[number, AdminUserDto[]]> {
-    const where: Prisma.UserWhereInput = {};
+    const where: Prisma.UserWhereInput = { deletedAt: null };
     if (filter.role) where.role = filter.role;
     if (filter.status) where.lockedAt = filter.status === 'LOCKED' ? { not: null } : null;
     if (filter.q) {
@@ -79,10 +87,12 @@ export class AdminUserRepository {
     return [total, records.map((r) => toAdminUser(r, stats.get(r.id)))];
   }
 
-  /** Booking counters for one page of accounts (three grouped queries, bounded by page size). */
+  /** Booking counters for one page of accounts (lazy no-show pass + three grouped queries, bounded by page size). */
   private async bookingStats(userIds: string[], now: Date): Promise<Map<string, BookingStats>> {
     const result = new Map<string, BookingStats>();
     if (userIds.length === 0) return result;
+
+    await this.bookingRepo.evaluateNoShowBookings(now, undefined, undefined, { userIds });
 
     const [all, noShows, upcoming] = await Promise.all([
       prisma.booking.groupBy({
@@ -135,13 +145,21 @@ export class AdminUserRepository {
     actor: AuditActor;
     now: Date;
   }): Promise<UpdateUserStatusResult> {
-    return prisma.$transaction(async (tx) => {
+    const { updated, affectedBookings } = await prisma.$transaction(async (tx) => {
       const [row] = await tx.$queryRaw<
-        Array<{ id: string; role: Role; locked_at: Date | null; lock_reason: string | null }>
+        Array<{
+          id: string;
+          role: Role;
+          locked_at: Date | null;
+          lock_reason: string | null;
+          deleted_at: Date | null;
+        }>
       >(
-        Prisma.sql`SELECT id, role, locked_at, lock_reason FROM users WHERE id = ${input.userId} FOR UPDATE`,
+        Prisma.sql`SELECT id, role, locked_at, lock_reason, deleted_at FROM users WHERE id = ${input.userId} FOR UPDATE`,
       );
-      if (!row) throw new AppError('USER_NOT_FOUND', 'Không tìm thấy tài khoản', 404);
+      if (!row || row.deleted_at) {
+        throw new AppError('USER_NOT_FOUND', 'Không tìm thấy tài khoản', 404);
+      }
       if (row.role !== Role.CUSTOMER || row.id === input.actor.id) {
         throw new AppError(
           'ADMIN_ACCOUNT_PROTECTED',
@@ -160,7 +178,7 @@ export class AdminUserRepository {
       }
 
       const locking = input.status === 'LOCKED';
-      const updated = await tx.user.update({
+      const updatedUser = await tx.user.update({
         where: { id: input.userId },
         data: locking
           ? { lockedAt: input.now, lockReason: input.reason, tokenVersion: { increment: 1 } }
@@ -177,23 +195,24 @@ export class AdminUserRepository {
         after: { status: input.status, reason: input.reason },
       });
 
-      const upcoming = await tx.booking.findMany({
-        where: {
-          userId: input.userId,
-          status: BookingStatus.CONFIRMED,
-          startTime: { gte: input.now },
-        },
-        orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
-        select: {
-          id: true,
-          bookingCode: true,
-          startTime: true,
-          endTime: true,
-          room: { select: { name: true } },
-        },
-      });
-      const affectedBookings: AffectedBookingDto[] = locking
-        ? upcoming.map((b) => ({
+      const affected: AffectedBookingDto[] = locking
+        ? (
+            await tx.booking.findMany({
+              where: {
+                userId: input.userId,
+                status: BookingStatus.CONFIRMED,
+                startTime: { gte: input.now },
+              },
+              orderBy: [{ startTime: 'asc' }, { id: 'asc' }],
+              select: {
+                id: true,
+                bookingCode: true,
+                startTime: true,
+                endTime: true,
+                room: { select: { name: true } },
+              },
+            })
+          ).map((b) => ({
             id: b.id,
             bookingCode: b.bookingCode,
             roomName: b.room.name,
@@ -202,26 +221,20 @@ export class AdminUserRepository {
           }))
         : [];
 
-      const [counts, noShowCount, lastBooking] = await Promise.all([
-        tx.booking.count({ where: { userId: input.userId } }),
-        tx.booking.count({ where: { userId: input.userId, status: BookingStatus.NO_SHOW } }),
-        tx.booking.findFirst({
-          where: { userId: input.userId },
-          orderBy: { createdAt: 'desc' },
-          select: { createdAt: true },
-        }),
-      ]);
-
       return {
-        user: toAdminUser(updated, {
-          bookingCount: counts,
-          noShowCount,
-          upcomingBookingCount: upcoming.length,
-          lastBookingAt: lastBooking?.createdAt ?? null,
-        }),
-        affectedBookings,
+        updated: updatedUser,
+        affectedBookings: affected,
       };
     });
+
+    const stats = (await this.bookingStats([input.userId], input.now)).get(input.userId);
+    return {
+      user: toAdminUser(updated, {
+        ...(stats ?? emptyStats),
+        ...(input.status === 'LOCKED' ? { upcomingBookingCount: affectedBookings.length } : {}),
+      }),
+      affectedBookings,
+    };
   }
 }
 
