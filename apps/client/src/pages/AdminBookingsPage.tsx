@@ -14,7 +14,10 @@ import {
 } from '../components/admin/bookings/AdminBookingTable';
 import { ConfirmPaymentDialog } from '../components/admin/bookings/ConfirmPaymentDialog';
 import { CancelBookingDialog } from '../components/admin/bookings/CancelBookingDialog';
-import { RefundBookingDialog, RefundBookingSubmitData } from '../components/admin/bookings/RefundBookingDialog';
+import {
+  RefundBookingDialog,
+  RefundBookingSubmitData,
+} from '../components/admin/bookings/RefundBookingDialog';
 import {
   LifecycleConfirmDialog,
   LifecycleConfirmTarget,
@@ -50,6 +53,7 @@ export const AdminBookingsPage: React.FC = () => {
     appliedCustomer,
     appliedDate,
     appliedStatus,
+    appliedNeedsAttention,
     currentPage,
     normalizedParams,
     hasParamDiscrepancy,
@@ -58,6 +62,7 @@ export const AdminBookingsPage: React.FC = () => {
     const rawCustomer = searchParams.get('customer');
     const rawDate = searchParams.get('date');
     const rawStatus = searchParams.get('status');
+    const rawNeedsAttention = searchParams.get('needsAttention');
     const rawPage = searchParams.get('page');
 
     let code: string | undefined = undefined;
@@ -82,6 +87,8 @@ export const AdminBookingsPage: React.FC = () => {
       status = rawStatus;
     }
 
+    const needsAttention = rawNeedsAttention === 'true' ? true : undefined;
+
     let page = 1;
     if (rawPage && /^[1-9]\d*$/.test(rawPage)) {
       const parsed = parseInt(rawPage, 10);
@@ -95,6 +102,7 @@ export const AdminBookingsPage: React.FC = () => {
     if (customer) nextParams.set('customer', customer);
     if (date) nextParams.set('date', date);
     if (status) nextParams.set('status', status);
+    if (needsAttention) nextParams.set('needsAttention', 'true');
     if (page > 1) nextParams.set('page', page.toString());
 
     const isDifferent = searchParams.toString() !== nextParams.toString();
@@ -104,6 +112,7 @@ export const AdminBookingsPage: React.FC = () => {
       appliedCustomer: customer,
       appliedDate: date,
       appliedStatus: status,
+      appliedNeedsAttention: needsAttention,
       currentPage: page,
       normalizedParams: nextParams,
       hasParamDiscrepancy: isDifferent,
@@ -121,6 +130,9 @@ export const AdminBookingsPage: React.FC = () => {
   const [draftCustomer, setDraftCustomer] = useState<string>(appliedCustomer || '');
   const [draftDate, setDraftDate] = useState<string>(appliedDate || '');
   const [draftStatus, setDraftStatus] = useState<string>(appliedStatus || '');
+  const [draftNeedsAttention, setDraftNeedsAttention] = useState<boolean>(
+    Boolean(appliedNeedsAttention),
+  );
 
   // Keep draft in sync when URL changes (e.g. back/forward navigation)
   useEffect(() => {
@@ -128,7 +140,8 @@ export const AdminBookingsPage: React.FC = () => {
     setDraftCustomer(appliedCustomer || '');
     setDraftDate(appliedDate || '');
     setDraftStatus(appliedStatus || '');
-  }, [appliedCode, appliedCustomer, appliedDate, appliedStatus]);
+    setDraftNeedsAttention(Boolean(appliedNeedsAttention));
+  }, [appliedCode, appliedCustomer, appliedDate, appliedStatus, appliedNeedsAttention]);
 
   // Request & list state
   const [bookings, setBookings] = useState<AdminBookingItem[] | null>(null);
@@ -422,7 +435,7 @@ export const AdminBookingsPage: React.FC = () => {
     (preserveList = false) => {
       const currentRequestId = ++requestIdRef.current;
       const requestingUser = principal?.id;
-      const requestFilterKey = `${appliedCode}|${appliedCustomer}|${appliedDate}|${appliedStatus}|${currentPage}|${requestingUser}`;
+      const requestFilterKey = `${appliedCode}|${appliedCustomer}|${appliedDate}|${appliedStatus}|${appliedNeedsAttention ? '1' : '0'}|${currentPage}|${requestingUser}`;
       activeFilterKeyRef.current = requestFilterKey;
 
       abortControllerRef.current?.abort();
@@ -468,6 +481,7 @@ export const AdminBookingsPage: React.FC = () => {
             customer: appliedCustomer,
             date: appliedDate,
             status: appliedStatus,
+            ...(appliedNeedsAttention ? { needsAttention: true } : {}),
           },
           controller.signal,
         )
@@ -510,7 +524,15 @@ export const AdminBookingsPage: React.FC = () => {
           setIsLoading(false);
         });
     },
-    [currentPage, appliedCode, appliedCustomer, appliedDate, appliedStatus, principal?.id],
+    [
+      currentPage,
+      appliedCode,
+      appliedCustomer,
+      appliedDate,
+      appliedStatus,
+      appliedNeedsAttention,
+      principal?.id,
+    ],
   );
 
   useEffect(() => {
@@ -521,18 +543,29 @@ export const AdminBookingsPage: React.FC = () => {
     };
   }, [fetchAdminBookings, refreshIndex]);
 
-  // Handle filter submission
-  const handleSearchSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const applyDraftFiltersToParams = (needsAttentionValue: boolean) => {
     const nextParams = new URLSearchParams();
     const cleanedCode = draftCode.replace(/\s+/g, '').toUpperCase();
     if (cleanedCode) nextParams.set('bookingCode', cleanedCode);
-    const cleanedCustomer = draftCustomer.trim();
+    const cleanedCustomer = draftCustomer.trim().slice(0, 191);
     if (cleanedCustomer) nextParams.set('customer', cleanedCustomer);
     if (draftDate) nextParams.set('date', draftDate);
     if (draftStatus) nextParams.set('status', draftStatus);
-    // Reset to page 1 on filter submit
+    if (needsAttentionValue) nextParams.set('needsAttention', 'true');
+    // Reset to page 1 on filter change
     setSearchParams(nextParams);
+  };
+
+  // Handle filter submission
+  const handleSearchSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    applyDraftFiltersToParams(draftNeedsAttention);
+  };
+
+  // Toggle needsAttention immediately while preserving current draft filter inputs
+  const handleNeedsAttentionChange = (checked: boolean) => {
+    setDraftNeedsAttention(checked);
+    applyDraftFiltersToParams(checked);
   };
 
   // Handle clearing all filters
@@ -541,6 +574,7 @@ export const AdminBookingsPage: React.FC = () => {
     setDraftCustomer('');
     setDraftDate('');
     setDraftStatus('');
+    setDraftNeedsAttention(false);
     setSearchParams(new URLSearchParams());
   };
 
@@ -611,10 +645,12 @@ export const AdminBookingsPage: React.FC = () => {
         customer={draftCustomer}
         date={draftDate}
         status={draftStatus}
+        needsAttention={draftNeedsAttention}
         onCodeChange={setDraftCode}
         onCustomerChange={setDraftCustomer}
         onDateChange={setDraftDate}
         onStatusChange={setDraftStatus}
+        onNeedsAttentionChange={handleNeedsAttentionChange}
         onSubmit={handleSearchSubmit}
         onClear={handleClearFilters}
       />

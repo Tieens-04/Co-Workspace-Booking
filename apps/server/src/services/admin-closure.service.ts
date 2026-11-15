@@ -1,6 +1,7 @@
 import { closureRepository, ClosureRepository } from '../repositories/closure.repository.js';
 import { AuditActor } from '../repositories/audit.repository.js';
 import { AppError } from '../utils/error.util.js';
+import { emailOutboxService, type EmailOutboxService } from './email-outbox.service.js';
 import {
   ClosureDto,
   ClosureFilterParams,
@@ -9,7 +10,10 @@ import {
 } from '../types/closure.type.js';
 
 export class AdminClosureService {
-  constructor(private readonly repo: ClosureRepository = closureRepository) {}
+  constructor(
+    private readonly repo: ClosureRepository = closureRepository,
+    private readonly emailOutbox: Pick<EmailOutboxService, 'kick'> = emailOutboxService,
+  ) {}
 
   async listClosures(filter: ClosureFilterParams) {
     return this.repo.findPaginated(filter);
@@ -24,7 +28,11 @@ export class AdminClosureService {
   }
 
   async createClosure(data: CreateClosureInput, actor: AuditActor): Promise<ClosureDto> {
-    return this.repo.create(data, actor);
+    const closure = await this.repo.create(data, actor);
+    if (data.acknowledgeConflictingBookings) {
+      this.emailOutbox.kick();
+    }
+    return closure;
   }
 
   async updateClosure(
@@ -32,7 +40,11 @@ export class AdminClosureService {
     data: UpdateClosureInput,
     actor: AuditActor,
   ): Promise<ClosureDto> {
-    return this.repo.update(id, data, actor);
+    const closure = await this.repo.update(id, data, actor);
+    if (data.acknowledgeConflictingBookings) {
+      this.emailOutbox.kick();
+    }
+    return closure;
   }
 
   async deleteClosure(id: string, actor: AuditActor): Promise<ClosureDto> {

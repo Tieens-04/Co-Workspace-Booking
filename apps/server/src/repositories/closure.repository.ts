@@ -1,6 +1,10 @@
 import { Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { recordAuditEvent, type AuditActor } from './audit.repository.js';
+import {
+  enqueueBookingUnavailableEmails,
+  requeueClosureUnavailableEmails,
+} from './email-outbox.repository.js';
 import { BLOCKING_BOOKING_STATUSES } from '../types/booking.type.js';
 import { AppError } from '../utils/error.util.js';
 import {
@@ -135,6 +139,8 @@ export class ClosureRepository {
       where,
       orderBy: { startTime: 'asc' },
       select: {
+        id: true,
+        userId: true,
         bookingCode: true,
         roomId: true,
         startTime: true,
@@ -185,7 +191,7 @@ export class ClosureRepository {
     startTime: Date,
     endTime: Date,
     acknowledge?: boolean,
-  ): Promise<void> {
+  ) {
     const conflictingBookings = await this.findConflictingBookings(tx, roomId, startTime, endTime);
     if (conflictingBookings.length > 0 && !acknowledge) {
       throw new AppError(
@@ -206,6 +212,7 @@ export class ClosureRepository {
         },
       );
     }
+    return conflictingBookings;
   }
 
   async create(data: CreateClosureInput, actor: AuditActor): Promise<ClosureDto> {
@@ -214,7 +221,7 @@ export class ClosureRepository {
       const endDate = new Date(data.endTime);
 
       await this.lockTargetRooms(tx, data.roomId);
-      await this.assertNoUnacknowledgedBookings(
+      const conflictingBookings = await this.assertNoUnacknowledgedBookings(
         tx,
         data.roomId,
         startDate,
@@ -246,6 +253,17 @@ export class ClosureRepository {
           acknowledgeConflictingBookings: Boolean(data.acknowledgeConflictingBookings),
         },
       });
+
+      if (data.acknowledgeConflictingBookings) {
+        const now = new Date();
+        const affectedUserBookingIds = conflictingBookings
+          .filter(
+            (b): b is typeof b & { userId: string } =>
+              typeof b.userId === 'string' && b.endTime.getTime() > now.getTime(),
+          )
+          .map((b) => b.id);
+        await enqueueBookingUnavailableEmails(tx, affectedUserBookingIds, `closure:${created.id}`);
+      }
 
       return toClosureDto(created);
     });
@@ -291,8 +309,9 @@ export class ClosureRepository {
         targetStartTime.getTime() !== existing.startTime.getTime() ||
         targetEndTime.getTime() !== existing.endTime.getTime();
 
+      let conflictingBookings: Awaited<ReturnType<typeof this.findConflictingBookings>> = [];
       if (isTimeOrRoomChanged) {
-        await this.assertNoUnacknowledgedBookings(
+        conflictingBookings = await this.assertNoUnacknowledgedBookings(
           tx,
           targetRoomId,
           targetStartTime,
@@ -342,6 +361,34 @@ export class ClosureRepository {
           acknowledgeConflictingBookings: Boolean(data.acknowledgeConflictingBookings),
         },
       });
+
+      if (isTimeOrRoomChanged && data.acknowledgeConflictingBookings) {
+        const now = new Date();
+        const activeUserBookings = conflictingBookings.filter(
+          (b): b is typeof b & { userId: string } =>
+            typeof b.userId === 'string' && b.endTime.getTime() > now.getTime(),
+        );
+        const affectedUserBookingIds = activeUserBookings.map((b) => b.id);
+        const newlyAffectedUserBookingIds = activeUserBookings
+          .filter(
+            (b) =>
+              !(
+                (existing.roomId === null || existing.roomId === b.roomId) &&
+                existing.startTime.getTime() < b.endTime.getTime() &&
+                existing.endTime.getTime() > b.startTime.getTime()
+              ),
+          )
+          .map((b) => b.id);
+        const eventKey = `closure:${id}`;
+        await enqueueBookingUnavailableEmails(tx, affectedUserBookingIds, eventKey);
+        await requeueClosureUnavailableEmails(
+          tx,
+          eventKey,
+          affectedUserBookingIds,
+          newlyAffectedUserBookingIds,
+          now,
+        );
+      }
 
       return toClosureDto(updated);
     });

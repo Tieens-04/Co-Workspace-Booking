@@ -4,6 +4,7 @@ import { FindRoomsFilter, RoomSortOption } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
 import { BLOCKING_BOOKING_STATUSES } from '../types/booking.type.js';
 import { AuditActor, recordAuditEvent } from './audit.repository.js';
+import { enqueueBookingUnavailableEmails } from './email-outbox.repository.js';
 
 const amenitySelect = {
   id: true,
@@ -428,6 +429,7 @@ export class RoomRepository implements RoomRepositoryContract {
       const isTransitionToArchived =
         data.status === RoomStatus.ARCHIVED && lockedRoom.status !== RoomStatus.ARCHIVED;
 
+      let affectedUserBookingIds: string[] = [];
       if (isTransitionToMaintenance || isTransitionToArchived) {
         const affectedBookings = await tx.booking.findMany({
           where: {
@@ -437,6 +439,8 @@ export class RoomRepository implements RoomRepositoryContract {
           },
           orderBy: { startTime: 'asc' },
           select: {
+            id: true,
+            userId: true,
             bookingCode: true,
             startTime: true,
             endTime: true,
@@ -459,6 +463,12 @@ export class RoomRepository implements RoomRepositoryContract {
             },
           );
         }
+
+        affectedUserBookingIds = affectedBookings
+          .filter((b): b is typeof b & { id: string; userId: string } => {
+            return typeof b.id === 'string' && typeof b.userId === 'string';
+          })
+          .map((b) => b.id);
       }
 
       if (data.amenityIds && data.amenityIds.length > 0) {
@@ -484,6 +494,7 @@ export class RoomRepository implements RoomRepositoryContract {
       if (data.pricePerHour !== undefined) {
         scalarUpdate.pricePerHour = new Prisma.Decimal(data.pricePerHour);
       }
+      let statusEffectiveAt: Date | null = null;
       if (data.status !== undefined) {
         scalarUpdate.status = data.status;
         if (data.status !== lockedRoom.status) {
@@ -496,6 +507,7 @@ export class RoomRepository implements RoomRepositoryContract {
           const effectiveAt = new Date(
             Math.max(capturedNow.getTime(), (latestHistory?.effectiveAt.getTime() ?? -1) + 1),
           );
+          statusEffectiveAt = effectiveAt;
           scalarUpdate.statusHistory = { create: { status: data.status, effectiveAt } };
         }
       }
@@ -528,6 +540,19 @@ export class RoomRepository implements RoomRepositoryContract {
             acknowledgeFutureBookings: data.acknowledgeFutureBookings === true,
           },
         });
+      }
+
+      if (
+        (isTransitionToMaintenance || isTransitionToArchived) &&
+        data.acknowledgeFutureBookings &&
+        statusEffectiveAt &&
+        data.status
+      ) {
+        await enqueueBookingUnavailableEmails(
+          tx,
+          affectedUserBookingIds,
+          `room_status:${data.status}:${statusEffectiveAt.toISOString()}`,
+        );
       }
 
       if (data.amenityIds !== undefined) {

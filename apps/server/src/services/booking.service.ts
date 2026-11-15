@@ -161,8 +161,11 @@ export class BookingService {
     };
   }
 
-  async getBookingById(userId: string, id: string): Promise<BookingResponseDto> {
-    const booking = await this.bookingRepo.findByIdForUser(userId, id);
+  async getBookingById(userId: string, id: string, now?: Date): Promise<BookingResponseDto> {
+    const booking =
+      now !== undefined
+        ? await this.bookingRepo.findByIdForUser(userId, id, now)
+        : await this.bookingRepo.findByIdForUser(userId, id);
     if (!booking) {
       throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
     }
@@ -190,7 +193,7 @@ export class BookingService {
   ): Promise<BookingResponseDto> {
     const booking = await this.bookingRepo.rescheduleBooking(userId, id, input, clock);
     this.emailOutbox.kick();
-    return booking;
+    return { ...booking, paymentInstructions: paymentInstructionsFor(booking, ENV.PAYMENT) };
   }
 }
 

@@ -2,6 +2,7 @@ import nodemailer, { Transporter } from 'nodemailer';
 import { ENV } from '../config/env.config.js';
 import { parseSmtpConfig, type NotificationConfig } from '../config/smtp.config.js';
 import { logEmailFailure } from '../utils/email-log.util.js';
+import type { BookingRoomUnavailableCause } from '../types/booking.type.js';
 export type { NotificationConfig } from '../config/smtp.config.js';
 
 export interface BaseBookingEmailPayload {
@@ -24,6 +25,13 @@ export interface BookingCancellationEmailPayload extends BaseBookingEmailPayload
 export interface BookingReminderEmailPayload extends BaseBookingEmailPayload {
   totalAmount: string | number;
   isPaid: boolean;
+}
+
+export interface BookingRoomUnavailableEmailPayload extends BaseBookingEmailPayload {
+  totalAmount: string | number;
+  isPaid: boolean;
+  cause: BookingRoomUnavailableCause;
+  reason: string;
 }
 
 export interface PaymentReceiptEmailPayload extends BaseBookingEmailPayload {
@@ -464,6 +472,78 @@ Tổng tiền mới: ${formattedAmount}
       return true;
     } catch (err: unknown) {
       logEmailFailure('reschedule', payload.bookingCode, err);
+      return false;
+    }
+  }
+
+  async sendBookingRoomUnavailable(payload: BookingRoomUnavailableEmailPayload): Promise<boolean> {
+    if (!this.transporter) {
+      return false;
+    }
+
+    try {
+      const formattedAmount = formatVND(payload.totalAmount);
+      const startFormatted = formatDate(payload.startTime);
+      const endFormatted = formatDate(payload.endTime);
+
+      const causeTitle =
+        payload.cause === 'CLOSURE'
+          ? 'Khung giờ bạn đặt bị ảnh hưởng bởi lịch đóng cửa'
+          : payload.cause === 'ROOM_ARCHIVED'
+            ? 'Phòng bạn đặt đã ngừng kinh doanh'
+            : 'Phòng bạn đặt đang chuyển sang trạng thái bảo trì';
+
+      const paymentGuidanceHtml = payload.isPaid
+        ? `<p>Đơn đặt phòng của bạn <strong>đã thanh toán (${escapeHtml(formattedAmount)})</strong>. Vui lòng liên hệ <strong>quầy lễ tân</strong> để được hỗ trợ chuyển sang phòng tương đương hoặc hoàn tiền theo chính sách.</p>`
+        : `<p>Nếu thời gian bắt đầu còn từ <strong>1 giờ trở lên</strong>, bạn có thể vào mục chi tiết đơn đặt phòng trên hệ thống để <strong>đổi sang phòng/khung giờ khác</strong> phù hợp. Nếu bạn cần hỗ trợ thêm hoặc sắp đến giờ sử dụng, vui lòng liên hệ <strong>quầy lễ tân</strong>.</p>`;
+
+      const paymentGuidanceText = payload.isPaid
+        ? `Đơn đặt phòng của bạn đã thanh toán (${formattedAmount}). Vui lòng liên hệ quầy lễ tân để được hỗ trợ đổi phòng hoặc hoàn tiền.`
+        : 'Nếu thời gian bắt đầu còn từ 1 giờ trở lên, bạn có thể đổi sang phòng/khung giờ khác tại trang chi tiết đơn đặt phòng, hoặc liên hệ quầy lễ tân để được hỗ trợ.';
+
+      const html = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
+          <h2 style="color: #b7791f;">Lưu ý về tình trạng phòng đặt</h2>
+          <p>Xin chào <strong>${escapeHtml(payload.customerName)}</strong>,</p>
+          <p>${escapeHtml(causeTitle)} tại <strong>Co-Space Working</strong>.</p>
+          <div style="background-color: #fffbeb; padding: 16px; border-radius: 6px; margin: 20px 0; border: 1px solid #f6e05e;">
+            <p style="margin: 6px 0;"><strong>Mã đặt phòng:</strong> ${escapeHtml(payload.bookingCode)}</p>
+            <p style="margin: 6px 0;"><strong>Phòng:</strong> ${escapeHtml(payload.roomName)}</p>
+            <p style="margin: 6px 0;"><strong>Thời gian:</strong> ${escapeHtml(startFormatted)} - ${escapeHtml(endFormatted)}</p>
+            <p style="margin: 6px 0;"><strong>Lý do:</strong> ${escapeHtml(payload.reason)}</p>
+            <p style="margin: 6px 0;"><strong>Tổng tiền:</strong> ${escapeHtml(formattedAmount)}</p>
+          </div>
+          <p>Lưu ý: Đơn đặt phòng của bạn hiện <strong>vẫn được giữ</strong> trên hệ thống (không bị tự động hủy).</p>
+          ${paymentGuidanceHtml}
+          <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;" />
+          <p style="color: #718096; font-size: 12px;">Co-Space Working System</p>
+        </div>
+      `;
+
+      const text = `
+Lưu ý về tình trạng phòng đặt
+Xin chào ${payload.customerName},
+${causeTitle} tại Co-Space Working.
+Mã đặt phòng: ${payload.bookingCode}
+Phòng: ${payload.roomName}
+Thời gian: ${startFormatted} - ${endFormatted}
+Lý do: ${payload.reason}
+Tổng tiền: ${formattedAmount}
+Lưu ý: Đơn đặt phòng của bạn hiện vẫn được giữ trên hệ thống (không bị tự động hủy).
+${paymentGuidanceText}
+      `.trim();
+
+      await this.transporter.sendMail({
+        from: this.config.smtpFrom,
+        to: payload.recipientEmail,
+        subject: `[Co-Space] Lưu ý về phòng đặt ${payload.bookingCode} - ${payload.roomName}`,
+        text,
+        html,
+      });
+
+      return true;
+    } catch (err: unknown) {
+      logEmailFailure('room unavailable', payload.bookingCode, err);
       return false;
     }
   }

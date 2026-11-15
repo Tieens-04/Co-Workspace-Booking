@@ -7,6 +7,7 @@ const tx = vi.hoisted(() => ({
   room: { create: vi.fn(), update: vi.fn(), findUnique: vi.fn(), findFirst: vi.fn() },
   roomStatusHistory: { findFirst: vi.fn() },
   booking: { findMany: vi.fn() },
+  emailOutbox: { createMany: vi.fn() },
 }));
 
 vi.mock('../utils/prisma.util.js', () => ({
@@ -129,6 +130,55 @@ describe('Room status history persistence', () => {
 
     expect(tx.room.update).not.toHaveBeenCalled();
     expect(tx.roomStatusHistory.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('enqueues BOOKING_ROOM_UNAVAILABLE only for registered-user bookings when acknowledgeFutureBookings=true (CWB-91)', async () => {
+    tx.booking.findMany.mockResolvedValue([
+      {
+        id: 'booking-user-1',
+        userId: 'user-1',
+        bookingCode: 'CS-20261024-USER',
+        startTime: new Date('2026-10-24T08:00:00Z'),
+        endTime: new Date('2026-10-24T09:00:00Z'),
+      },
+      {
+        id: 'booking-guest-1',
+        userId: null,
+        bookingCode: 'CS-20261024-GUST',
+        startTime: new Date('2026-10-24T10:00:00Z'),
+        endTime: new Date('2026-10-24T11:00:00Z'),
+      },
+    ]);
+
+    await roomRepository.updateWithRelations('room-1', {
+      status: RoomStatus.MAINTENANCE,
+      acknowledgeFutureBookings: true,
+    });
+
+    expect(tx.emailOutbox.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.emailOutbox.createMany).toHaveBeenCalledWith({
+      data: [
+        {
+          kind: 'BOOKING_ROOM_UNAVAILABLE',
+          bookingId: 'booking-user-1',
+          eventKey: `room_status:MAINTENANCE:${now.toISOString()}`,
+        },
+      ],
+      skipDuplicates: true,
+    });
+  });
+
+  it('does not enqueue duplicate alerts when room status stays MAINTENANCE', async () => {
+    tx.$queryRaw.mockResolvedValue([
+      { id: 'room-1', name: 'Room', status: RoomStatus.MAINTENANCE, price_per_hour: '100.00' },
+    ]);
+
+    await roomRepository.updateWithRelations('room-1', {
+      status: RoomStatus.MAINTENANCE,
+      acknowledgeFutureBookings: true,
+    });
+
+    expect(tx.emailOutbox.createMany).not.toHaveBeenCalled();
   });
 });
 

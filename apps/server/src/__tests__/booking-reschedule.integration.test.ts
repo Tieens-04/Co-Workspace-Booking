@@ -231,7 +231,6 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
   });
 
   describe('Overlap & Self-Exclusion Rules (AC2, AC6)', () => {
-
     beforeAll(async () => {
       // Create an existing booking from 10:00 to 12:00 VN on room 1
       await prisma.booking.create({
@@ -472,9 +471,10 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
       // Verify Email Outbox record
       const outbox = await prisma.emailOutbox.findUnique({
         where: {
-          kind_bookingId: {
+          kind_bookingId_eventKey: {
             kind: 'BOOKING_RESCHEDULED',
             bookingId: booking.id,
+            eventKey: '',
           },
         },
       });
@@ -508,9 +508,10 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
 
       const deliveredOutbox = await prisma.emailOutbox.findUnique({
         where: {
-          kind_bookingId: {
+          kind_bookingId_eventKey: {
             kind: 'BOOKING_RESCHEDULED',
             bookingId: booking.id,
+            eventKey: '',
           },
         },
       });

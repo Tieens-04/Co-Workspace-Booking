@@ -134,4 +134,45 @@ describe('AdminEmailsPage (CWB-68)', () => {
     await user.click(screen.getByTestId('email-reload'));
     expect(await screen.findByText('Chưa có email nào')).toBeInTheDocument();
   });
+
+  it('CWB-91: filters by kind including BOOKING_ROOM_UNAVAILABLE and translates new skip reasons', async () => {
+    const user = userEvent.setup();
+    vi.mocked(adminEmailOutboxApi.list)
+      .mockResolvedValueOnce(
+        page([
+          item({
+            id: 'mail-unavail-1',
+            kind: 'BOOKING_ROOM_UNAVAILABLE',
+            status: 'SKIPPED',
+            lastError: 'BOOKING_NOT_AFFECTED',
+            sentAt: null,
+          }),
+          item({
+            id: 'mail-rem-1',
+            kind: 'BOOKING_REMINDER',
+            status: 'SKIPPED',
+            lastError: 'ROOM_UNAVAILABLE',
+            sentAt: null,
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(page([]));
+
+    render(<AdminEmailsPage />);
+
+    const unavailRow = await screen.findByTestId('email-row-mail-unavail-1');
+    expect(unavailRow).toHaveTextContent('Cảnh báo phòng không khả dụng');
+    expect(unavailRow).toHaveTextContent('Đơn không còn bị ảnh hưởng');
+
+    const remRow = screen.getByTestId('email-row-mail-rem-1');
+    expect(remRow).toHaveTextContent('Phòng đang bảo trì hoặc đóng cửa');
+
+    await user.selectOptions(screen.getByTestId('email-kind-filter'), 'BOOKING_ROOM_UNAVAILABLE');
+    await waitFor(() =>
+      expect(adminEmailOutboxApi.list).toHaveBeenLastCalledWith(
+        { page: 1, limit: 20, kind: 'BOOKING_ROOM_UNAVAILABLE' },
+        expect.anything(),
+      ),
+    );
+  });
 });

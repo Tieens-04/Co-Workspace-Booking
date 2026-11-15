@@ -1,4 +1,5 @@
 import { ApiResponse, PaginationMeta } from './room';
+import type { BookingRoomUnavailableCause } from './booking';
 
 export type AdminCustomerKind = 'USER' | 'GUEST';
 
@@ -29,6 +30,9 @@ export interface AdminBookingItem {
   cancellationReason?: string | null;
   refundedAmount?: string;
   refunds?: AdminRefundItem[];
+  roomUnavailable?: boolean;
+  roomUnavailableReason?: string | null;
+  roomUnavailableCause?: BookingRoomUnavailableCause | null;
   customer: AdminBookingCustomer;
 }
 
@@ -40,6 +44,8 @@ export interface GetAdminBookingsParams {
   status?: string;
   /** CWB-79: account email/name/phone or walk-in guest name/phone. */
   customer?: string;
+  /** CWB-91: filter CONFIRMED bookings affected by closure or unavailable room. */
+  needsAttention?: boolean;
 }
 
 export interface AdminBookingListResponseData {

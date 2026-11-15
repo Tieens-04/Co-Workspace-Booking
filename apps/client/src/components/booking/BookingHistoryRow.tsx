@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { BookingResult } from '../../types/booking';
 import { formatCurrency } from '../../utils/format';
 import { getCancellationActorLabel } from '../../utils/status';
-import { StatusBadge } from '../common/StatusBadge';
+import { StatusBadge, ToneBadge } from '../common/StatusBadge';
 import { BookingTimeRange } from './BookingTimeRange';
 
 interface BookingHistoryRowProps {
@@ -59,6 +59,18 @@ export const BookingHistoryRow: React.FC<BookingHistoryRowProps> = ({ booking })
 
       <div className="flex flex-col items-end gap-1 self-center justify-self-end [grid-area:status] md:self-start">
         <StatusBadge kind="booking" status={booking.status} data-testid="booking-status-badge" />
+        {booking.status === 'CONFIRMED' && booking.roomUnavailable && (
+          <>
+            <ToneBadge tone="maintenance" data-testid="booking-unavailable-badge">
+              Phòng gián đoạn
+            </ToneBadge>
+            {booking.roomUnavailableReason && (
+              <span className="max-w-[14rem] text-right text-xs text-muted-foreground break-words">
+                {booking.roomUnavailableReason}
+              </span>
+            )}
+          </>
+        )}
         {cancellationActorLabel && (
           <span
             className="text-xs text-muted-foreground whitespace-nowrap"

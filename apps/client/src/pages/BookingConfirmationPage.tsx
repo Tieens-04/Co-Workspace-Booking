@@ -286,6 +286,24 @@ export const BookingConfirmationPage: React.FC = () => {
                   <h2 id="confirmation-next-heading" className="text-h3 font-bold">
                     Bước tiếp theo
                   </h2>
+                  {booking.status === 'CONFIRMED' && booking.roomUnavailable && (
+                    <Notice tone="warning" role="status" data-testid="room-unavailable-banner">
+                      <div className="grid gap-1">
+                        <p className="font-semibold">
+                          Lưu ý: Phòng đang tạm không khả dụng cho khung giờ này.
+                        </p>
+                        {booking.roomUnavailableReason && (
+                          <p className="text-sm wrap-anywhere">
+                            Lý do: <strong>{booking.roomUnavailableReason}</strong>
+                          </p>
+                        )}
+                        <p className="text-sm">
+                          Đơn đặt phòng vẫn được giữ trên hệ thống. Vui lòng mở chi tiết đặt phòng
+                          để đổi sang phòng khác hoặc liên hệ quầy lễ tân để được hỗ trợ.
+                        </p>
+                      </div>
+                    </Notice>
+                  )}
                   {/* AC2: Hướng dẫn thanh toán tại quầy */}
                   <Notice
                     tone="info"

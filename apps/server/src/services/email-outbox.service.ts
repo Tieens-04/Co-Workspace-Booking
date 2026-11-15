@@ -1,8 +1,20 @@
-import { BookingStatus, EmailOutboxStatus, Prisma, PrismaClient } from '@prisma/client';
+import {
+  BookingStatus,
+  EmailOutboxKind,
+  EmailOutboxStatus,
+  Prisma,
+  PrismaClient,
+  RoomStatus,
+} from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
 import { AppError } from '../utils/error.util.js';
 import { trackBackgroundTask } from '../utils/background-tasks.util.js';
 import { ENV } from '../config/env.config.js';
+import {
+  loadOverlappingClosuresForConfirmed,
+  resolveBookingRoomUnavailability,
+  type ClosureOverlapCandidate,
+} from '../repositories/booking.repository.js';
 import {
   notificationService as defaultNotificationService,
   NotificationService,
@@ -49,7 +61,7 @@ const outboxInclude = {
       paymentMethod: true,
       paidAt: true,
       cancellationReason: true,
-      room: { select: { name: true } },
+      room: { select: { id: true, name: true, status: true } },
       user: { select: { email: true, fullName: true, deletedAt: true } },
     },
   },
@@ -69,8 +81,18 @@ type OutboxRecord = Prisma.EmailOutboxGetPayload<{ include: typeof outboxInclude
 export interface EmailOutboxFilter {
   page: number;
   limit: number;
+  kind?: EmailOutboxKind;
   status?: EmailOutboxStatus;
   bookingId?: string;
+}
+
+function parseRoomStatusFromEventKey(eventKey: string): RoomStatus | null {
+  if (!eventKey.startsWith('room_status:')) return null;
+  const statusPart = eventKey.split(':')[1];
+  if (statusPart === RoomStatus.MAINTENANCE || statusPart === RoomStatus.ARCHIVED) {
+    return statusPart;
+  }
+  return null;
 }
 
 const toDto = (row: OutboxRecord) => ({
@@ -171,7 +193,11 @@ export class EmailOutboxService {
     return sent ? { status: 'DELIVERED' } : { status: 'FAILED' };
   }
 
-  private async deliver(row: OutboxRecord): Promise<boolean> {
+  private async deliver(
+    row: OutboxRecord,
+    batchClosures: readonly ClosureOverlapCandidate[] = [],
+    now: Date = new Date(),
+  ): Promise<boolean> {
     const { booking } = row;
     if (!booking) return false;
     const base = {
@@ -211,6 +237,25 @@ export class EmailOutboxService {
           paymentMethod: booking.paymentMethod,
           paidAt: booking.paidAt,
         });
+      case 'BOOKING_ROOM_UNAVAILABLE': {
+        const isRoomStatusEvent = parseRoomStatusFromEventKey(row.eventKey) !== null;
+        const preferredClosureId = row.eventKey.startsWith('closure:')
+          ? row.eventKey.slice('closure:'.length)
+          : undefined;
+        const unavailability = resolveBookingRoomUnavailability(
+          booking,
+          isRoomStatusEvent ? [] : batchClosures,
+          preferredClosureId,
+          now,
+        );
+        return this.notification.sendBookingRoomUnavailable({
+          ...base,
+          totalAmount: booking.totalAmount.toFixed(2),
+          isPaid: booking.paymentStatus === 'PAID',
+          cause: unavailability.roomUnavailableCause ?? 'ROOM_MAINTENANCE',
+          reason: unavailability.roomUnavailableReason ?? 'Phòng tạm thời không khả dụng',
+        });
+      }
       case 'EMAIL_VERIFICATION':
         throw new Error('EMAIL_VERIFICATION delivered via deliverVerification');
       default: {
@@ -222,7 +267,7 @@ export class EmailOutboxService {
 
   /**
    * CWB-80: queues a reminder for every CONFIRMED customer booking that starts within the next
-   * `leadHours`. The (kind, booking) unique key + skipDuplicates makes reruns and concurrent
+   * `leadHours`. The (kind, booking, eventKey) unique key + skipDuplicates makes reruns and concurrent
    * instances idempotent. Bookings made inside the window are skipped: their confirmation email
    * already arrived close to the start, so a second email would only be noise.
    */
@@ -247,7 +292,11 @@ export class EmailOutboxService {
     );
     if (due.length === 0) return 0;
     const created = await this.db.emailOutbox.createMany({
-      data: due.map((booking) => ({ kind: 'BOOKING_REMINDER' as const, bookingId: booking.id })),
+      data: due.map((booking) => ({
+        kind: 'BOOKING_REMINDER' as const,
+        bookingId: booking.id,
+        eventKey: '',
+      })),
       skipDuplicates: true,
     });
     return created.count;
@@ -264,6 +313,20 @@ export class EmailOutboxService {
       where: { id: { in: ids }, status: 'QUEUED', nextAttemptAt: leaseUntil },
       include: outboxInclude,
     });
+    const availabilityBookings = rows
+      .filter(
+        (row) =>
+          row.booking &&
+          row.booking.status === BookingStatus.CONFIRMED &&
+          (row.kind === 'BOOKING_REMINDER' || row.kind === 'BOOKING_ROOM_UNAVAILABLE'),
+      )
+      .map((row) => row.booking!);
+    const batchClosures = await loadOverlappingClosuresForConfirmed(
+      this.db,
+      availabilityBookings,
+      now,
+    );
+
     for (const row of rows) {
       let skipReason: string | null = null;
       if (row.kind === 'EMAIL_VERIFICATION') {
@@ -275,7 +338,6 @@ export class EmailOutboxService {
       } else {
         if (!row.booking?.user?.email) skipReason = 'NO_RECIPIENT';
         else if (row.booking.user.deletedAt) skipReason = 'ACCOUNT_DELETED';
-        else if (!this.notification.canDeliver()) skipReason = 'SMTP_DISABLED';
         else if (
           (row.kind === 'BOOKING_CONFIRMATION' || row.kind === 'BOOKING_RESCHEDULED') &&
           row.booking.status === BookingStatus.CANCELLED
@@ -283,15 +345,54 @@ export class EmailOutboxService {
           skipReason = 'BOOKING_CANCELLED';
         } else if (row.kind === 'BOOKING_REMINDER') {
           // Checked on every attempt, including admin retries: a reminder only goes out for a
-          // booking that is still CONFIRMED and has not started yet.
+          // booking that is still CONFIRMED, has not started yet, and whose room is available.
           if (row.booking.status === BookingStatus.CANCELLED) skipReason = 'BOOKING_CANCELLED';
           else if (row.booking.status !== BookingStatus.CONFIRMED)
             skipReason = 'BOOKING_NOT_ACTIVE';
           else if (row.booking.startTime.getTime() <= now.getTime())
             skipReason = 'REMINDER_EXPIRED';
+          else if (
+            resolveBookingRoomUnavailability(row.booking, batchClosures, undefined, now)
+              .roomUnavailable
+          )
+            skipReason = 'ROOM_UNAVAILABLE';
         } else if (row.kind === 'PAYMENT_RECEIPT' && row.booking.paymentStatus !== 'PAID') {
           // CWB-89: never send a receipt for a booking that is not (or no longer) paid.
           skipReason = 'BOOKING_NOT_PAID';
+        } else if (row.kind === 'BOOKING_ROOM_UNAVAILABLE') {
+          const targetRoomStatus = parseRoomStatusFromEventKey(row.eventKey);
+          if (row.booking.status === BookingStatus.CANCELLED) skipReason = 'BOOKING_CANCELLED';
+          else if (
+            row.booking.status !== BookingStatus.CONFIRMED ||
+            row.booking.endTime.getTime() <= now.getTime()
+          )
+            skipReason = 'BOOKING_NOT_ACTIVE';
+          else if (row.eventKey.startsWith('closure:')) {
+            const closureId = row.eventKey.slice('closure:'.length);
+            const stillOverlapsTargetClosure = batchClosures.some(
+              (c) =>
+                c.id === closureId &&
+                (c.roomId === null || c.roomId === row.booking!.room.id) &&
+                c.startTime < row.booking!.endTime &&
+                c.endTime > row.booking!.startTime,
+            );
+            if (!stillOverlapsTargetClosure) {
+              skipReason = 'BOOKING_NOT_AFFECTED';
+            }
+          } else if (targetRoomStatus !== null) {
+            if (row.booking.room.status !== targetRoomStatus) {
+              skipReason = 'BOOKING_NOT_AFFECTED';
+            }
+          } else if (
+            !resolveBookingRoomUnavailability(row.booking, batchClosures, undefined, now)
+              .roomUnavailable
+          ) {
+            skipReason = 'BOOKING_NOT_AFFECTED';
+          }
+        }
+
+        if (!skipReason && !this.notification.canDeliver()) {
+          skipReason = 'SMTP_DISABLED';
         }
       }
 
@@ -312,7 +413,7 @@ export class EmailOutboxService {
         delivered = deliverResult.status === 'DELIVERED';
       } else {
         // NotificationService logs a sanitized failure code (never the address or credentials).
-        delivered = await this.deliver(row).catch(() => false);
+        delivered = await this.deliver(row, batchClosures, now).catch(() => false);
       }
 
       if (delivered) {
@@ -374,6 +475,7 @@ export class EmailOutboxService {
 
   async list(filter: EmailOutboxFilter) {
     const where: Prisma.EmailOutboxWhereInput = {
+      ...(filter.kind ? { kind: filter.kind } : {}),
       ...(filter.status ? { status: filter.status } : {}),
       ...(filter.bookingId ? { bookingId: filter.bookingId } : {}),
     };

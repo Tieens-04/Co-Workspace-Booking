@@ -32,6 +32,10 @@ export const getAdminBookingsQuerySchema = z
       .refine(isValidCalendarDate, 'date phải là ngày thực tế hợp lệ')
       .optional(),
     status: z.nativeEnum(BookingStatus).optional(),
+    needsAttention: z
+      .enum(['true', 'false'])
+      .transform((val) => val === 'true')
+      .optional(),
     // CWB-79: account email/name/phone or walk-in guest name/phone.
     customer: z
       .string()
@@ -212,7 +216,13 @@ export const refundBookingBodySchema = z
   .object({
     amount: z
       .union([
-        z.number().positive('Số tiền hoàn phải lớn hơn 0').refine((val) => Number.isFinite(val) && /^\d+(\.\d{1,2})?$/.test(val.toString()), 'Số tiền hoàn không hợp lệ (tối đa 2 chữ số thập phân)'),
+        z
+          .number()
+          .positive('Số tiền hoàn phải lớn hơn 0')
+          .refine(
+            (val) => Number.isFinite(val) && /^\d+(\.\d{1,2})?$/.test(val.toString()),
+            'Số tiền hoàn không hợp lệ (tối đa 2 chữ số thập phân)',
+          ),
         z.string().regex(/^\d+(\.\d{1,2})?$/, 'Số tiền hoàn không hợp lệ'),
       ])
       .refine((val) => Number(val) > 0, 'Số tiền hoàn phải lớn hơn 0'),

@@ -1,5 +1,5 @@
 import { BookingStatus, PaymentMethod, PaymentStatus, Role } from '@prisma/client';
-import { BookingRoomDto } from './booking.type.js';
+import { BookingRoomDto, BookingRoomUnavailableCause } from './booking.type.js';
 
 export interface AdminRefundDto {
   id: string;
@@ -46,6 +46,9 @@ export interface AdminBookingResponseDto {
   refundedAmount: string;
   refunds?: AdminRefundDto[];
   isNewlyCancelled?: boolean;
+  roomUnavailable?: boolean;
+  roomUnavailableReason?: string | null;
+  roomUnavailableCause?: BookingRoomUnavailableCause | null;
   customer: AdminBookingCustomerDto;
 }
 
@@ -57,6 +60,8 @@ export interface FindAdminBookingsFilter {
   status?: BookingStatus;
   /** CWB-79: substring of the account email/name/phone or the guest name/phone. */
   customer?: string;
+  /** CWB-91: filter CONFIRMED bookings impacted by closure or non-AVAILABLE room. */
+  needsAttention?: boolean;
 }
 
 export interface AdminBookingListResponseData {

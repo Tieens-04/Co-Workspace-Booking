@@ -26,10 +26,14 @@ export class AdminBookingService {
 
   async getBookings(
     filter: FindAdminBookingsFilter,
-    now = new Date(),
+    now?: Date,
   ): Promise<AdminBookingListResponseData> {
-    await this.adminBookingRepo.evaluateNoShowBookings(now);
-    const [total, items] = await this.adminBookingRepo.findManyAndCountForAdmin(filter);
+    const effectiveNow = now ?? new Date();
+    await this.adminBookingRepo.evaluateNoShowBookings(effectiveNow);
+    const [total, items] =
+      now !== undefined
+        ? await this.adminBookingRepo.findManyAndCountForAdmin(filter, now)
+        : await this.adminBookingRepo.findManyAndCountForAdmin(filter);
     const totalPages = total === 0 ? 0 : Math.ceil(total / filter.limit);
 
     return {
@@ -60,7 +64,6 @@ export class AdminBookingService {
       },
     };
   }
-
 
   async recordRefund(
     id: string,

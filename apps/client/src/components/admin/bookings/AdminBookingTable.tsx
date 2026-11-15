@@ -247,7 +247,8 @@ export function AdminBookingTable({
               const remainingRefundable = Math.max(0, totalNum - refundedNum);
               const canRefund =
                 booking.status === 'CANCELLED' &&
-                (booking.paymentStatus === 'PAID' || booking.paymentStatus === 'PARTIALLY_REFUNDED') &&
+                (booking.paymentStatus === 'PAID' ||
+                  booking.paymentStatus === 'PARTIALLY_REFUNDED') &&
                 remainingRefundable > 0;
               const hasActions = canPay || isConfirmed || (canRefund && Boolean(onRefund));
 
@@ -322,21 +323,39 @@ export function AdminBookingTable({
                         status={booking.status}
                         data-testid={`booking-status-${booking.id}`}
                       />
+                      {booking.status === 'CONFIRMED' && booking.roomUnavailable && (
+                        <div className="flex flex-col items-start gap-0.5">
+                          <ToneBadge
+                            tone="maintenance"
+                            data-testid={`admin-booking-unavailable-badge-${booking.id}`}
+                          >
+                            Cần xử lý
+                          </ToneBadge>
+                          {booking.roomUnavailableReason && (
+                            <span className="max-w-[220px] text-xs whitespace-normal text-status-maintenance wrap-anywhere">
+                              {booking.roomUnavailableReason}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                         <StatusBadge
                           kind="payment"
                           status={booking.paymentStatus}
                           data-testid={`payment-status-${booking.id}`}
                         />
-                        {(booking.paymentStatus === 'PAID' || booking.paymentStatus === 'PARTIALLY_REFUNDED' || booking.paymentStatus === 'REFUNDED') && booking.paymentMethod && (
-                          <span
-                            className="inline-flex items-center gap-1 text-xs font-semibold text-status-success"
-                            data-testid={`paid-method-label-${booking.id}`}
-                          >
-                            <Check aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
-                            {booking.paymentMethod}
-                          </span>
-                        )}
+                        {(booking.paymentStatus === 'PAID' ||
+                          booking.paymentStatus === 'PARTIALLY_REFUNDED' ||
+                          booking.paymentStatus === 'REFUNDED') &&
+                          booking.paymentMethod && (
+                            <span
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-status-success"
+                              data-testid={`paid-method-label-${booking.id}`}
+                            >
+                              <Check aria-hidden="true" className="size-3.5" strokeWidth={2.5} />
+                              {booking.paymentMethod}
+                            </span>
+                          )}
                       </div>
                     </div>
                     <p

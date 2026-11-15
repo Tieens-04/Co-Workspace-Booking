@@ -1013,13 +1013,17 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
           },
         });
         vi.mocked(adminBookingApi.getBookings).mockResolvedValueOnce(
-          mockBookingsResponse([
-            {
-              ...cancelledPaidBooking,
-              paymentStatus: 'REFUNDED',
-              refundedAmount: '400000.00',
-            },
-          ], 1, 1),
+          mockBookingsResponse(
+            [
+              {
+                ...cancelledPaidBooking,
+                paymentStatus: 'REFUNDED',
+                refundedAmount: '400000.00',
+              },
+            ],
+            1,
+            1,
+          ),
         );
 
         renderComponent();
@@ -1143,6 +1147,77 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
           expect(screen.queryByTestId('admin-refund-modal')).not.toBeInTheDocument();
         });
       });
+    });
+  });
+
+  describe('CWB-91: Unavailable booking warnings and needsAttention filter', () => {
+    it('displays needs-attention badge/reason on affected rows and filters by needsAttention=true', async () => {
+      const user = userEvent.setup();
+      const affectedBooking: AdminBookingItem = {
+        ...mockBookingsList[0],
+        id: 'booking-needs-attention',
+        bookingCode: 'CS-ATTN-0001',
+        status: 'CONFIRMED',
+        roomUnavailable: true,
+        roomUnavailableCause: 'ROOM_MAINTENANCE',
+        roomUnavailableReason: 'Phòng đang bảo trì',
+      };
+
+      vi.mocked(adminBookingApi.getBookings)
+        .mockResolvedValueOnce(mockBookingsResponse([affectedBooking, mockBookingsList[1]], 2, 1))
+        .mockResolvedValueOnce(mockBookingsResponse([affectedBooking], 1, 1));
+
+      renderComponent();
+
+      const warnBadge = await screen.findByTestId(
+        'admin-booking-unavailable-badge-booking-needs-attention',
+      );
+      expect(warnBadge).toBeInTheDocument();
+      expect(screen.getByText('Phòng đang bảo trì')).toBeInTheDocument();
+      expect(
+        screen.queryByTestId('admin-booking-unavailable-badge-booking-2'),
+      ).not.toBeInTheDocument();
+
+      const toggle = screen.getByTestId('filter-needs-attention');
+      await user.click(toggle);
+
+      await waitFor(() => {
+        expect(adminBookingApi.getBookings).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            needsAttention: true,
+          }),
+          expect.any(AbortSignal),
+        );
+      });
+    });
+
+    it('R06: preserves unsubmitted draft search inputs when toggling needsAttention checkbox', async () => {
+      const user = userEvent.setup();
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(mockBookingsResponse());
+
+      renderComponent();
+
+      await screen.findByText('CS-20261003-USER');
+
+      const customerInput = screen.getByTestId('filter-customer-input') as HTMLInputElement;
+      const codeInput = screen.getByTestId('filter-booking-code-input') as HTMLInputElement;
+      await user.type(customerInput, 'Nguyễn Văn Draft');
+      await user.type(codeInput, ' cs-draft-01 ');
+
+      await user.click(screen.getByTestId('filter-needs-attention'));
+
+      await waitFor(() => {
+        expect(adminBookingApi.getBookings).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            bookingCode: 'CS-DRAFT-01',
+            customer: 'Nguyễn Văn Draft',
+            needsAttention: true,
+          }),
+          expect.any(AbortSignal),
+        );
+      });
+      expect(customerInput.value).toBe('Nguyễn Văn Draft');
+      expect(codeInput.value).toBe('CS-DRAFT-01');
     });
   });
 });

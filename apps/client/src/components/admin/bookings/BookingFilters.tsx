@@ -1,7 +1,7 @@
 import type * as React from 'react';
 import { Search, X } from 'lucide-react';
 import { Field } from '@/components/common/Field';
-import { NativeSelect } from '@/components/common/NativeSelect';
+import { Checkbox, NativeSelect } from '@/components/common/NativeSelect';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 
@@ -10,10 +10,12 @@ interface BookingFiltersProps {
   customer: string;
   date: string;
   status: string;
+  needsAttention: boolean;
   onCodeChange: (value: string) => void;
   onCustomerChange: (value: string) => void;
   onDateChange: (value: string) => void;
   onStatusChange: (value: string) => void;
+  onNeedsAttentionChange: (checked: boolean) => void;
   onSubmit: (e: React.FormEvent) => void;
   onClear: () => void;
 }
@@ -24,10 +26,12 @@ export function BookingFilters({
   customer,
   date,
   status,
+  needsAttention,
   onCodeChange,
   onCustomerChange,
   onDateChange,
   onStatusChange,
+  onNeedsAttentionChange,
   onSubmit,
   onClear,
 }: BookingFiltersProps) {
@@ -92,6 +96,21 @@ export function BookingFilters({
             <X aria-hidden="true" />
             Xóa bộ lọc
           </Button>
+        </div>
+
+        <div className="flex items-center sm:col-span-2 xl:col-span-5">
+          <label
+            htmlFor="filterNeedsAttention"
+            className="inline-flex min-h-11 cursor-pointer items-center gap-2.5 text-sm font-medium text-foreground select-none"
+          >
+            <Checkbox
+              id="filterNeedsAttention"
+              checked={needsAttention}
+              onChange={(e) => onNeedsAttentionChange(e.target.checked)}
+              data-testid="filter-needs-attention"
+            />
+            <span>Chỉ hiện đơn cần xử lý (đóng cửa / bảo trì / ngừng kinh doanh)</span>
+          </label>
         </div>
       </form>
     </section>
