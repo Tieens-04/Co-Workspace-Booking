@@ -88,7 +88,12 @@ export class BookingService {
     const endDate = new Date(input.endTime);
 
     // Shared customer/guest rules include 07:00–22:00 on the same Vietnam day.
-    validateBookingTime(startDate, endDate, now);
+    // CWB-111: when an Idempotency-Key is supplied, defer time validation to the repository
+    // transaction so a retry after crossing the 30-minute lead-time boundary replays the booking.
+    // (`now` only feeds this pre-transaction fast-fail; in-transaction checks read the live clock per CWB-51.)
+    if (!idempotency) {
+      validateBookingTime(startDate, endDate, now);
+    }
 
     const durationMinutes = (endDate.getTime() - startDate.getTime()) / (60 * 1000);
 
