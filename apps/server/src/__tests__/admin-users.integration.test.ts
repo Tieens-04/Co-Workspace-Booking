@@ -6,6 +6,7 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { hashPassword } from '../utils/password.util.js';
+import { adminUserRepository } from '../repositories/admin-user.repository.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
 import { TestAccounts } from './support/test-accounts.js';
 import { drainBackgroundTasks } from '../utils/background-tasks.util.js';
@@ -163,6 +164,136 @@ describe('Admin customer management (CWB-79, real MySQL)', () => {
       const unknown = await asAdmin(request(app).get('/api/v1/admin/users').query({ sort: 'x' }));
       expect(unknown.status).toBe(400);
     });
+
+    it('excludes deleted/anonymized accounts from listings, status filters, search and total count (CWB-112)', async () => {
+      const activeCustomer = await createCustomer('active-visible');
+      const deletedCustomer = await createCustomer('deleted-hidden', '0933444555');
+
+      const delRes = await request(app)
+        .post('/api/v1/me/deletion')
+        .set('Authorization', `Bearer ${deletedCustomer.token}`)
+        .send({ currentPassword: password });
+      expect(delRes.status).toBe(200);
+
+      const allRes = await asAdmin(request(app).get('/api/v1/admin/users').query({ limit: 100 }));
+      expect(allRes.status).toBe(200);
+      const allIds = allRes.body.data.items.map((u: { id: string }) => u.id);
+      expect(allIds).toContain(activeCustomer.id);
+      expect(allIds).not.toContain(deletedCustomer.id);
+
+      const activeFilterRes = await asAdmin(
+        request(app).get('/api/v1/admin/users').query({ status: 'ACTIVE', limit: 100 }),
+      );
+      expect(activeFilterRes.status).toBe(200);
+      expect(activeFilterRes.body.data.items.map((u: { id: string }) => u.id)).not.toContain(
+        deletedCustomer.id,
+      );
+
+      for (const q of [
+        'Tài khoản đã xóa',
+        `deleted-${deletedCustomer.id}`,
+        deletedCustomer.email,
+      ]) {
+        const searchRes = await asAdmin(
+          request(app).get('/api/v1/admin/users').query({ q, limit: 100 }),
+        );
+        expect(searchRes.status).toBe(200);
+        expect(searchRes.body.data.items.map((u: { id: string }) => u.id)).not.toContain(
+          deletedCustomer.id,
+        );
+      }
+
+      const exactAnonSearch = await asAdmin(
+        request(app)
+          .get('/api/v1/admin/users')
+          .query({ q: `deleted-${deletedCustomer.id}` }),
+      );
+      expect(exactAnonSearch.status).toBe(200);
+      expect(exactAnonSearch.body.data.pagination.total).toBe(0);
+    });
+
+    it('lazily evaluates ended unattended CONFIRMED bookings before counting noShowCount and preserves out-of-scope users (CWB-112)', async () => {
+      const customer = await createCustomer('lazy-noshow');
+      const otherCustomer = await createCustomer('other-noshow');
+      const unattended = await prisma.booking.create({
+        data: {
+          bookingCode: `U79-${tag}-${++codeSeq}`,
+          userId: customer.id,
+          roomId,
+          startTime: new Date(Date.now() - 3 * 3_600_000),
+          endTime: new Date(Date.now() - 2 * 3_600_000),
+          totalAmount: new Prisma.Decimal('100000.00'),
+          status: BookingStatus.CONFIRMED,
+          checkedInAt: null,
+          attendanceTrackingEnabled: true,
+        },
+      });
+      // Out-of-scope customer with an overdue unattended CONFIRMED booking must stay untouched.
+      const otherUnattended = await prisma.booking.create({
+        data: {
+          bookingCode: `U79-${tag}-${++codeSeq}`,
+          userId: otherCustomer.id,
+          roomId,
+          startTime: new Date(Date.now() - 3 * 3_600_000),
+          endTime: new Date(Date.now() - 2 * 3_600_000),
+          totalAmount: new Prisma.Decimal('100000.00'),
+          status: BookingStatus.CONFIRMED,
+          checkedInAt: null,
+          attendanceTrackingEnabled: true,
+        },
+      });
+      // Legacy / untracked booking must remain CONFIRMED and not inflate noShowCount.
+      const untracked = await prisma.booking.create({
+        data: {
+          bookingCode: `U79-${tag}-${++codeSeq}`,
+          userId: customer.id,
+          roomId,
+          startTime: new Date(Date.now() - 5 * 3_600_000),
+          endTime: new Date(Date.now() - 4 * 3_600_000),
+          totalAmount: new Prisma.Decimal('100000.00'),
+          status: BookingStatus.CONFIRMED,
+          checkedInAt: null,
+          attendanceTrackingEnabled: false,
+        },
+      });
+
+      // Empty scope and disjoint userId/scope.userIds must evaluate 0 rows.
+      expect(
+        await bookingRepository.evaluateNoShowBookings(new Date(), undefined, undefined, {
+          userIds: [],
+        }),
+      ).toBe(0);
+      expect(
+        await bookingRepository.evaluateNoShowBookings(new Date(), customer.id, undefined, {
+          userIds: [otherCustomer.id],
+        }),
+      ).toBe(0);
+
+      const res = await asAdmin(
+        request(app).get('/api/v1/admin/users').query({ q: customer.email }),
+      );
+      expect(res.status).toBe(200);
+      expect(res.body.data.items).toHaveLength(1);
+      expect(res.body.data.items[0]).toMatchObject({
+        id: customer.id,
+        bookingCount: 2,
+        noShowCount: 1,
+        upcomingBookingCount: 0,
+      });
+
+      const storedUnattended = await prisma.booking.findUniqueOrThrow({
+        where: { id: unattended.id },
+      });
+      const storedOtherUnattended = await prisma.booking.findUniqueOrThrow({
+        where: { id: otherUnattended.id },
+      });
+      const storedUntracked = await prisma.booking.findUniqueOrThrow({
+        where: { id: untracked.id },
+      });
+      expect(storedUnattended.status).toBe(BookingStatus.NO_SHOW);
+      expect(storedOtherUnattended.status).toBe(BookingStatus.CONFIRMED);
+      expect(storedUntracked.status).toBe(BookingStatus.CONFIRMED);
+    });
   });
 
   describe('PATCH /admin/users/:id/status', () => {
@@ -267,6 +398,126 @@ describe('Admin customer management (CWB-79, real MySQL)', () => {
           where: { entityType: 'USER', entityId: customer.id, action: 'USER_UNLOCKED' },
         }),
       ).toBe(1);
+    });
+
+    it('rejects locking or unlocking a deleted account with 404 USER_NOT_FOUND and writes no audit event (CWB-112)', async () => {
+      const customer = await createCustomer('deleted-lock');
+      const delRes = await request(app)
+        .post('/api/v1/me/deletion')
+        .set('Authorization', `Bearer ${customer.token}`)
+        .send({ currentPassword: password });
+      expect(delRes.status).toBe(200);
+
+      for (const status of ['LOCKED', 'ACTIVE'] as const) {
+        const res = await setStatus(customer.id, {
+          status,
+          reason: 'Thử cập nhật trạng thái tài khoản đã xóa',
+        });
+        expect(res.status).toBe(404);
+        expect(res.body.code).toBe('USER_NOT_FOUND');
+      }
+
+      const stored = await prisma.user.findUniqueOrThrow({ where: { id: customer.id } });
+      expect(stored.deletedAt).not.toBeNull();
+      expect(stored.lockedAt).toBeNull();
+      expect(stored.lockReason).toBeNull();
+      expect(
+        await prisma.auditEvent.count({
+          where: { entityType: 'USER', entityId: customer.id },
+        }),
+      ).toBe(0);
+    });
+
+    it('lazily evaluates noShowCount in updateStatus response (CWB-112)', async () => {
+      const customer = await createCustomer('lock-lazy-noshow');
+      await prisma.booking.create({
+        data: {
+          bookingCode: `U79-${tag}-${++codeSeq}`,
+          userId: customer.id,
+          roomId,
+          startTime: new Date(Date.now() - 3 * 3_600_000),
+          endTime: new Date(Date.now() - 2 * 3_600_000),
+          totalAmount: new Prisma.Decimal('100000.00'),
+          status: BookingStatus.CONFIRMED,
+          checkedInAt: null,
+          attendanceTrackingEnabled: true,
+        },
+      });
+
+      const res = await setStatus(customer.id, {
+        status: 'LOCKED',
+        reason: 'Khóa khách bỏ lịch',
+      });
+      expect(res.status).toBe(200);
+      expect(res.body.data.user).toMatchObject({
+        id: customer.id,
+        status: 'LOCKED',
+        bookingCount: 1,
+        noShowCount: 1,
+      });
+    });
+
+    it('rejects booking reschedule for a locked account inside the reschedule transaction (CWB-112)', async () => {
+      const customer = await createCustomer('reschedule-locked');
+      const originalSlot = nextSlot();
+      const targetSlot = nextSlot();
+      const booking = await insertBooking(customer.id, BookingStatus.CONFIRMED, originalSlot);
+
+      expect((await setStatus(customer.id, { status: 'LOCKED', reason: 'Lạm dụng' })).status).toBe(
+        200,
+      );
+
+      await expect(
+        bookingRepository.rescheduleBooking(customer.id, booking.id, {
+          roomId,
+          startTime: targetSlot.start.toISOString(),
+          endTime: targetSlot.end.toISOString(),
+        }),
+      ).rejects.toMatchObject({ code: 'ACCOUNT_LOCKED', statusCode: 403 });
+
+      const stored = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+      expect(stored.startTime.toISOString()).toBe(originalSlot.start.toISOString());
+    });
+
+    it('serializes concurrent admin lock and reschedule so reschedule either commits before lock or rejects 403 ACCOUNT_LOCKED (CWB-112 / F-08)', async () => {
+      const customer = await createCustomer('reschedule-lock-race');
+      const originalSlot = nextSlot();
+      const targetSlot = nextSlot();
+      const booking = await insertBooking(customer.id, BookingStatus.CONFIRMED, originalSlot);
+
+      const [lockResult, rescheduleResult] = await Promise.allSettled([
+        adminUserRepository.updateStatus({
+          userId: customer.id,
+          status: 'LOCKED',
+          reason: 'Khóa đồng thời với đổi lịch',
+          actor: { id: adminId, role: Role.ADMIN },
+          now: new Date(),
+        }),
+        bookingRepository.rescheduleBooking(customer.id, booking.id, {
+          roomId,
+          startTime: targetSlot.start.toISOString(),
+          endTime: targetSlot.end.toISOString(),
+        }),
+      ]);
+
+      expect(lockResult.status).toBe('fulfilled');
+      if (lockResult.status === 'fulfilled') {
+        expect(lockResult.value.affectedBookings.map((b) => b.id)).toContain(booking.id);
+      }
+
+      const storedBooking = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+      const storedUser = await prisma.user.findUniqueOrThrow({ where: { id: customer.id } });
+      expect(storedUser.lockedAt).not.toBeNull();
+
+      if (rescheduleResult.status === 'rejected') {
+        expect(rescheduleResult.reason).toMatchObject({
+          code: 'ACCOUNT_LOCKED',
+          statusCode: 403,
+        });
+        expect(storedBooking.startTime.toISOString()).toBe(originalSlot.start.toISOString());
+      } else {
+        expect(storedBooking.startTime.toISOString()).toBe(targetSlot.start.toISOString());
+      }
     });
   });
 
