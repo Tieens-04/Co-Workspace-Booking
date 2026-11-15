@@ -661,6 +661,9 @@ export class BookingRepository
             idempotentReplay: true,
           };
         }
+        // CWB-111: pre-transaction time validation was skipped so replays above could succeed;
+        // validate new keys now before room/capacity/closure/overlap queries and pricing.
+        validateBookingTime(data.startDate, data.endDate, new Date());
       }
 
       // 2. Reject if room is currently in MAINTENANCE or ARCHIVED

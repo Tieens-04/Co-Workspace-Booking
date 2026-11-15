@@ -9,6 +9,7 @@ import { TestAccounts } from './support/test-accounts.js';
 import { hashPassword } from '../utils/password.util.js';
 import { drainBackgroundTasks } from '../utils/background-tasks.util.js';
 import { ENV } from '../config/env.config.js';
+import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
 
 describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
   // These scenarios reuse one customer for many upcoming bookings (overlap, code collisions,
@@ -86,12 +87,17 @@ describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
     }
   });
 
-  afterEach(() => {
+  afterEach(async () => {
     vi.restoreAllMocks();
+    vi.useRealTimers();
+    await Promise.all(userIds.map((id) => createBookingRateLimiter.resetKey(`user:${id}`)));
   });
 
   afterAll(async () => {
     await drainBackgroundTasks(5000);
+    await prisma.auditEvent.deleteMany({
+      where: { actorId: { in: [`admin-${tag}`, `admin2-${tag}`] } },
+    });
     await prisma.booking.deleteMany({ where: { roomId: { in: [roomId, otherRoomId] } } });
     await prisma.room.deleteMany({ where: { id: { in: [roomId, otherRoomId] } } });
     await prisma.user.deleteMany({ where: { id: { in: userIds } } });
@@ -186,5 +192,149 @@ describe('Booking creation idempotency (CWB-66, real MySQL)', () => {
     expect(retry.body.data.customer).toMatchObject({ kind: 'GUEST', name: 'Khách lẻ' });
     expect(otherAdmin.status).toBe(201);
     expect(otherAdmin.body.data.id).not.toBe(first.body.data.id);
+  });
+
+  it('replays a customer booking when retried with the same key after crossing the 30-minute lead-time boundary', async () => {
+    const key = randomUUID();
+    const slot = nextSlot();
+    const body = { roomId, ...slot, note: 'Retry qua mốc 30 phút' };
+    const before = await countIn(roomId);
+    const startMs = new Date(slot.startTime).getTime();
+
+    let first: request.Response;
+    let retry: request.Response;
+    let reusedDifferentPayload: request.Response;
+    let retryAfterStart: request.Response;
+    try {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(startMs - 30 * 60_000 - 10_000);
+      const freshCustomerToken = generateToken({ sub: userIds[0], role: Role.CUSTOMER });
+      first = await post(freshCustomerToken, body, key);
+
+      vi.setSystemTime(startMs - 20 * 60_000);
+      retry = await post(freshCustomerToken, body, key);
+      reusedDifferentPayload = await post(
+        freshCustomerToken,
+        { ...body, note: 'Đổi nội dung ghi chú' },
+        key,
+      );
+
+      vi.setSystemTime(startMs + 5 * 60_000);
+      const postStartToken = generateToken({ sub: userIds[0], role: Role.CUSTOMER });
+      retryAfterStart = await post(postStartToken, body, key);
+    } finally {
+      vi.useRealTimers();
+    }
+    await drainBackgroundTasks(5000);
+
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.headers['idempotent-replayed']).toBe('true');
+    expect(retry.body.data).toEqual(first.body.data);
+    expect(reusedDifferentPayload.status).toBe(409);
+    expect(reusedDifferentPayload.body.code).toBe('IDEMPOTENCY_KEY_REUSED');
+    expect(retryAfterStart.status).toBe(200);
+    expect(retryAfterStart.headers['idempotent-replayed']).toBe('true');
+    expect(retryAfterStart.body.data).toEqual(first.body.data);
+    expect(await countIn(roomId)).toBe(before + 1);
+    expect(await prisma.emailOutbox.count({ where: { bookingId: first.body.data.id } })).toBe(1);
+  });
+
+  it('replays an admin guest booking when retried with the same key after crossing the 30-minute lead-time boundary', async () => {
+    const key = randomUUID();
+    const slot = nextSlot();
+    const body = { roomId, ...slot, guestName: 'Khách trễ mạng', guestPhone: '0912345678' };
+    const before = await countIn(roomId);
+    const startMs = new Date(slot.startTime).getTime();
+
+    let first: request.Response;
+    let retry: request.Response;
+    try {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(startMs - 30 * 60_000 - 10_000);
+      const freshAdminToken = generateToken({ sub: `admin-${tag}`, role: Role.ADMIN });
+      first = await postGuest(freshAdminToken, body, key);
+
+      vi.setSystemTime(startMs - 20 * 60_000);
+      retry = await postGuest(freshAdminToken, body, key);
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(first.status).toBe(201);
+    expect(retry.status).toBe(200);
+    expect(retry.headers['idempotent-replayed']).toBe('true');
+    expect(retry.body.data).toEqual(first.body.data);
+    expect(await countIn(roomId)).toBe(before + 1);
+    expect(
+      await prisma.auditEvent.count({
+        where: {
+          entityType: 'BOOKING',
+          entityId: first.body.data.id,
+          action: 'BOOKING_GUEST_CREATED',
+        },
+      }),
+    ).toBe(1);
+  });
+
+  it('still rejects a new Idempotency-Key within 30 minutes of start via in-transaction time validation', async () => {
+    const slot = nextSlot();
+    const before = await countIn(roomId);
+    const startMs = new Date(slot.startTime).getTime();
+
+    try {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(startMs - 20 * 60_000);
+      const freshCustomerToken = generateToken({ sub: userIds[0], role: Role.CUSTOMER });
+      const res = await post(freshCustomerToken, { roomId, ...slot }, randomUUID());
+      expect(res.status).toBe(400);
+      expect(res.body.code).toBe('ADVANCE_NOTICE');
+    } finally {
+      vi.useRealTimers();
+    }
+
+    expect(await countIn(roomId)).toBe(before);
+  });
+
+  it('prioritizes 400 time-rule errors over 409 conflicts and 500 date-range errors for a new Idempotency-Key', async () => {
+    const slot = nextSlot();
+    const startMs = new Date(slot.startTime).getTime();
+
+    const booked = await post(tokens[0], { roomId, ...slot }, randomUUID());
+    expect(booked.status).toBe(201);
+
+    const backwardsStart = new Date(startMs + 90 * 60_000).toISOString();
+    const backwardsEnd = new Date(startMs + 30 * 60_000).toISOString();
+    const backwardsRes = await post(
+      tokens[1],
+      { roomId, startTime: backwardsStart, endTime: backwardsEnd },
+      randomUUID(),
+    );
+    expect(backwardsRes.status).toBe(400);
+    expect(backwardsRes.body.code).toBe('INVALID_SLOT');
+
+    let lateOverlapRes: request.Response;
+    try {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(startMs - 20 * 60_000);
+      const freshToken = generateToken({ sub: userIds[1], role: Role.CUSTOMER });
+      lateOverlapRes = await post(freshToken, { roomId, ...slot }, randomUUID());
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(lateOverlapRes.status).toBe(400);
+    expect(lateOverlapRes.body.code).toBe('ADVANCE_NOTICE');
+
+    const extremeOffsetRes = await post(
+      tokens[1],
+      {
+        roomId,
+        startTime: '9999-12-31T21:00:00-23:00',
+        endTime: '9999-12-31T22:00:00-23:00',
+      },
+      randomUUID(),
+    );
+    expect(extremeOffsetRes.status).toBe(400);
+    expect(extremeOffsetRes.body.code).toBe('BOOKING_HORIZON');
   });
 });
