@@ -8,6 +8,7 @@ import { bookingService, BookingService } from '../services/booking.service.js';
 import { BookingResponseDto } from '../types/booking.type.js';
 import { AppError } from '../utils/error.util.js';
 import { createBookingRateLimiter } from '../middlewares/rate-limit.middleware.js';
+import { emailOutboxService } from '../services/email-outbox.service.js';
 
 // Prevent real DB access during unit tests
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
@@ -431,6 +432,42 @@ describe('Booking API & Service Unit Tests (/api/v1/bookings)', () => {
       expect(res.body.code).toBe('ADVANCE_NOTICE');
       expect(res.body.message).toBe('Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút');
       expect(bookingRepository.createBooking).not.toHaveBeenCalled();
+    });
+
+    it('skips pre-transaction validateBookingTime when an idempotencyKey is supplied so replays succeed past the 30-minute boundary', async () => {
+      const slot = getFutureSlot(2, 1);
+      const simulatedNow = new Date(slot.startDate.getTime() - 20 * 60 * 1000);
+      const replayFixture = {
+        ...mockBookingFixture({ startTime: slot.startDate, endTime: slot.endDate }),
+        idempotentReplay: true,
+      };
+      vi.mocked(bookingRepository.createBooking).mockResolvedValueOnce(replayFixture);
+      const kickSpy = vi.spyOn(emailOutboxService, 'kick').mockImplementation(() => {});
+
+      const result = await bookingService.createBooking(
+        customerSub,
+        {
+          roomId: validRoomId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          note: null,
+        },
+        simulatedNow,
+        'idem-key-12345678',
+      );
+
+      expect(bookingRepository.createBooking).toHaveBeenCalledTimes(1);
+      expect(bookingRepository.createBooking).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: customerSub,
+          idempotency: expect.objectContaining({
+            scope: `user:${customerSub}`,
+            key: 'idem-key-12345678',
+          }),
+        }),
+      );
+      expect(result.idempotentReplay).toBe(true);
+      expect(kickSpy).not.toHaveBeenCalled();
     });
 
     it('successfully accepts booking of 4.5 hours (previously rejected by old 4-hour limit)', async () => {
