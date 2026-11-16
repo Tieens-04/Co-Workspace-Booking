@@ -476,7 +476,7 @@ export function AdminBookingTable({
                             type="button"
                             size="sm"
                             variant="outline"
-                            className="border-status-warning text-status-warning hover:bg-status-warning-bg hover:text-status-warning"
+                            className="border-status-warning text-status-warning hover:border-status-warning hover:bg-status-warning-bg hover:text-status-warning"
                             data-testid={`refund-booking-btn-${booking.id}`}
                             onClick={() => onRefund(booking)}
                             disabled={isPending}

@@ -173,4 +173,33 @@ describe('AdminBookingTable lifecycle actions', () => {
     expect(screen.getByTestId('confirm-payment-btn-pending')).toBeDisabled();
     expect(screen.getByTestId('cancel-booking-btn-pending')).toBeDisabled();
   });
+
+  it('uses status-warning classes for refunded amount label and refund action button', () => {
+    const refundedItem: AdminBookingItem = {
+      ...booking('refund-1', NOW - 3_600_000, 'CANCELLED'),
+      totalAmount: '400000',
+      refundedAmount: '100000',
+      paymentStatus: 'PARTIALLY_REFUNDED',
+      paymentMethod: 'QR',
+    };
+    render(
+      <AdminBookingTable
+        bookings={[refundedItem]}
+        onCheckIn={vi.fn()}
+        onComplete={vi.fn()}
+        onNoShow={vi.fn()}
+        onConfirmPayment={vi.fn()}
+        onCancel={vi.fn()}
+        onRefund={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByTestId('refunded-amount-refund-1')).toHaveClass('text-status-warning');
+    expect(screen.getByTestId('refund-booking-btn-refund-1')).toHaveClass(
+      'border-status-warning',
+      'text-status-warning',
+      'hover:border-status-warning',
+      'hover:bg-status-warning-bg',
+    );
+  });
 });

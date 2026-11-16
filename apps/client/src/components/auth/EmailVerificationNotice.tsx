@@ -49,16 +49,14 @@ export const EmailVerificationNotice: React.FC<EmailVerificationNoticeProps> = (
       role="status"
       data-testid="email-verification-notice"
       className={cn(
-        'border-status-noshow-border bg-status-noshow-bg text-status-noshow rounded-lg border',
+        'border-status-warning-border bg-status-warning-bg text-status-warning rounded-lg border',
         className,
       )}
     >
-      <Mail aria-hidden="true" className="size-5 shrink-0 text-amber-600 dark:text-amber-400" />
+      <Mail aria-hidden="true" className="size-5 shrink-0" />
       <div className="grid gap-2">
-        <AlertTitle className="font-semibold text-amber-950 dark:text-amber-200">{title}</AlertTitle>
-        <AlertDescription className="text-sm text-amber-900/90 dark:text-amber-300/90">
-          {description}
-        </AlertDescription>
+        <AlertTitle className="font-semibold">{title}</AlertTitle>
+        <AlertDescription className="text-sm text-status-warning">{description}</AlertDescription>
 
         {sentMessage && (
           <p

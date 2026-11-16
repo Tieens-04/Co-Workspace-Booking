@@ -1,5 +1,15 @@
 import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
-import { CalendarX, CircleAlert, Loader2, Pencil, Plus, RefreshCw, Trash2, Building2, DoorOpen } from 'lucide-react';
+import {
+  CalendarX,
+  CircleAlert,
+  Loader2,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Building2,
+  DoorOpen,
+} from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Field } from '@/components/common/Field';
 import { EmptyState, ErrorState } from '@/components/common/EmptyState';
@@ -101,13 +111,16 @@ export const AdminClosuresPage: React.FC = () => {
   // Load rooms for filter and modal dropdown
   useEffect(() => {
     let active = true;
-    void roomApi.getRooms({ limit: 100 }).then((res) => {
-      if (active && res.success && res.data?.items) {
-        setRooms(res.data.items);
-      }
-    }).catch(() => {
-      // Non-critical room list failure
-    });
+    void roomApi
+      .getRooms({ limit: 100 })
+      .then((res) => {
+        if (active && res.success && res.data?.items) {
+          setRooms(res.data.items);
+        }
+      })
+      .catch(() => {
+        // Non-critical room list failure
+      });
     return () => {
       active = false;
     };
@@ -452,8 +465,8 @@ export const AdminClosuresPage: React.FC = () => {
                         </Badge>
                       ) : (
                         <Badge
-                          variant="default"
-                          className="flex w-fit items-center gap-1 bg-purple-600 hover:bg-purple-700"
+                          variant="outline"
+                          className="flex w-fit items-center gap-1 border-status-warning-border bg-status-warning-bg text-status-warning"
                         >
                           <Building2 aria-hidden="true" className="size-3" />
                           Toàn cơ sở
@@ -474,7 +487,11 @@ export const AdminClosuresPage: React.FC = () => {
                     </TableCell>
                     <TableCell
                       data-label="Lý do"
-                      className={cn('max-w-xs truncate px-4 py-3 max-md:max-w-none', st.cell, st.full)}
+                      className={cn(
+                        'max-w-xs truncate px-4 py-3 max-md:max-w-none',
+                        st.cell,
+                        st.full,
+                      )}
                       title={closure.reason}
                     >
                       {closure.reason}
@@ -485,9 +502,7 @@ export const AdminClosuresPage: React.FC = () => {
                     >
                       {closure.createdBy?.fullName || closure.createdBy?.email || '—'}
                     </TableCell>
-                    <TableCell
-                      className={cn('px-4 py-3 text-right', st.cell, st.full, st.noLabel)}
-                    >
+                    <TableCell className={cn('px-4 py-3 text-right', st.cell, st.full, st.noLabel)}>
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
@@ -538,7 +553,8 @@ export const AdminClosuresPage: React.FC = () => {
               {editingClosure ? 'Chỉnh sửa khung đóng cửa' : 'Thêm khung đóng cửa mới'}
             </DialogTitle>
             <DialogDescription>
-              Thiết lập khung giờ đóng cửa. Hệ thống sẽ chặn các lượt đặt phòng mới trong thời gian này.
+              Thiết lập khung giờ đóng cửa. Hệ thống sẽ chặn các lượt đặt phòng mới trong thời gian
+              này.
             </DialogDescription>
           </DialogHeader>
 
@@ -598,7 +614,11 @@ export const AdminClosuresPage: React.FC = () => {
               </Field>
             </div>
 
-            <Field id="closure-reason" label="Lý do đóng cửa" hint="Ví dụ: Nghỉ Tết Dương lịch, Sửa chữa hệ thống điện...">
+            <Field
+              id="closure-reason"
+              label="Lý do đóng cửa"
+              hint="Ví dụ: Nghỉ Tết Dương lịch, Sửa chữa hệ thống điện..."
+            >
               <Textarea
                 id="closure-reason"
                 rows={3}
@@ -650,16 +670,16 @@ export const AdminClosuresPage: React.FC = () => {
       >
         <AlertDialogContent className="max-w-xl">
           <AlertDialogHeader>
-            <div className="flex items-center gap-2 text-amber-600">
+            <div className="flex items-center gap-2 text-status-warning">
               <CircleAlert aria-hidden="true" className="size-5" />
               <AlertDialogTitle>Cảnh báo xung đột đặt phòng</AlertDialogTitle>
             </div>
             <AlertDialogDescription className="text-left text-sm text-muted-foreground">
               Khung đóng cửa này trùng với{' '}
-              <strong className="text-foreground">{conflictData?.count}</strong> lượt đặt phòng đã xác nhận.
-              Việc lưu khung đóng cửa sẽ{' '}
-              <strong className="text-destructive">KHÔNG tự động hủy</strong> các booking này. Vui lòng liên hệ
-              khách hàng hoặc xử lý dời lịch/hủy thủ công nếu cần.
+              <strong className="text-foreground">{conflictData?.count}</strong> lượt đặt phòng đã
+              xác nhận. Việc lưu khung đóng cửa sẽ{' '}
+              <strong className="text-destructive">KHÔNG tự động hủy</strong> các booking này. Vui
+              lòng liên hệ khách hàng hoặc xử lý dời lịch/hủy thủ công nếu cần.
             </AlertDialogDescription>
           </AlertDialogHeader>
 
@@ -668,10 +688,18 @@ export const AdminClosuresPage: React.FC = () => {
               <table className="w-full text-left" data-testid="conflicting-bookings-table">
                 <thead className="sticky top-0 border-b bg-muted px-3 py-2 font-semibold">
                   <tr>
-                    <th scope="col" className="px-3 py-2">Mã booking</th>
-                    <th scope="col" className="px-3 py-2">Phòng</th>
-                    <th scope="col" className="px-3 py-2">Thời gian</th>
-                    <th scope="col" className="px-3 py-2">Khách hàng</th>
+                    <th scope="col" className="px-3 py-2">
+                      Mã booking
+                    </th>
+                    <th scope="col" className="px-3 py-2">
+                      Phòng
+                    </th>
+                    <th scope="col" className="px-3 py-2">
+                      Thời gian
+                    </th>
+                    <th scope="col" className="px-3 py-2">
+                      Khách hàng
+                    </th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
@@ -682,7 +710,9 @@ export const AdminClosuresPage: React.FC = () => {
                       <td className="px-3 py-2 tabular-nums">
                         {formatDisplayTime(b.startTime)} - {formatVnTime(new Date(b.endTime))}
                       </td>
-                      <td className="px-3 py-2 text-muted-foreground">{b.guestName || b.userEmail || 'Khách'}</td>
+                      <td className="px-3 py-2 text-muted-foreground">
+                        {b.guestName || b.userEmail || 'Khách'}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -699,7 +729,9 @@ export const AdminClosuresPage: React.FC = () => {
               disabled={isConfirmingConflict}
               data-testid="btn-confirm-conflict-closure"
             >
-              {isConfirmingConflict && <Loader2 aria-hidden="true" className="size-4 animate-spin" />}
+              {isConfirmingConflict && (
+                <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+              )}
               Tôi hiểu và tiếp tục tạo
             </Button>
           </AlertDialogFooter>
@@ -715,9 +747,11 @@ export const AdminClosuresPage: React.FC = () => {
               Bạn có chắc chắn muốn xóa khung đóng cửa này?
               {deleteTarget && (
                 <span className="mt-2 block rounded bg-muted p-2 font-mono text-xs text-foreground">
-                  Phạm vi: {deleteTarget.room?.name ? `Phòng ${deleteTarget.room.name}` : 'Toàn cơ sở'}
+                  Phạm vi:{' '}
+                  {deleteTarget.room?.name ? `Phòng ${deleteTarget.room.name}` : 'Toàn cơ sở'}
                   <br />
-                  Thời gian: {formatDisplayTime(deleteTarget.startTime)} - {formatDisplayTime(deleteTarget.endTime)}
+                  Thời gian: {formatDisplayTime(deleteTarget.startTime)} -{' '}
+                  {formatDisplayTime(deleteTarget.endTime)}
                   <br />
                   Lý do: {deleteTarget.reason}
                 </span>

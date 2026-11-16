@@ -51,7 +51,13 @@ describe('VerifyEmailPage', () => {
 
   it('renders invalid token view when token is missing or malformed', () => {
     renderVerifyEmailPage(['/verify-email']);
-    expect(screen.getByTestId('verify-email-invalid')).toBeInTheDocument();
+    const invalidContainer = screen.getByTestId('verify-email-invalid');
+    expect(invalidContainer).toBeInTheDocument();
+    expect(invalidContainer.firstElementChild).toHaveClass(
+      'bg-status-cancelled-bg',
+      'border-status-cancelled-border',
+      'text-status-cancelled',
+    );
     expect(screen.getByText('Liên kết không hợp lệ')).toBeInTheDocument();
 
     // With short token
@@ -62,7 +68,13 @@ describe('VerifyEmailPage', () => {
   it('renders confirmation card with confirm button when token is valid', () => {
     renderVerifyEmailPage([`/verify-email?token=${validToken}`]);
 
-    expect(screen.getByTestId('verify-email-confirm')).toBeInTheDocument();
+    const confirmContainer = screen.getByTestId('verify-email-confirm');
+    expect(confirmContainer).toBeInTheDocument();
+    expect(confirmContainer.firstElementChild).toHaveClass(
+      'bg-status-confirmed-bg',
+      'border-status-confirmed-border',
+      'text-status-confirmed',
+    );
     expect(screen.getByTestId('verify-email-confirm-btn')).toBeInTheDocument();
     expect(screen.getByText('Hoàn tất xác thực email')).toBeInTheDocument();
   });
@@ -81,7 +93,13 @@ describe('VerifyEmailPage', () => {
     await user.click(confirmBtn);
 
     expect(authApi.verifyEmail).toHaveBeenCalledWith(validToken);
-    expect(await screen.findByTestId('verify-email-success')).toBeInTheDocument();
+    const successContainer = await screen.findByTestId('verify-email-success');
+    expect(successContainer).toBeInTheDocument();
+    expect(successContainer.firstElementChild).toHaveClass(
+      'bg-status-success-bg',
+      'border-status-success-border',
+      'text-status-success',
+    );
     expect(screen.getByText('Xác thực email thành công!')).toBeInTheDocument();
   });
 
@@ -116,7 +134,16 @@ describe('EmailVerificationNotice', () => {
 
   it('renders title, description and resend button', () => {
     render(<EmailVerificationNotice />);
-    expect(screen.getByTestId('email-verification-notice')).toBeInTheDocument();
+    const notice = screen.getByTestId('email-verification-notice');
+    expect(notice).toBeInTheDocument();
+    expect(notice).toHaveClass(
+      'bg-status-warning-bg',
+      'border-status-warning-border',
+      'text-status-warning',
+    );
+    const descriptionEl = notice.querySelector('[data-slot="alert-description"]');
+    expect(descriptionEl).toHaveClass('text-status-warning');
+    expect(descriptionEl).not.toHaveClass('text-muted-foreground');
     expect(screen.getByText('Tài khoản chưa xác thực email')).toBeInTheDocument();
     expect(screen.getByTestId('resend-verification-btn')).toBeInTheDocument();
   });

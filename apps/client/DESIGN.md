@@ -51,17 +51,21 @@ Every text/background pair meets WCAG AA (≥ 4.5:1); control borders meet 3:1.
 Each tone has `fg`, `bg`, `border` (`text-status-X`, `bg-status-X-bg`, `border-status-X-border`).
 Badges always carry a text label — colour is never the only cue.
 
-| Tone          | Used for                         | Extra cue                 |
-| ------------- | -------------------------------- | ------------------------- |
-| `confirmed`   | `CONFIRMED`                      |                           |
-| `success`     | `COMPLETED`, `PAID`, `AVAILABLE` | `PAID` shows a check icon |
-| `cancelled`   | `CANCELLED`, errors              |                           |
-| `noshow`      | `NO_SHOW`, warnings              |                           |
-| `unpaid`      | `UNPAID`                         | dashed border             |
-| `maintenance` | `MAINTENANCE`                    |                           |
+| Tone          | Used for                                                                                       | Extra cue                 |
+| ------------- | ---------------------------------------------------------------------------------------------- | ------------------------- |
+| `confirmed`   | `CONFIRMED`                                                                                    |                           |
+| `success`     | `COMPLETED`, `PAID`, `AVAILABLE`                                                               | `PAID` shows a check icon |
+| `cancelled`   | `CANCELLED`, errors                                                                            |                           |
+| `noshow`      | `NO_SHOW`; existing `Notice` / `AuthNotice` / `Toast` / `MaintenanceWarning` warning callouts  |                           |
+| `warning`     | `CLOSED` slots & closure badges/alerts, refunds, upward price delta, `EmailVerificationNotice` |                           |
+| `unpaid`      | `UNPAID`                                                                                       | dashed border             |
+| `maintenance` | `MAINTENANCE`                                                                                  |                           |
 
 Labels and tones are defined once in `src/utils/status.ts` and rendered by
-`components/common/StatusBadge.tsx` (`data-status` attribute for tests/styling).
+`components/common/StatusBadge.tsx` (`data-status` attribute for tests/styling). New operational
+caution states (closures, refunds, surcharges, verification gates) use `warning`; `noshow` is
+retained for the `NO_SHOW` booking lifecycle status and existing `Notice` / `AuthNotice` /
+`Toast` / `MaintenanceWarning` callouts.
 
 ### Type
 
