@@ -28,8 +28,8 @@ with a giant wordmark. Its testimonial section is **not** adapted (no invented r
 | `--primary` (moss)   | `#334B3A`             | `#A8C3AD`             | 8.7:1 / 9.1:1                 |
 | `--ink` / `--on-ink` | `#191C19` / `#EDEBE6` | `#0E100D` / `#EDEBE6` | dark sections (`section-ink`) |
 
-Status colours (confirmed / success / cancelled / no-show / unpaid / maintenance) are unchanged
-and always paired with a text label.
+Status colours (confirmed / success / cancelled / no-show / unpaid / maintenance, plus warning added in CWB-115) keep the semantic fg/bg/border structure
+and are always paired with a text label.
 
 - **Type**: Manrope 400–800 (Vietnamese subset) for everything. `text-hero` 40–112 px,
   `text-display-xl` 40–80 px, `text-display-lg` 28–48 px, body 16 px. Tight negative tracking on
