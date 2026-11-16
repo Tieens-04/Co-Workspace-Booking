@@ -3,6 +3,7 @@ import type * as React from 'react';
 import { CircleAlert, Loader2, RotateCcw } from 'lucide-react';
 import { AdminBookingItem } from '../../../types/admin-booking';
 import { useReturnFocus } from '../../../hooks/useReturnFocus';
+import { parsePriceToCents } from '../../../utils/bookingTime';
 import { formatCurrency } from '../../../utils/format';
 import { Field } from '@/components/common/Field';
 import { NativeSelect } from '@/components/common/NativeSelect';
@@ -36,6 +37,23 @@ interface RefundBookingDialogProps {
   onSubmit: (data: RefundBookingSubmitData) => void | Promise<void>;
 }
 
+function toAmountCents(raw?: string | null): number {
+  return raw ? (parsePriceToCents(raw) ?? 0) : 0;
+}
+
+function getRefundBoundsCents(target: AdminBookingItem | null) {
+  const totalCents = toAmountCents(target?.totalAmount);
+  const alreadyRefundedCents = toAmountCents(target?.refundedAmount);
+  const maxRefundableCents = Math.max(0, totalCents - alreadyRefundedCents);
+  return { totalCents, alreadyRefundedCents, maxRefundableCents };
+}
+
+function formatCentsToAmountInput(cents: number): string {
+  if (cents <= 0) return '0';
+  if (cents % 100 === 0) return String(cents / 100);
+  return `${Math.floor(cents / 100)}.${String(cents % 100).padStart(2, '0')}`;
+}
+
 export function RefundBookingDialog({
   booking,
   isSubmitting,
@@ -46,9 +64,11 @@ export function RefundBookingDialog({
   const [shown, setShown] = useState<AdminBookingItem | null>(booking);
   const returnFocus = useReturnFocus();
 
-  const total = Number(shown?.totalAmount || 0);
-  const alreadyRefunded = Number(shown?.refundedAmount || 0);
-  const maxRefundable = Math.max(0, total - alreadyRefunded);
+  const { totalCents, alreadyRefundedCents, maxRefundableCents } = getRefundBoundsCents(shown);
+  const total = totalCents / 100;
+  const alreadyRefunded = alreadyRefundedCents / 100;
+  const maxRefundable = maxRefundableCents / 100;
+  const maxRefundableInput = formatCentsToAmountInput(maxRefundableCents);
 
   const [amountStr, setAmountStr] = useState<string>('');
   const [method, setMethod] = useState<RefundMethodValue>('CASH');
@@ -56,20 +76,20 @@ export function RefundBookingDialog({
   const [confirmKeyword, setConfirmKeyword] = useState<string>('');
   const [amountError, setAmountError] = useState<string | null>(null);
   const [reasonError, setReasonError] = useState<string | null>(null);
+  const [keywordError, setKeywordError] = useState<string | null>(null);
 
   // Sync state whenever a new booking is opened
   useEffect(() => {
     if (booking) {
       setShown(booking);
-      const bTotal = Number(booking.totalAmount || 0);
-      const bRefunded = Number(booking.refundedAmount || 0);
-      const bMax = Math.max(0, bTotal - bRefunded);
-      setAmountStr(bMax > 0 ? bMax.toString() : '0');
+      const { maxRefundableCents: bMaxCents } = getRefundBoundsCents(booking);
+      setAmountStr(formatCentsToAmountInput(bMaxCents));
       setMethod(booking.paymentMethod === 'QR' ? 'QR' : 'CASH');
       setReason('');
       setConfirmKeyword('');
       setAmountError(null);
       setReasonError(null);
+      setKeywordError(null);
     }
   }, [booking]);
 
@@ -77,49 +97,67 @@ export function RefundBookingDialog({
     if (isSubmitting) e.preventDefault();
   };
 
-  const parsedAmount = Number(amountStr);
+  const trimmedKeyword = confirmKeyword.trim();
   const isKeywordValid =
     Boolean(shown) &&
-    (confirmKeyword.trim() === 'HOÀN TIỀN' ||
-      (shown?.bookingCode && confirmKeyword.trim() === shown.bookingCode));
-
-  const isFormValid =
-    !Number.isNaN(parsedAmount) &&
-    parsedAmount > 0 &&
-    parsedAmount <= maxRefundable &&
-    reason.trim().length >= 3 &&
-    isKeywordValid;
+    (trimmedKeyword === 'HOÀN TIỀN' ||
+      (Boolean(shown?.bookingCode) && trimmedKeyword === shown?.bookingCode));
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    let hasError = false;
+    if (isSubmitting) return;
 
-    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
-      setAmountError('Số tiền hoàn phải lớn hơn 0đ.');
-      hasError = true;
-    } else if (parsedAmount > maxRefundable) {
-      setAmountError(`Số tiền hoàn không được vượt quá ${formatCurrency(maxRefundable)}.`);
+    let hasError = false;
+    let validAmountCents: number | null = null;
+    const trimmedAmount = amountStr.trim();
+
+    if (trimmedAmount === '') {
+      setAmountError('Vui lòng nhập số tiền hoàn.');
       hasError = true;
     } else {
-      setAmountError(null);
+      const numericPreview = Number(trimmedAmount);
+      if (!Number.isNaN(numericPreview) && numericPreview <= 0) {
+        setAmountError('Số tiền hoàn phải lớn hơn 0đ.');
+        hasError = true;
+      } else {
+        const parsedCents = parsePriceToCents(trimmedAmount);
+        if (parsedCents === null) {
+          setAmountError('Số tiền hoàn không hợp lệ (chỉ nhập số, tối đa 2 chữ số thập phân).');
+          hasError = true;
+        } else if (parsedCents > maxRefundableCents) {
+          setAmountError(`Số tiền hoàn không được vượt quá ${formatCurrency(maxRefundable)}.`);
+          hasError = true;
+        } else {
+          setAmountError(null);
+          validAmountCents = parsedCents;
+        }
+      }
     }
 
-    if (reason.trim().length < 3) {
+    const trimmedReason = reason.trim();
+    if (trimmedReason.length < 3) {
       setReasonError('Vui lòng nhập lý do hoàn tiền (tối thiểu 3 ký tự).');
       hasError = true;
-    } else if (reason.trim().length > 500) {
+    } else if (trimmedReason.length > 500) {
       setReasonError('Lý do hoàn tiền không được vượt quá 500 ký tự.');
       hasError = true;
     } else {
       setReasonError(null);
     }
 
-    if (hasError || !isKeywordValid || isSubmitting) return;
+    if (!isKeywordValid) {
+      setKeywordError('Vui lòng nhập "HOÀN TIỀN" hoặc mã đơn đặt phòng để xác nhận.');
+      hasError = true;
+    } else {
+      setKeywordError(null);
+    }
+
+    if (hasError || validAmountCents === null) return;
 
     onSubmit({
-      amount: parsedAmount,
+      amount: validAmountCents / 100,
       method,
-      reason: reason.trim(),
+      reason: trimmedReason,
     });
   };
 
@@ -193,7 +231,7 @@ export function RefundBookingDialog({
               type="number"
               step="any"
               min="1"
-              max={maxRefundable}
+              max={maxRefundableInput}
               data-testid="refund-amount-input"
               value={amountStr}
               onChange={(e) => {
@@ -249,12 +287,16 @@ export function RefundBookingDialog({
                 nhận
               </>
             }
+            error={keywordError}
           >
             <Input
               id="refundConfirmKeyword"
               data-testid="refund-confirm-keyword"
               value={confirmKeyword}
-              onChange={(e) => setConfirmKeyword(e.target.value)}
+              onChange={(e) => {
+                setConfirmKeyword(e.target.value);
+                if (keywordError) setKeywordError(null);
+              }}
               placeholder="HOÀN TIỀN hoặc mã đơn"
               disabled={isSubmitting}
               autoComplete="off"
@@ -275,7 +317,7 @@ export function RefundBookingDialog({
               type="submit"
               variant="destructive"
               data-testid="submit-refund-btn"
-              disabled={!isFormValid || isSubmitting}
+              disabled={isSubmitting}
               aria-busy={isSubmitting || undefined}
             >
               {isSubmitting && <Loader2 aria-hidden="true" className="animate-spin" />}
