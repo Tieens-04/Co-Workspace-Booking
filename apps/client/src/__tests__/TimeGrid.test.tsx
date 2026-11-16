@@ -543,6 +543,14 @@ describe('TimeGrid component', () => {
       expect(slot10).toBeDisabled();
       expect(slot10).toHaveAttribute('data-slot-state', 'closed');
       expect(slot10).toHaveAccessibleName('10:00 - 10:30: Đóng cửa (Nghỉ lễ 2/9)');
+      expect(slot10).toHaveClass(
+        'bg-status-warning-bg',
+        'border-status-warning-border',
+        'text-status-warning',
+      );
+
+      const closedSwatch = screen.getByText('Đóng cửa / Nghỉ lễ').previousElementSibling;
+      expect(closedSwatch).toHaveClass('bg-status-warning-bg', 'border-status-warning-border');
 
       expect(screen.getByTestId('time-grid-summary')).toHaveTextContent('4 khung đóng cửa');
     });

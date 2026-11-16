@@ -98,7 +98,13 @@ describe('AdminClosuresPage (CWB-86)', () => {
     expect(await screen.findByTestId('closure-row-closure-1')).toBeInTheDocument();
     expect(screen.getByTestId('closure-row-closure-2')).toBeInTheDocument();
 
-    expect(screen.getByText('Toàn cơ sở')).toBeInTheDocument();
+    const facilityBadge = screen.getByText('Toàn cơ sở').closest('[data-slot="badge"]');
+    expect(facilityBadge).toBeInTheDocument();
+    expect(facilityBadge).toHaveClass(
+      'bg-status-warning-bg',
+      'border-status-warning-border',
+      'text-status-warning',
+    );
     expect(screen.getByText('Phòng Hội Thảo A')).toBeInTheDocument();
     expect(screen.getByText('Nghỉ Lễ Giáng Sinh')).toBeInTheDocument();
     expect(screen.getByText('Bảo trì máy lạnh')).toBeInTheDocument();
@@ -235,7 +241,9 @@ describe('AdminClosuresPage (CWB-86)', () => {
     await user.click(screen.getByTestId('btn-submit-closure'));
 
     // Conflict modal should appear
-    expect(await screen.findByText('Cảnh báo xung đột đặt phòng')).toBeInTheDocument();
+    const conflictHeading = await screen.findByText('Cảnh báo xung đột đặt phòng');
+    expect(conflictHeading).toBeInTheDocument();
+    expect(conflictHeading.parentElement).toHaveClass('text-status-warning');
     expect(screen.getByText('CS-20261225-TEST')).toBeInTheDocument();
     expect(screen.getByText('Nguyễn Văn A')).toBeInTheDocument();
 

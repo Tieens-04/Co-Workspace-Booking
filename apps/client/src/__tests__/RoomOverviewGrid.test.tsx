@@ -45,7 +45,16 @@ describe('RoomOverviewGrid operating hours', () => {
       })),
     };
     render(<RoomOverviewGrid rooms={[room]} date="2026-10-25" />);
-    expect(screen.getByText('Đóng cửa')).toBeInTheDocument();
-    expect(screen.getByTitle(/Đóng cửa: 09:00 - 09:30/)).toBeInTheDocument();
+    const closedLegend = screen.getByText('Đóng cửa');
+    expect(closedLegend).toBeInTheDocument();
+    const closedSwatch = closedLegend.querySelector('span');
+    expect(closedSwatch).toHaveClass('bg-status-warning-bg', 'border-status-warning-border');
+
+    const closedCell = screen.getByTitle(/Đóng cửa: 09:00 - 09:30/);
+    expect(closedCell).toBeInTheDocument();
+    expect(closedCell.firstElementChild).toHaveClass(
+      'bg-status-warning-bg',
+      'border-status-warning-border',
+    );
   });
 });
