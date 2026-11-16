@@ -15,7 +15,7 @@ describe('Email verification unit tests (CWB-87)', () => {
 
   describe('verifyEmail', () => {
     it('rejects invalid or missing token format with INVALID_VERIFICATION_TOKEN (400)', async () => {
-      const service = new EmailVerificationService({} as any, {} as any, {} as any);
+      const service = new EmailVerificationService({} as any, {} as any);
       await expect(service.verifyEmail('')).rejects.toThrow(
         expect.objectContaining({
           code: 'INVALID_VERIFICATION_TOKEN',
@@ -34,7 +34,7 @@ describe('Email verification unit tests (CWB-87)', () => {
       const mockRepo = {
         consumeToken: vi.fn().mockResolvedValue(null),
       };
-      const service = new EmailVerificationService(mockRepo as any, {} as any, {} as any);
+      const service = new EmailVerificationService(mockRepo as any, {} as any);
       // Valid base64url 32 bytes = 43 chars
       const validToken = 'abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE';
       const evaluationTime = new Date('2026-11-10T12:00:00.000Z');
@@ -54,7 +54,7 @@ describe('Email verification unit tests (CWB-87)', () => {
       const mockRepo = {
         consumeToken: vi.fn().mockResolvedValue({ userId: 'user-123' }),
       };
-      const service = new EmailVerificationService(mockRepo as any, {} as any, {} as any);
+      const service = new EmailVerificationService(mockRepo as any, {} as any);
       const validToken = 'abcdefghijklmnopqrstuvwxyz0123456789_-ABCDE';
       const result = await service.verifyEmail(validToken);
       expect(result).toEqual({ userId: 'user-123' });
@@ -107,68 +107,32 @@ describe('Email verification unit tests (CWB-87)', () => {
   });
 
   describe('resendVerification', () => {
-    it('no-ops if user is already verified', async () => {
-      const mockUserRepo = {
-        findById: vi.fn().mockResolvedValue({
-          id: 'user-123',
-          email: 'user@example.com',
-          emailVerifiedAt: new Date(),
-        }),
-      };
-      const mockOutboxRepo = {
-        enqueueAccountEmail: vi.fn(),
+    it('no-ops without kicking outbox when user is already verified, deleted, or locked', async () => {
+      const mockRepo = {
+        enqueueResendIfEligible: vi.fn().mockResolvedValue(false),
       };
       const mockOutboxService = {
         kick: vi.fn(),
       };
-      const mockDb = {
-        $transaction: vi.fn().mockImplementation((cb) => cb({})),
-      };
-      const service = new EmailVerificationService(
-        {} as any,
-        mockUserRepo as any,
-        mockOutboxService as any,
-        mockOutboxRepo as any,
-        mockDb as any,
-      );
+      const service = new EmailVerificationService(mockRepo as any, mockOutboxService as any);
 
-      await service.resendVerification('user-123');
-      expect(mockOutboxRepo.enqueueAccountEmail).not.toHaveBeenCalled();
+      await service.resendVerification('user-ineligible');
+      expect(mockRepo.enqueueResendIfEligible).toHaveBeenCalledWith('user-ineligible');
       expect(mockOutboxService.kick).not.toHaveBeenCalled();
     });
 
-    it('enqueues EMAIL_VERIFICATION outbox row and kicks worker if unverified', async () => {
-      const mockUserRepo = {
-        findById: vi.fn().mockResolvedValue({
-          id: 'user-123',
-          email: 'user@example.com',
-          emailVerifiedAt: null,
-        }),
-      };
-      const mockOutboxRepo = {
-        enqueueAccountEmail: vi.fn().mockResolvedValue(undefined),
+    it('kicks outbox worker when transaction locks unverified active unlocked user and enqueues email', async () => {
+      const mockRepo = {
+        enqueueResendIfEligible: vi.fn().mockResolvedValue(true),
       };
       const mockOutboxService = {
         kick: vi.fn(),
       };
-      const mockDb = {
-        $transaction: vi.fn().mockImplementation((cb) => cb({})),
-      };
-      const service = new EmailVerificationService(
-        {} as any,
-        mockUserRepo as any,
-        mockOutboxService as any,
-        mockOutboxRepo as any,
-        mockDb as any,
-      );
+      const service = new EmailVerificationService(mockRepo as any, mockOutboxService as any);
 
       await service.resendVerification('user-123');
-      expect(mockOutboxRepo.enqueueAccountEmail).toHaveBeenCalledWith(
-        expect.anything(),
-        'EMAIL_VERIFICATION',
-        'user-123',
-      );
-      expect(mockOutboxService.kick).toHaveBeenCalled();
+      expect(mockRepo.enqueueResendIfEligible).toHaveBeenCalledWith('user-123');
+      expect(mockOutboxService.kick).toHaveBeenCalledTimes(1);
     });
   });
 });

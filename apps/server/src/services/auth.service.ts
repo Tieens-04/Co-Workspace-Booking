@@ -4,7 +4,11 @@ import prisma from '../utils/prisma.util.js';
 import { AppError } from '../utils/error.util.js';
 import { hashPassword, comparePassword, compareDummyPassword } from '../utils/password.util.js';
 import { generateToken } from '../utils/jwt.util.js';
-import { UserRepository, userRepository } from '../repositories/user.repository.js';
+import {
+  accountLockedError,
+  UserRepository,
+  userRepository,
+} from '../repositories/user.repository.js';
 import { enqueueAccountEmail } from '../repositories/email-outbox.repository.js';
 import { emailOutboxService, EmailOutboxService } from './email-outbox.service.js';
 import { RegisterInput, LoginInput } from '../validators/auth.validator.js';
@@ -103,11 +107,7 @@ export class AuthService {
 
     // CWB-79: only revealed after the correct password, so the lock state does not leak.
     if (user.lockedAt) {
-      throw new AppError(
-        'ACCOUNT_LOCKED',
-        'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.',
-        403,
-      );
+      throw accountLockedError();
     }
 
     const accessToken = generateToken({

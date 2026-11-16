@@ -47,6 +47,7 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Reschedule User One',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     user1Id = user1.id;
@@ -58,6 +59,7 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
         passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
         fullName: 'Reschedule User Two',
         role: Role.CUSTOMER,
+        emailVerifiedAt: new Date(),
       },
     });
     user2Id = user2.id;
@@ -517,5 +519,49 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
       });
       expect(deliveredOutbox?.status).toBe('SENT');
     });
+  });
+
+  it('rejects reschedule when customer email is unverified under row lock with 403 EMAIL_NOT_VERIFIED (CWB-112)', async () => {
+    const unverified = await prisma.user.create({
+      data: {
+        email: `${testPrefix}_unverified@example.com`,
+        passwordHash: '$2a$10$abcdefghijklmnopqrstuu',
+        fullName: 'Unverified Reschedule Customer',
+        role: Role.CUSTOMER,
+        emailVerifiedAt: null,
+      },
+    });
+    const unverifiedToken = generateToken({ sub: unverified.id, role: Role.CUSTOMER });
+    const booking = await prisma.booking.create({
+      data: {
+        bookingCode: `CS-RES-UNVER-${randomUUID().slice(0, 6)}`,
+        userId: unverified.id,
+        roomId: room1Id,
+        startTime: new Date(makeIso(18, 0)),
+        endTime: new Date(makeIso(19, 0)),
+        totalAmount: new Prisma.Decimal('100000.00'),
+        status: BookingStatus.CONFIRMED,
+        paymentStatus: PaymentStatus.UNPAID,
+      },
+    });
+
+    try {
+      const res = await request(app)
+        .patch(`/api/v1/bookings/${booking.id}`)
+        .set('Authorization', `Bearer ${unverifiedToken}`)
+        .send({
+          startTime: makeIso(19, 0),
+          endTime: makeIso(20, 0),
+        });
+
+      expect(res.status).toBe(403);
+      expect(res.body.code).toBe('EMAIL_NOT_VERIFIED');
+
+      const stored = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+      expect(stored.startTime.toISOString()).toBe(makeIso(18, 0));
+    } finally {
+      await prisma.booking.deleteMany({ where: { id: booking.id } });
+      await prisma.user.deleteMany({ where: { id: unverified.id } });
+    }
   });
 });

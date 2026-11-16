@@ -1,6 +1,7 @@
 import { randomBytes, createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
+import { enqueueAccountEmail } from './email-outbox.repository.js';
 
 export const VERIFICATION_TOKEN_TTL_MINUTES = 30;
 
@@ -17,6 +18,8 @@ export type IssueVerificationTokenResult =
       userId: string;
     }
   | { status: 'USER_NOT_FOUND' }
+  | { status: 'ACCOUNT_DELETED' }
+  | { status: 'ACCOUNT_LOCKED' }
   | { status: 'ALREADY_VERIFIED' };
 
 export class EmailVerificationRepository {
@@ -28,12 +31,21 @@ export class EmailVerificationRepository {
   async issueToken(userId: string, now = new Date()): Promise<IssueVerificationTokenResult> {
     return prisma.$transaction(async (tx) => {
       const [user] = await tx.$queryRaw<
-        Array<{ id: string; email: string; full_name: string; email_verified_at: Date | null }>
+        Array<{
+          id: string;
+          email: string;
+          full_name: string;
+          email_verified_at: Date | null;
+          deleted_at: Date | null;
+          locked_at: Date | null;
+        }>
       >(
-        Prisma.sql`SELECT id, email, full_name, email_verified_at FROM users WHERE id = ${userId} FOR UPDATE`,
+        Prisma.sql`SELECT id, email, full_name, email_verified_at, deleted_at, locked_at FROM users WHERE id = ${userId} FOR UPDATE`,
       );
 
       if (!user) return { status: 'USER_NOT_FOUND' };
+      if (user.deleted_at) return { status: 'ACCOUNT_DELETED' };
+      if (user.locked_at) return { status: 'ACCOUNT_LOCKED' };
       if (user.email_verified_at) return { status: 'ALREADY_VERIFIED' };
 
       // Bounded cleanup: remove already-expired tokens for this user
@@ -80,11 +92,18 @@ export class EmailVerificationRepository {
       }
 
       // Lock user row first (consistent locking order: user -> token)
-      const [user] = await tx.$queryRaw<Array<{ id: string; email_verified_at: Date | null }>>(
-        Prisma.sql`SELECT id, email_verified_at FROM users WHERE id = ${token.userId} FOR UPDATE`,
+      const [user] = await tx.$queryRaw<
+        Array<{
+          id: string;
+          email_verified_at: Date | null;
+          deleted_at: Date | null;
+          locked_at: Date | null;
+        }>
+      >(
+        Prisma.sql`SELECT id, email_verified_at, deleted_at, locked_at FROM users WHERE id = ${token.userId} FOR UPDATE`,
       );
 
-      if (!user) return null;
+      if (!user || user.deleted_at || user.locked_at) return null;
 
       // Conditional claim
       const claimed = await tx.emailVerificationToken.updateMany({
@@ -107,6 +126,30 @@ export class EmailVerificationRepository {
       });
 
       return { userId: user.id };
+    });
+  }
+
+  /**
+   * Queues an EMAIL_VERIFICATION outbox row only if the user exists, is unverified, active,
+   * and unlocked under the user row-lock, serializing safely against deletion and admin lock.
+   */
+  async enqueueResendIfEligible(userId: string): Promise<boolean> {
+    return prisma.$transaction(async (tx) => {
+      const [user] = await tx.$queryRaw<
+        Array<{
+          email_verified_at: Date | null;
+          deleted_at: Date | null;
+          locked_at: Date | null;
+        }>
+      >(
+        Prisma.sql`SELECT email_verified_at, deleted_at, locked_at FROM users WHERE id = ${userId} FOR UPDATE`,
+      );
+      if (!user || user.email_verified_at || user.deleted_at || user.locked_at) {
+        return false;
+      }
+
+      await enqueueAccountEmail(tx, 'EMAIL_VERIFICATION', userId);
+      return true;
     });
   }
 }

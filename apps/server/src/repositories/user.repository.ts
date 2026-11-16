@@ -1,5 +1,16 @@
 import { BookingStatus, User, Role, Prisma } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
+import { AppError } from '../utils/error.util.js';
+
+export const accountLockedError = (): AppError =>
+  new AppError(
+    'ACCOUNT_LOCKED',
+    'Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quầy lễ tân để được hỗ trợ.',
+    403,
+  );
+
+export const accountDeletedError = (): AppError =>
+  new AppError('UNAUTHORIZED', 'Phiên đăng nhập không còn hợp lệ. Vui lòng đăng nhập lại', 401);
 
 export interface CreateUserData {
   email: string;
@@ -21,7 +32,11 @@ export interface BlockingBookingDto {
 export type AnonymizeAccountResult =
   | { status: 'ANONYMIZED' }
   | { status: 'NOT_FOUND' }
+  | { status: 'LOCKED' }
   | { status: 'HAS_ACTIVE_BOOKINGS'; bookings: BlockingBookingDto[] };
+
+export type GuardedUserUpdateResult =
+  { status: 'UPDATED'; user: User } | { status: 'NOT_FOUND' } | { status: 'LOCKED' };
 
 /** Non-identifying, unique replacement email (RFC 2606 `.invalid` never routes mail). */
 export const anonymizedEmail = (userId: string) => `deleted-${userId}@deleted.invalid`;
@@ -42,11 +57,27 @@ export class UserRepository {
     });
   }
 
+  private async updateActiveUnlockedUser(
+    id: string,
+    data: Prisma.UserUpdateInput,
+  ): Promise<GuardedUserUpdateResult> {
+    return prisma.$transaction(async (tx) => {
+      const [account] = await tx.$queryRaw<
+        Array<{ deleted_at: Date | null; locked_at: Date | null }>
+      >(Prisma.sql`SELECT deleted_at, locked_at FROM users WHERE id = ${id} FOR UPDATE`);
+      if (!account || account.deleted_at) return { status: 'NOT_FOUND' };
+      if (account.locked_at) return { status: 'LOCKED' };
+
+      const user = await tx.user.update({ where: { id }, data });
+      return { status: 'UPDATED', user };
+    });
+  }
+
   async updateProfile(
     id: string,
     data: { fullName?: string; phoneNumber?: string | null },
-  ): Promise<User> {
-    return prisma.user.update({ where: { id }, data });
+  ): Promise<GuardedUserUpdateResult> {
+    return this.updateActiveUnlockedUser(id, data);
   }
 
   /** Token version and lock state for the per-request session check (CWB-77, CWB-79). */
@@ -67,10 +98,12 @@ export class UserRepository {
    */
   async anonymizeAccount(id: string, now: Date): Promise<AnonymizeAccountResult> {
     return prisma.$transaction(async (tx) => {
-      const [account] = await tx.$queryRaw<Array<{ deleted_at: Date | null }>>(
-        Prisma.sql`SELECT deleted_at FROM users WHERE id = ${id} FOR UPDATE`,
-      );
+      const [account] = await tx.$queryRaw<
+        Array<{ deleted_at: Date | null; locked_at: Date | null }>
+      >(Prisma.sql`SELECT deleted_at, locked_at FROM users WHERE id = ${id} FOR UPDATE`);
       if (!account || account.deleted_at) return { status: 'NOT_FOUND' };
+      // CWB-112: a locked account cannot erase itself to release and re-register a banned email.
+      if (account.locked_at) return { status: 'LOCKED' };
 
       // Upcoming or still running: the customer must cancel them first (or wait for them to end).
       const active = await tx.booking.findMany({
@@ -121,18 +154,21 @@ export class UserRepository {
     });
   }
 
-  /** Stores a new password hash and revokes every token issued before it in one statement. */
-  async updatePasswordHashAndRevokeSessions(id: string, passwordHash: string): Promise<User> {
-    return prisma.user.update({
-      where: { id },
-      data: { passwordHash, tokenVersion: { increment: 1 } },
+  /** Stores a new password hash and revokes every token issued before it under row lock. */
+  async updatePasswordHashAndRevokeSessions(
+    id: string,
+    passwordHash: string,
+  ): Promise<GuardedUserUpdateResult> {
+    return this.updateActiveUnlockedUser(id, {
+      passwordHash,
+      tokenVersion: { increment: 1 },
     });
   }
 
-  /** Revokes every token issued so far; returns false when the account no longer exists. */
+  /** Revokes every token issued so far; returns false when the account no longer exists or is locked. */
   async revokeSessions(id: string): Promise<boolean> {
     const result = await prisma.user.updateMany({
-      where: { id },
+      where: { id, deletedAt: null, lockedAt: null },
       data: { tokenVersion: { increment: 1 } },
     });
     return result.count === 1;
