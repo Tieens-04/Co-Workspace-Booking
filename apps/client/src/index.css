@@ -52,6 +52,9 @@
   --status-noshow-fg: #8a3b0b;
   --status-noshow-bg: #fff6e5;
   --status-noshow-border: #f3d5a2;
+  --status-warning-fg: #92400e;
+  --status-warning-bg: #fef3c7;
+  --status-warning-border: #f3c969;
   --status-unpaid-fg: #3d403a;
   --status-unpaid-bg: #eeebe5;
   --status-unpaid-border: #8a8e84;
@@ -103,6 +106,9 @@
   --status-noshow-fg: #fdc66b;
   --status-noshow-bg: #33240b;
   --status-noshow-border: #5a4218;
+  --status-warning-fg: #f7c968;
+  --status-warning-bg: #33250c;
+  --status-warning-border: #634818;
   --status-unpaid-fg: #d6d4ce;
   --status-unpaid-bg: #232722;
   --status-unpaid-border: #6f746b;
@@ -159,6 +165,9 @@
   --color-status-noshow: var(--status-noshow-fg);
   --color-status-noshow-bg: var(--status-noshow-bg);
   --color-status-noshow-border: var(--status-noshow-border);
+  --color-status-warning: var(--status-warning-fg);
+  --color-status-warning-bg: var(--status-warning-bg);
+  --color-status-warning-border: var(--status-warning-border);
   --color-status-unpaid: var(--status-unpaid-fg);
   --color-status-unpaid-bg: var(--status-unpaid-bg);
   --color-status-unpaid-border: var(--status-unpaid-border);

@@ -61,7 +61,7 @@ export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date 
             <li className="flex items-center gap-1.5">
               <span
                 aria-hidden="true"
-                className={`${LEGEND_SWATCH} border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950/60`}
+                className={`${LEGEND_SWATCH} border-status-warning-border bg-status-warning-bg`}
               />
               Đóng cửa
             </li>
@@ -185,7 +185,7 @@ export const RoomOverviewGrid: React.FC<RoomOverviewGridProps> = ({ rooms, date 
                               isBooked
                                 ? 'bg-primary'
                                 : isClosed
-                                  ? 'border border-amber-300 bg-amber-100 dark:border-amber-700 dark:bg-amber-950/60'
+                                  ? 'border border-status-warning-border bg-status-warning-bg'
                                   : 'bg-muted',
                             )}
                           />

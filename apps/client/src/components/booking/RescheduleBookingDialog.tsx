@@ -579,11 +579,11 @@ export const RescheduleBookingDialog: React.FC<RescheduleBookingDialogProps> = (
                     {priceCalculation.difference === 0 ? (
                       'Không đổi (0đ)'
                     ) : priceCalculation.difference > 0 ? (
-                      <span className="text-amber-600 font-semibold">
+                      <span className="font-semibold text-status-warning">
                         + {formatCurrency(priceCalculation.difference)}
                       </span>
                     ) : (
-                      <span className="text-emerald-600 font-semibold">
+                      <span className="font-semibold text-status-success">
                         - {formatCurrency(Math.abs(priceCalculation.difference))}
                       </span>
                     )}

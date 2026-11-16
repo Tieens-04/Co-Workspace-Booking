@@ -34,7 +34,7 @@ const SLOT_STATE_CLASSES: Record<SlotState, string> = {
   selected: 'border-primary bg-primary text-primary-foreground',
   booked: 'border-border bg-muted bg-hatch text-booked-foreground line-through',
   closed:
-    'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 text-amber-900 dark:text-amber-200 line-through opacity-80',
+    'border-status-warning-border bg-status-warning-bg text-status-warning line-through opacity-80',
   past: 'border-border bg-transparent text-muted-foreground opacity-40',
 };
 
@@ -42,7 +42,7 @@ const SWATCH_CLASSES: Record<SlotState, string> = {
   available: 'border-input bg-card',
   selected: 'border-primary bg-primary',
   booked: 'border-border bg-muted bg-hatch',
-  closed: 'border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40',
+  closed: 'border-status-warning-border bg-status-warning-bg',
   past: 'border-border bg-transparent opacity-40',
 };
 
@@ -169,9 +169,7 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
 
     if (slot.status === 'CLOSED') {
       setGridError(
-        slot.reason
-          ? `Khung giờ này đóng cửa: ${slot.reason}`
-          : 'Khung giờ này đang đóng cửa.',
+        slot.reason ? `Khung giờ này đóng cửa: ${slot.reason}` : 'Khung giờ này đang đóng cửa.',
       );
       return;
     }

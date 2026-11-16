@@ -64,13 +64,14 @@ export const VerifyEmailPage: React.FC = () => {
         <Card className="p-6 sm:p-8 shadow-soft">
           {isVerified ? (
             <div className="grid gap-5 text-center" data-testid="verify-email-success">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-950 text-emerald-600 dark:text-emerald-400">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-status-success-border bg-status-success-bg text-status-success">
                 <CheckCircle2 className="size-6" aria-hidden="true" />
               </div>
               <div className="grid gap-1.5">
                 <h2 className="text-lg font-semibold">Xác thực email thành công!</h2>
                 <p className="text-sm text-muted-foreground">
-                  Địa chỉ email của bạn đã được xác nhận. Giờ đây bạn đã có thể bắt đầu đặt phòng làm việc tại Co-Space.
+                  Địa chỉ email của bạn đã được xác nhận. Giờ đây bạn đã có thể bắt đầu đặt phòng
+                  làm việc tại Co-Space.
                 </p>
               </div>
               <div className="grid gap-2 pt-2">
@@ -90,7 +91,7 @@ export const VerifyEmailPage: React.FC = () => {
             </div>
           ) : !tokenLooksValid ? (
             <div className="grid gap-5 text-center" data-testid="verify-email-invalid">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-red-100 dark:bg-red-950 text-red-600 dark:text-red-400">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-status-cancelled-border bg-status-cancelled-bg text-status-cancelled">
                 <CircleAlert className="size-6" aria-hidden="true" />
               </div>
               <div className="grid gap-1.5">
@@ -116,7 +117,7 @@ export const VerifyEmailPage: React.FC = () => {
             </div>
           ) : (
             <div className="grid gap-5 text-center" data-testid="verify-email-confirm">
-              <div className="mx-auto flex size-12 items-center justify-center rounded-full bg-blue-100 dark:bg-blue-950 text-blue-600 dark:text-blue-400">
+              <div className="mx-auto flex size-12 items-center justify-center rounded-full border border-status-confirmed-border bg-status-confirmed-bg text-status-confirmed">
                 <MailCheck className="size-6" aria-hidden="true" />
               </div>
 
@@ -125,7 +126,8 @@ export const VerifyEmailPage: React.FC = () => {
               <div className="grid gap-1.5">
                 <h2 className="text-lg font-semibold">Hoàn tất xác thực email</h2>
                 <p className="text-sm text-muted-foreground">
-                  Nhấn nút bên dưới để hoàn tất việc xác thực địa chỉ email và kích hoạt đầy đủ tính năng đặt phòng.
+                  Nhấn nút bên dưới để hoàn tất việc xác thực địa chỉ email và kích hoạt đầy đủ tính
+                  năng đặt phòng.
                 </p>
               </div>
 
