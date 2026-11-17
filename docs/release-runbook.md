@@ -87,7 +87,7 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
    docker compose ps          # server/client phải ở trạng thái healthy
    ```
 
-   Container `server` tự chạy `npm run db:deploy` (chỉ `prisma migrate deploy`) trước khi khởi động; **không** chạy seed demo.
+   Container `server` tự chạy `npm run db:deploy` (chỉ `prisma migrate deploy`) trước khi khởi động; **không** chạy seed demo. Biến `DB_USER`, `DB_PASSWORD` và `DB_NAME` được tự động mã hóa URL khi dựng `DATABASE_URL` cho migration, runtime và `docker compose exec` (nếu `DB_PASSWORD`/`DB_ROOT_PASSWORD` chứa `#`, `$` hoặc khoảng trắng trong `.env`, hãy bọc trong dấu nháy đơn `'...'`).
 
 4. **Lần triển khai đầu:** export `ADMIN_BOOTSTRAP_*` trong shell rồi tạo admin bằng `docker compose exec -e ADMIN_BOOTSTRAP_EMAIL -e ADMIN_BOOTSTRAP_PASSWORD -e ADMIN_BOOTSTRAP_FULL_NAME server npm run admin:bootstrap` (thư mục làm việc của container đã là `apps/server`, thêm `--workspace` sẽ lỗi `No workspaces found`; `-e TÊN` không kèm giá trị để mật khẩu không nằm trên dòng lệnh) (xem README, CWB-59), sau đó gỡ các biến này.
 5. **Smoke test sau triển khai** (dùng tài khoản thật của môi trường, không dùng dữ liệu demo):

@@ -106,8 +106,11 @@ Backend tự đọc `apps/server/.env`; không tự đọc `.env.production`. V�
 ```bash
 cp .env.production.example .env
 # Điền cấu hình và thay các giá trị mẫu trong .env trước khi chạy.
+# Nếu DB_PASSWORD / DB_ROOT_PASSWORD chứa #, $ hoặc khoảng trắng, hãy bọc trong dấu nháy đơn ('...').
 docker compose up -d --build
 ```
+
+Compose truyền các biến `DB_HOST`, `DB_PORT` (`3306` nội bộ), `DB_NAME`, `DB_USER`, `DB_PASSWORD` vào `server` và tự động mã hóa URL thành `DATABASE_URL` cho cả migration, runtime lẫn các lệnh `docker compose exec` (hỗ trợ an toàn mật khẩu chứa `@`, `#`, `:`, `/`, `?`, `%`).
 
 Truy cập `http://localhost` (hoặc cổng `CLIENT_PORT` đã cấu hình). API ở `/api/v1`; liveness ở `/health`, readiness (kiểm tra DB, trả `503` khi DB mất kết nối hoặc đang dừng) ở `/api/v1/health` và được dùng cho healthcheck của container. Backend không công khai cổng `5000`; MySQL chỉ bind `127.0.0.1`. Khi dừng (`SIGTERM`), backend dừng worker email, chờ request và lượt gửi email đang chạy trong `SHUTDOWN_TIMEOUT_MS` (mặc định 20000) rồi ngắt kết nối DB. Quy trình HTTPS, sao lưu trước migration, rollback/khôi phục và bằng chứng phát hành: [docs/release-runbook.md](docs/release-runbook.md). Migrations được áp dụng tự động khi container backend khởi động qua `npm run db:deploy`, dùng Prisma CLI đã khóa trong dependencies của workspace server. Prisma CLI và client được npm hoist về dependencies ở gốc và được mang theo trong image; lệnh khởi động không tự tải Prisma phiên bản mới.
 
