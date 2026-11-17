@@ -214,6 +214,7 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
               startTime: { lt: dayEnd },
               endTime: { gt: dayStart },
             },
+            orderBy: [{ startTime: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
             select: {
               roomId: true,
               startTime: true,
@@ -233,15 +234,9 @@ export class AdminDashboardRepository implements AdminDashboardRepositoryContrac
 
       const roomClosures = closures.filter((c) => c.roomId === null || c.roomId === room.id);
 
-      const rawSlots = isMaintenance
+      const slots = isMaintenance
         ? []
         : generateAvailabilitySlots(dayStart, dayEnd, blockingIntervals, roomClosures);
-
-      const slots = rawSlots.map((s) => ({
-        startTime: s.startTime,
-        endTime: s.endTime,
-        status: s.status,
-      }));
 
       const bookings = room.bookings.map((b) => ({
         id: b.id,

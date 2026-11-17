@@ -271,18 +271,111 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
   });
 
   describe('4. AC 2: Availability Endpoint Reflects CLOSED with Reason', () => {
-    it('returns CLOSED for slots covered by closure in GET /rooms/:id/availability', async () => {
-      const res = await request(app).get(`/api/v1/rooms/${testRoomAId}/availability?date=${day1}`);
-      expect(res.status).toBe(200);
-      expect(res.body.success).toBe(true);
+    it('prioritizes BOOKED over CLOSED while keeping reason on overlapping slots in GET /rooms/:id/availability', async () => {
+      const availDate = vnFutureDate(24);
+      let availRoomId: string | undefined;
 
-      const slots = res.body.data.slots;
-      const closedSlots = slots.filter(
-        (s: { status: string; reason?: string }) => s.status === 'CLOSED',
-      );
-      // From 02:00 UTC to 06:00 UTC = 4 hours = 8 half-hour slots
-      expect(closedSlots.length).toBe(8);
-      expect(closedSlots[0].reason).toContain('Sửa phòng đột xuất');
+      try {
+        const availRoom = await prisma.room.create({
+          data: {
+            name: `${testPrefix}_AvailRoom`,
+            capacity: 6,
+            pricePerHour: new Prisma.Decimal('150.00'),
+            status: RoomStatus.AVAILABLE,
+          },
+        });
+        availRoomId = availRoom.id;
+
+        await prisma.booking.createMany({
+          data: [
+            {
+              bookingCode: `CS-${compactDate(availDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              userId: testUserId,
+              roomId: availRoomId,
+              startTime: new Date(`${availDate}T00:00:00.000Z`),
+              endTime: new Date(`${availDate}T02:00:00.000Z`),
+              totalAmount: new Prisma.Decimal('300.00'),
+              status: BookingStatus.CONFIRMED,
+              paymentStatus: PaymentStatus.UNPAID,
+            },
+            {
+              bookingCode: `CS-${compactDate(availDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              userId: testUserId,
+              roomId: availRoomId,
+              startTime: new Date(`${availDate}T03:00:00.000Z`),
+              endTime: new Date(`${availDate}T05:00:00.000Z`),
+              totalAmount: new Prisma.Decimal('300.00'),
+              status: BookingStatus.CONFIRMED,
+              paymentStatus: PaymentStatus.UNPAID,
+            },
+          ],
+        });
+
+        const createClosureRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: availRoomId,
+            startTime: `${availDate}T02:00:00.000Z`,
+            endTime: `${availDate}T06:00:00.000Z`,
+            reason: `${testPrefix} Sửa phòng đột xuất`,
+            acknowledgeConflictingBookings: true,
+          });
+        expect(createClosureRes.status).toBe(201);
+
+        const res = await request(app).get(
+          `/api/v1/rooms/${availRoomId}/availability?date=${availDate}`,
+        );
+        expect(res.status).toBe(200);
+        expect(res.body.success).toBe(true);
+
+        const slots = res.body.data.slots as Array<{
+          startTime: string;
+          endTime: string;
+          status: string;
+          reason?: string;
+        }>;
+        const closedSlots = slots.filter((s) => s.status === 'CLOSED');
+        const bookedSlots = slots.filter((s) => s.status === 'BOOKED');
+
+        // Closure is 02:00-06:00 UTC (8 slots), overlapping booking is 03:00-05:00 UTC (4 slots)
+        expect(closedSlots).toHaveLength(4);
+        expect(closedSlots.map((s) => s.startTime)).toEqual([
+          `${availDate}T02:00:00.000Z`,
+          `${availDate}T02:30:00.000Z`,
+          `${availDate}T05:00:00.000Z`,
+          `${availDate}T05:30:00.000Z`,
+        ]);
+        for (const s of closedSlots) {
+          expect(s.reason).toContain('Sửa phòng đột xuất');
+        }
+
+        // 4 slots outside closure (00:00-02:00) + 4 slots overlapping closure (03:00-05:00)
+        expect(bookedSlots).toHaveLength(8);
+        const outsideBookedSlots = bookedSlots.filter(
+          (s) => s.startTime < `${availDate}T02:00:00.000Z`,
+        );
+        expect(outsideBookedSlots).toHaveLength(4);
+        for (const s of outsideBookedSlots) {
+          expect(s.reason).toBeUndefined();
+        }
+
+        const overlappedBookedSlots = bookedSlots.filter(
+          (s) =>
+            s.startTime >= `${availDate}T03:00:00.000Z` &&
+            s.startTime < `${availDate}T05:00:00.000Z`,
+        );
+        expect(overlappedBookedSlots).toHaveLength(4);
+        for (const s of overlappedBookedSlots) {
+          expect(s.reason).toContain('Sửa phòng đột xuất');
+        }
+      } finally {
+        if (availRoomId) {
+          await prisma.closure.deleteMany({ where: { roomId: availRoomId } });
+          await prisma.booking.deleteMany({ where: { roomId: availRoomId } });
+          await prisma.room.deleteMany({ where: { id: availRoomId } });
+        }
+      }
     });
   });
 
@@ -590,19 +683,275 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       ]);
     });
 
-    it('includes CLOSED slots on GET /api/v1/admin/dashboard/schedule when room or facility is closed', async () => {
-      // On day1, testRoomAId has a closure from 02:00 to 06:00 UTC (09:00-13:00 VN)
-      const res = await request(app)
-        .get(`/api/v1/admin/dashboard/schedule?date=${day1}&limit=50`)
-        .set('Authorization', `Bearer ${adminToken}`);
+    it('prioritizes BOOKED over CLOSED and preserves closure reason on GET /api/v1/admin/dashboard/schedule', async () => {
+      const schedDate = vnFutureDate(25);
+      let schedRoomId: string | undefined;
+      let roomBBookingId: string | undefined;
+      const createdClosureIds: string[] = [];
 
-      expect(res.status).toBe(200);
-      const roomASchedule = res.body.data.rooms.find((r: { id: string }) => r.id === testRoomAId);
-      expect(roomASchedule).toBeDefined();
-      const closedSlots = roomASchedule.slots.filter(
-        (s: { status: string }) => s.status === 'CLOSED',
-      );
-      expect(closedSlots).toHaveLength(8);
+      try {
+        const schedRoom = await prisma.room.create({
+          data: {
+            name: `0000_${testPrefix}_SchedRoom`,
+            capacity: 8,
+            pricePerHour: new Prisma.Decimal('180.00'),
+            status: RoomStatus.AVAILABLE,
+          },
+        });
+        schedRoomId = schedRoom.id;
+
+        await prisma.booking.createMany({
+          data: [
+            {
+              bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              userId: testUserId,
+              roomId: schedRoomId,
+              startTime: new Date(`${schedDate}T00:00:00.000Z`),
+              endTime: new Date(`${schedDate}T02:00:00.000Z`),
+              totalAmount: new Prisma.Decimal('360.00'),
+              status: BookingStatus.CONFIRMED,
+              paymentStatus: PaymentStatus.UNPAID,
+            },
+            {
+              bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              userId: testUserId,
+              roomId: schedRoomId,
+              startTime: new Date(`${schedDate}T03:00:00.000Z`),
+              endTime: new Date(`${schedDate}T05:00:00.000Z`),
+              totalAmount: new Prisma.Decimal('360.00'),
+              status: BookingStatus.CONFIRMED,
+              paymentStatus: PaymentStatus.UNPAID,
+            },
+            {
+              bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              userId: testUserId,
+              roomId: schedRoomId,
+              startTime: new Date(`${schedDate}T05:00:00.000Z`),
+              endTime: new Date(`${schedDate}T06:00:00.000Z`),
+              totalAmount: new Prisma.Decimal('180.00'),
+              status: BookingStatus.COMPLETED,
+              paymentStatus: PaymentStatus.PAID,
+            },
+          ],
+        });
+
+        const roomBBooking = await prisma.booking.create({
+          data: {
+            bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+            userId: testUserId,
+            roomId: testRoomBId,
+            startTime: new Date(`${schedDate}T04:00:00.000Z`),
+            endTime: new Date(`${schedDate}T05:00:00.000Z`),
+            totalAmount: new Prisma.Decimal('200.00'),
+            status: BookingStatus.CONFIRMED,
+            paymentStatus: PaymentStatus.UNPAID,
+          },
+        });
+        roomBBookingId = roomBBooking.id;
+
+        // Earlier room-specific closure [02:00, 07:00)Z overlaps later facility-wide closure [03:30, 06:30)Z
+        const roomClosureRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: schedRoomId,
+            startTime: `${schedDate}T02:00:00.000Z`,
+            endTime: `${schedDate}T07:00:00.000Z`,
+            reason: `${testPrefix} Sửa phòng đột xuất`,
+            acknowledgeConflictingBookings: true,
+          });
+        expect(roomClosureRes.status).toBe(201);
+        createdClosureIds.push(roomClosureRes.body.data.id as string);
+
+        const facilityClosureRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: null,
+            startTime: `${schedDate}T03:30:00.000Z`,
+            endTime: `${schedDate}T06:30:00.000Z`,
+            reason: `${testPrefix} Đóng cửa toàn cơ sở`,
+            acknowledgeConflictingBookings: true,
+          });
+        expect(facilityClosureRes.status).toBe(201);
+        createdClosureIds.push(facilityClosureRes.body.data.id as string);
+
+        type ScheduleRoomPayload = {
+          id: string;
+          slots: Array<{
+            startTime: string;
+            endTime: string;
+            status: string;
+            reason?: string;
+          }>;
+          bookings: Array<{
+            startTime: string;
+            endTime: string;
+            status: string;
+          }>;
+        };
+
+        let schedRoomSchedule: ScheduleRoomPayload | undefined;
+        let roomBSchedule: ScheduleRoomPayload | undefined;
+        let page = 1;
+        let totalPages = 1;
+
+        do {
+          const res = await request(app)
+            .get(`/api/v1/admin/dashboard/schedule?date=${schedDate}&page=${page}&limit=50`)
+            .set('Authorization', `Bearer ${adminToken}`);
+          expect(res.status).toBe(200);
+
+          const rooms = res.body.data.rooms as ScheduleRoomPayload[];
+          schedRoomSchedule ??= rooms.find((r) => r.id === schedRoomId);
+          roomBSchedule ??= rooms.find((r) => r.id === testRoomBId);
+          totalPages = res.body.data.pagination.totalPages as number;
+          page += 1;
+        } while ((!schedRoomSchedule || !roomBSchedule) && page <= totalPages);
+
+        expect(schedRoomSchedule).toBeDefined();
+        expect(roomBSchedule).toBeDefined();
+
+        const schedSlots = schedRoomSchedule!.slots;
+        const closedSlots = schedSlots.filter((s) => s.status === 'CLOSED');
+        expect(closedSlots).toHaveLength(4);
+        expect(closedSlots.map((s) => s.startTime)).toEqual([
+          `${schedDate}T02:00:00.000Z`,
+          `${schedDate}T02:30:00.000Z`,
+          `${schedDate}T06:00:00.000Z`,
+          `${schedDate}T06:30:00.000Z`,
+        ]);
+        for (const s of closedSlots) {
+          // Earlier closure [02:00, 07:00)Z wins deterministically over later facility closure [03:30, 06:30)Z
+          expect(s.reason).toContain('Sửa phòng đột xuất');
+        }
+
+        const overlappedBookedSlots = schedSlots.filter(
+          (s) =>
+            s.startTime >= `${schedDate}T03:00:00.000Z` &&
+            s.startTime < `${schedDate}T06:00:00.000Z`,
+        );
+        expect(overlappedBookedSlots).toHaveLength(6); // 4 CONFIRMED + 2 COMPLETED
+        for (const s of overlappedBookedSlots) {
+          expect(s.status).toBe('BOOKED');
+          expect(s.reason).toContain('Sửa phòng đột xuất');
+        }
+
+        const outsideBookedSlots = schedSlots.filter(
+          (s) =>
+            s.startTime >= `${schedDate}T00:00:00.000Z` &&
+            s.startTime < `${schedDate}T02:00:00.000Z`,
+        );
+        expect(outsideBookedSlots).toHaveLength(4);
+        for (const s of outsideBookedSlots) {
+          expect(s.status).toBe('BOOKED');
+          expect(s.reason).toBeUndefined();
+        }
+
+        expect(schedRoomSchedule!.bookings).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              startTime: `${schedDate}T03:00:00.000Z`,
+              endTime: `${schedDate}T05:00:00.000Z`,
+              status: BookingStatus.CONFIRMED,
+            }),
+            expect.objectContaining({
+              startTime: `${schedDate}T05:00:00.000Z`,
+              endTime: `${schedDate}T06:00:00.000Z`,
+              status: BookingStatus.COMPLETED,
+            }),
+          ]),
+        );
+
+        // Facility-wide closure (roomId: null) on testRoomBId prioritizes BOOKED while preserving reason
+        const roomBClosedSlots = roomBSchedule!.slots.filter((s) => s.status === 'CLOSED');
+        expect(roomBClosedSlots.map((s) => s.startTime)).toEqual([
+          `${schedDate}T03:30:00.000Z`,
+          `${schedDate}T05:00:00.000Z`,
+          `${schedDate}T05:30:00.000Z`,
+          `${schedDate}T06:00:00.000Z`,
+        ]);
+        for (const s of roomBClosedSlots) {
+          expect(s.reason).toContain('Đóng cửa toàn cơ sở');
+        }
+
+        const roomBBookedSlots = roomBSchedule!.slots.filter((s) => s.status === 'BOOKED');
+        expect(roomBBookedSlots.map((s) => s.startTime)).toEqual([
+          `${schedDate}T04:00:00.000Z`,
+          `${schedDate}T04:30:00.000Z`,
+        ]);
+        for (const s of roomBBookedSlots) {
+          expect(s.reason).toContain('Đóng cửa toàn cơ sở');
+        }
+      } finally {
+        if (createdClosureIds.length > 0) {
+          await prisma.closure.deleteMany({ where: { id: { in: createdClosureIds } } });
+        }
+        if (roomBBookingId) {
+          await prisma.booking.deleteMany({ where: { id: roomBBookingId } });
+        }
+        if (schedRoomId) {
+          await prisma.booking.deleteMany({ where: { roomId: schedRoomId } });
+          await prisma.room.deleteMany({ where: { id: schedRoomId } });
+        }
+      }
+    });
+
+    it('returns empty slots on trailing MAINTENANCE-only schedule pages while preserving catalog summary counts (CWB-116)', async () => {
+      const maintDate = vnFutureDate(25);
+      const createdMaintIds: string[] = [];
+
+      try {
+        const beforeTotal = await prisma.room.count({
+          where: { status: { not: RoomStatus.ARCHIVED } },
+        });
+        const extraCount = 2 + (beforeTotal % 2); // Guarantees even total so last page with limit=2 has 2 MAINTENANCE rooms
+
+        for (let i = 1; i <= extraCount; i++) {
+          const maintRoom = await prisma.room.create({
+            data: {
+              name: `zzzzzz_${testPrefix}_Maint_${i}`,
+              capacity: 6,
+              pricePerHour: new Prisma.Decimal('120.00'),
+              status: RoomStatus.MAINTENANCE,
+            },
+          });
+          createdMaintIds.push(maintRoom.id);
+        }
+
+        const expectedTotal = beforeTotal + extraCount;
+        const lastPage = expectedTotal / 2;
+
+        const res = await request(app)
+          .get(`/api/v1/admin/dashboard/schedule?date=${maintDate}&page=${lastPage}&limit=2`)
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.pagination).toEqual({
+          page: lastPage,
+          limit: 2,
+          total: expectedTotal,
+          totalPages: lastPage,
+        });
+        expect(res.body.data.summary.maintenanceRooms).toBeGreaterThanOrEqual(extraCount);
+
+        const pageRooms = res.body.data.rooms as Array<{
+          id: string;
+          status: string;
+          slots: unknown[];
+          bookings: unknown[];
+        }>;
+        expect(pageRooms).toHaveLength(2);
+        for (const room of pageRooms) {
+          expect(room.status).toBe(RoomStatus.MAINTENANCE);
+          expect(room.slots).toEqual([]);
+          expect(room.bookings).toEqual([]);
+        }
+      } finally {
+        if (createdMaintIds.length > 0) {
+          await prisma.room.deleteMany({ where: { id: { in: createdMaintIds } } });
+        }
+      }
     });
 
     it('serializes concurrent closure creation and customer booking on the same room so both cannot succeed without conflict warning', async () => {
