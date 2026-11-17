@@ -48,6 +48,33 @@ export function isWithinOperatingHours(startUtc: Date, endUtc: Date): boolean {
 }
 
 /**
+ * Generates the 30 contiguous 30-minute operating-hour slots (07:00-22:00 Asia/Ho_Chi_Minh)
+ * for a given YYYY-MM-DD date string, falling back safely to today in Vietnam if invalid.
+ */
+export function buildOperatingHourSlots(
+  dateStr: string,
+): Array<{ startTime: string; endTime: string }> {
+  const dayStart =
+    parseVnDateTimeLocalToUtc(`${dateStr}T00:00`) ??
+    parseVnDateTimeLocalToUtc(`${getVietnamTodayString()}T00:00`);
+  if (!dayStart) return [];
+
+  const slots: Array<{ startTime: string; endTime: string }> = [];
+  const slotsPerDay = DAY_MS / SLOT_DURATION_MS;
+  for (let i = 0; i < slotsPerDay; i++) {
+    const slotStart = new Date(dayStart.getTime() + i * SLOT_DURATION_MS);
+    const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MS);
+    if (isWithinOperatingHours(slotStart, slotEnd)) {
+      slots.push({
+        startTime: slotStart.toISOString(),
+        endTime: slotEnd.toISOString(),
+      });
+    }
+  }
+  return slots;
+}
+
+/**
  * Returns a string YYYY-MM-DD for the current date in Vietnam (+07:00).
  */
 export function getVietnamTodayString(refDate = new Date()): string {

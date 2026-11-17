@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, RotateCw } from 'lucide-react';
 import { BookingResult, RescheduleBookingPayload } from '../../types/booking';
-import { RoomListItem } from '../../types/room';
+import { RoomAvailabilitySlot, RoomListItem } from '../../types/room';
 import { bookingApi } from '../../services/booking.api';
 import { roomApi } from '../../services/room.api';
 import { useRoomAvailability } from '../../hooks/useRoomAvailability';
@@ -211,8 +211,10 @@ export const RescheduleBookingDialog: React.FC<RescheduleBookingDialogProps> = (
   );
 
   // Adjust slots: slots belonging to the current booking are made available only on the same room
-  // so that the customer can adjust or shift their own time without conflicting with themselves.
-  const adjustedSlots = useMemo(() => {
+  // so that the customer can adjust or shift their own time without conflicting with themselves,
+  // unless an active Closure also covers that slot (`slot.reason !== undefined`), in which case
+  // removing the current booking reveals the underlying CLOSED slot.
+  const adjustedSlots = useMemo<RoomAvailabilitySlot[]>(() => {
     const rawSlots = availability.slotsByDate[viewDate] || [];
     if (selectedRoomId !== booking.room.id) {
       return rawSlots;
@@ -220,11 +222,14 @@ export const RescheduleBookingDialog: React.FC<RescheduleBookingDialogProps> = (
     const currentStartMs = new Date(booking.startTime).getTime();
     const currentEndMs = new Date(booking.endTime).getTime();
 
-    return rawSlots.map((slot) => {
+    return rawSlots.map((slot): RoomAvailabilitySlot => {
       const slotStartMs = new Date(slot.startTime).getTime();
       const slotEndMs = new Date(slot.endTime).getTime();
       if (slot.status === 'BOOKED' && slotStartMs >= currentStartMs && slotEndMs <= currentEndMs) {
-        return { ...slot, available: true, status: 'AVAILABLE' as const };
+        return {
+          ...slot,
+          status: slot.reason !== undefined ? 'CLOSED' : 'AVAILABLE',
+        };
       }
       return slot;
     });

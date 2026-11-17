@@ -9,7 +9,10 @@ import {
   generateAvailabilitySlots,
   SLOTS_PER_DAY,
 } from '../utils/room-availability.util.js';
-import { isValidCalendarDate, getRoomAvailabilityQuerySchema } from '../validators/room.validator.js';
+import {
+  isValidCalendarDate,
+  getRoomAvailabilityQuerySchema,
+} from '../validators/room.validator.js';
 
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
 
@@ -79,7 +82,9 @@ describe('Room Availability Unit & API Tests', () => {
 
     it('Zod query schema rejects unexpected keys or missing date', () => {
       expect(getRoomAvailabilityQuerySchema.safeParse({}).success).toBe(false);
-      expect(getRoomAvailabilityQuerySchema.safeParse({ date: '2026-09-21', extra: 'foo' }).success).toBe(false);
+      expect(
+        getRoomAvailabilityQuerySchema.safeParse({ date: '2026-09-21', extra: 'foo' }).success,
+      ).toBe(false);
       expect(getRoomAvailabilityQuerySchema.safeParse({ date: '2026-02-29' }).success).toBe(false);
       expect(getRoomAvailabilityQuerySchema.safeParse({ date: '2026-09-21' }).success).toBe(true);
     });
@@ -134,7 +139,7 @@ describe('Room Availability Unit & API Tests', () => {
 
   describe('Interval Overlap Semantics (existing.start < slot.end AND existing.end > slot.start)', () => {
     const slotStart = new Date('2026-09-21T03:00:00.000Z'); // 10:00 VN
-    const slotEnd = new Date('2026-09-21T03:30:00.000Z');   // 10:30 VN
+    const slotEnd = new Date('2026-09-21T03:30:00.000Z'); // 10:30 VN
 
     it('partial overlap: booking starts before and ends inside slot -> OVERLAP', () => {
       const bStart = new Date('2026-09-21T02:45:00.000Z');
@@ -320,7 +325,7 @@ describe('Room Availability Unit & API Tests', () => {
       expect(slotBefore?.status).toBe('AVAILABLE');
     });
 
-    it('closure takes precedence over booking when overlapping', () => {
+    it('booking takes precedence over closure when overlapping while preserving closure reason (CWB-116)', () => {
       const bookingStart = new Date('2026-09-21T02:00:00.000Z');
       const bookingEnd = new Date('2026-09-21T04:00:00.000Z');
       const closureStart = new Date('2026-09-21T03:00:00.000Z');
@@ -333,18 +338,63 @@ describe('Room Availability Unit & API Tests', () => {
         [{ startTime: closureStart, endTime: closureEnd, reason: 'Nghỉ đột xuất' }],
       );
 
-      const bookedSlot = slots.find((s) => s.startTime === '2026-09-21T02:00:00.000Z');
-      expect(bookedSlot?.status).toBe('BOOKED');
+      const bookedOnlySlot = slots.find((s) => s.startTime === '2026-09-21T02:00:00.000Z');
+      expect(bookedOnlySlot?.status).toBe('BOOKED');
+      expect(bookedOnlySlot?.reason).toBeUndefined();
 
-      const closedSlot = slots.find((s) => s.startTime === '2026-09-21T03:00:00.000Z');
-      expect(closedSlot?.status).toBe('CLOSED');
-      expect(closedSlot?.reason).toBe('Nghỉ đột xuất');
+      const overlappedSlot = slots.find((s) => s.startTime === '2026-09-21T03:00:00.000Z');
+      expect(overlappedSlot?.status).toBe('BOOKED');
+      expect(overlappedSlot?.reason).toBe('Nghỉ đột xuất');
+
+      const closedOnlySlot = slots.find((s) => s.startTime === '2026-09-21T04:00:00.000Z');
+      expect(closedOnlySlot?.status).toBe('CLOSED');
+      expect(closedOnlySlot?.reason).toBe('Nghỉ đột xuất');
+
+      const boundarySlot = slots.find((s) => s.startTime === '2026-09-21T05:00:00.000Z');
+      expect(boundarySlot?.status).toBe('AVAILABLE');
+      expect(boundarySlot?.reason).toBeUndefined();
+    });
+
+    it('uses the first matching closure deterministically when multiple closures overlap a slot (CWB-116)', () => {
+      const bookingStart = new Date('2026-09-21T03:00:00.000Z');
+      const bookingEnd = new Date('2026-09-21T04:00:00.000Z');
+      const earlierClosure = {
+        startTime: new Date('2026-09-21T02:00:00.000Z'),
+        endTime: new Date('2026-09-21T05:00:00.000Z'),
+        reason: 'Bảo trì điện (trước)',
+      };
+      const laterClosure = {
+        startTime: new Date('2026-09-21T03:00:00.000Z'),
+        endTime: new Date('2026-09-21T06:00:00.000Z'),
+        reason: 'Đóng cửa toàn cơ sở (sau)',
+      };
+
+      const slots = generateAvailabilitySlots(
+        dayStart,
+        dayEnd,
+        [{ startTime: bookingStart, endTime: bookingEnd }],
+        [earlierClosure, laterClosure],
+      );
+
+      const closedOverlap = slots.find((s) => s.startTime === '2026-09-21T04:00:00.000Z');
+      expect(closedOverlap?.status).toBe('CLOSED');
+      expect(closedOverlap?.reason).toBe('Bảo trì điện (trước)');
+
+      const bookedOverlap = slots.find((s) => s.startTime === '2026-09-21T03:00:00.000Z');
+      expect(bookedOverlap?.status).toBe('BOOKED');
+      expect(bookedOverlap?.reason).toBe('Bảo trì điện (trước)');
+
+      const laterOnlyClosed = slots.find((s) => s.startTime === '2026-09-21T05:00:00.000Z');
+      expect(laterOnlyClosed?.status).toBe('CLOSED');
+      expect(laterOnlyClosed?.reason).toBe('Đóng cửa toàn cơ sở (sau)');
     });
   });
 
   describe('HTTP API Endpoints: GET /api/v1/rooms/:id/availability', () => {
     it('is public, requires no auth token, and returns 200 with 48 slots', async () => {
-      const res = await request(app).get(`/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`,
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -406,7 +456,9 @@ describe('Room Availability Unit & API Tests', () => {
         }),
       );
 
-      const res = await request(app).get(`/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`,
+      );
 
       expect(res.status).toBe(200);
       const bookedSlots = res.body.data.slots.filter(
@@ -435,7 +487,9 @@ describe('Room Availability Unit & API Tests', () => {
         }),
       );
 
-      const res = await request(app).get(`/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`,
+      );
 
       expect(res.status).toBe(409);
       expect(res.body.success).toBe(false);
@@ -449,7 +503,9 @@ describe('Room Availability Unit & API Tests', () => {
         }),
       );
 
-      const res = await request(app).get(`/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`,
+      );
 
       expect(res.status).toBe(404);
       expect(res.body.success).toBe(false);
@@ -479,10 +535,14 @@ describe('Room Availability Unit & API Tests', () => {
         }),
       );
 
-      const res = await request(app).get(`/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${validRoomId}/availability?date=2026-09-21`,
+      );
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
-      const closedSlots = res.body.data.slots.filter((s: { status: string; reason?: string }) => s.status === 'CLOSED');
+      const closedSlots = res.body.data.slots.filter(
+        (s: { status: string; reason?: string }) => s.status === 'CLOSED',
+      );
       expect(closedSlots.length).toBe(4);
       expect(closedSlots[0].reason).toBe('Nghỉ lễ 2/9');
     });

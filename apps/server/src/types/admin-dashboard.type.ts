@@ -1,5 +1,5 @@
 import { BookingStatus, RoomStatus } from '@prisma/client';
-import { RoomSlotStatus } from './room.type.js';
+import { RoomAvailabilitySlotDto } from './room.type.js';
 
 export type DashboardPeriodType = 'day' | 'week';
 
@@ -39,11 +39,7 @@ export interface DashboardKpiResponseDto {
   unpaidBookingsCount: number;
 }
 
-export interface DashboardScheduleSlotDto {
-  startTime: string;
-  endTime: string;
-  status: RoomSlotStatus;
-}
+export type DashboardScheduleSlotDto = RoomAvailabilitySlotDto;
 
 export interface DashboardScheduleBookingDto {
   id: string;

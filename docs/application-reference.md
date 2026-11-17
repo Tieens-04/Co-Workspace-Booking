@@ -304,8 +304,8 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
   - `date` (bắt buộc): Chuỗi ngày theo định dạng `YYYY-MM-DD`. Bắt buộc phải là ngày lịch thực tế hợp lệ (bao gồm kiểm tra năm nhuận). Bất kỳ query parameter nào ngoài danh sách cho phép đều bị từ chối với `400 VALIDATION_ERROR`.
 - **Hành vi & Dữ liệu trả về**:
   - Trả về danh sách **48 slot 30 phút liên tiếp**, bao phủ trọn vẹn 24 giờ của ngày yêu cầu theo múi giờ nghiệp vụ `Asia/Ho_Chi_Minh` (`+07:00`) từ `00:00` đến `24:00` (ngày kế tiếp).
-  - Trạng thái từng slot là `AVAILABLE`, `BOOKED` hoặc `CLOSED` (kèm `closureReason` tùy chọn khi `status === "CLOSED"`, CWB-86).
-  - **Ý nghĩa trạng thái**: Trạng thái `AVAILABLE` thể hiện slot hiện tại chưa có booking blocking hay khung đóng cửa tại thời điểm truy vấn. Trạng thái này không đóng vai trò khóa giữ chỗ (lock/reservation) và không đồng nghĩa với việc một slot 30 phút đơn lẻ có thể tạo booking độc lập (các quy tắc nghiệp vụ khi đặt phòng như thời lượng tối thiểu 1 giờ, tối đa 8 giờ, lead time tối thiểu 30 phút vẫn do API tạo booking kiểm soát và quyết định). Trạng thái `CLOSED` thể hiện slot giao với khung đóng cửa của phòng hoặc toàn cơ sở (`Closure`) và không có booking `CONFIRMED` ưu tiên hiển thị trước.
+  - Trạng thái từng slot là `AVAILABLE`, `BOOKED` hoặc `CLOSED` (kèm `reason` tùy chọn khi slot giao với khung đóng cửa `Closure`, CWB-86 / CWB-116).
+  - **Ý nghĩa trạng thái**: Trạng thái `AVAILABLE` thể hiện slot hiện tại chưa có booking blocking hay khung đóng cửa tại thời điểm truy vấn. Trạng thái này không đóng vai trò khóa giữ chỗ (lock/reservation) và không đồng nghĩa với việc một slot 30 phút đơn lẻ có thể tạo booking độc lập (các quy tắc nghiệp vụ khi đặt phòng như thời lượng tối thiểu 1 giờ, tối đa 8 giờ, lead time tối thiểu 30 phút vẫn do API tạo booking kiểm soát và quyết định). Khi slot vừa có booking blocking (`CONFIRMED`) vừa giao với `Closure`, trạng thái `BOOKED` được ưu tiên trước `CLOSED` và vẫn giữ lại `reason` của `Closure` đang hiệu lực (giúp giao diện giữ nguyên thông tin đóng cửa và ngăn tự mở khóa slot khi đổi lịch); chỉ khi không có booking blocking thì slot giao `Closure` mới mang trạng thái `CLOSED` kèm `reason` (CWB-116).
   - **Thuật toán Overlap**: Một slot mang trạng thái `BOOKED` khi tồn tại booking có trạng thái thuộc danh sách chặn (`CONFIRMED`) giao với slot:
     $$\text{existing.startTime} < \text{slot.endTime} \quad\land\quad \text{existing.endTime} > \text{slot.startTime}$$
   - **Quy tắc chạm biên (Boundary Touching)**: Không bị tính là trùng lặp. Ví dụ booking kết thúc lúc `10:00` và slot bắt đầu lúc `10:00` thì slot đó vẫn là `AVAILABLE`.
@@ -760,6 +760,7 @@ Revenue API (`GET /api/v1/admin/revenue`, alias `/admin/bookings/revenue`) và K
   - `page` ≥ 1 (mặc định 1), `limit` 1–50 (mặc định 20); sai → `400`.
   - Phòng sắp theo `status, name, id` nên các trang không trùng hoặc sót phòng.
   - Response thêm `pagination { page, limit, total, totalPages }` và `summary { totalRooms, availableRooms, maintenanceRooms }` (đếm trên toàn bộ phòng, dùng cho thẻ KPI số phòng).
+  - Các slot lịch giữ nguyên thứ tự ưu tiên `BOOKED` trước `CLOSED` và bảo toàn `reason` của `Closure` chồng lấn để `RoomOverviewGrid` hiển thị trong tooltip; khi một trang chỉ gồm các phòng `MAINTENANCE` (`slots: []`), `RoomOverviewGrid` tự sinh trục 30 phút `07:00–22:00` (giờ Việt Nam) từ prop `date` để giữ nguyên cấu trúc bảng (CWB-116).
   - Dashboard có thanh phân trang dưới lưới lịch phòng.
 
 **Xuất CSV (CWB-69):** `GET /api/v1/admin/reports/bookings.csv` và `GET /api/v1/admin/reports/revenue.csv` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`).

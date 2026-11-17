@@ -1,4 +1,4 @@
-import { RoomAvailabilitySlotDto, RoomSlotStatus } from '../types/room.type.js';
+import { RoomAvailabilitySlotDto } from '../types/room.type.js';
 
 export const SLOT_DURATION_MINUTES = 30;
 export const SLOTS_PER_DAY = 48;
@@ -57,9 +57,22 @@ export function generateAvailabilitySlots(
     const slotStart = new Date(dayStart.getTime() + i * SLOT_DURATION_MS);
     const slotEnd = new Date(slotStart.getTime() + SLOT_DURATION_MS);
 
+    const isBooked = blockingIntervals.some((b) =>
+      isIntervalOverlapping(slotStart, slotEnd, b.startTime, b.endTime),
+    );
     const matchingClosure = closures.find((c) =>
       isIntervalOverlapping(slotStart, slotEnd, c.startTime, c.endTime),
     );
+
+    if (isBooked) {
+      slots.push({
+        startTime: slotStart.toISOString(),
+        endTime: slotEnd.toISOString(),
+        status: 'BOOKED',
+        ...(matchingClosure ? { reason: matchingClosure.reason } : {}),
+      });
+      continue;
+    }
 
     if (matchingClosure) {
       slots.push({
@@ -71,16 +84,10 @@ export function generateAvailabilitySlots(
       continue;
     }
 
-    const isBooked = blockingIntervals.some((b) =>
-      isIntervalOverlapping(slotStart, slotEnd, b.startTime, b.endTime),
-    );
-
-    const status: RoomSlotStatus = isBooked ? 'BOOKED' : 'AVAILABLE';
-
     slots.push({
       startTime: slotStart.toISOString(),
       endTime: slotEnd.toISOString(),
-      status,
+      status: 'AVAILABLE',
     });
   }
 

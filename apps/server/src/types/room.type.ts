@@ -47,11 +47,7 @@ export interface GetRoomsResponseData {
 }
 
 export type RoomSortOption =
-  | 'price_asc'
-  | 'price_desc'
-  | 'capacity_asc'
-  | 'capacity_desc'
-  | 'newest';
+  'price_asc' | 'price_desc' | 'capacity_asc' | 'capacity_desc' | 'newest';
 
 export interface FindRoomsFilter {
   page: number;
@@ -74,6 +70,7 @@ export interface RoomAvailabilitySlotDto {
   startTime: string;
   endTime: string;
   status: RoomSlotStatus;
+  /** Active Closure reason when overlapping a room or facility closure (present on CLOSED and closure-overlapped BOOKED slots). */
   reason?: string;
 }
 

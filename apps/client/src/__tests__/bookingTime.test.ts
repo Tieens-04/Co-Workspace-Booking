@@ -10,6 +10,7 @@ import {
   calculateEstimatedTotal,
   validateBookingSelection,
   checkRangeAvailability,
+  buildOperatingHourSlots,
 } from '../utils/bookingTime';
 import { RoomAvailabilitySlot } from '../types/room';
 
@@ -281,6 +282,29 @@ describe('bookingTime utility', () => {
     it('skips the check until the server horizon is known', () => {
       const start = new Date(now.getTime() + 400 * DAY);
       expect(validateBookingSelection(start, hour(start), now, undefined, null).isValid).toBe(true);
+    });
+  });
+
+  describe('buildOperatingHourSlots (CWB-116)', () => {
+    it('builds 30 contiguous 30-minute slots from 07:00 to 22:00 VN for a given date', () => {
+      const slots = buildOperatingHourSlots('2026-10-25');
+      expect(slots).toHaveLength(30);
+      expect(slots[0]).toEqual({
+        startTime: '2026-10-25T00:00:00.000Z', // 07:00 VN
+        endTime: '2026-10-25T00:30:00.000Z',
+      });
+      expect(slots[29]).toEqual({
+        startTime: '2026-10-25T14:30:00.000Z', // 21:30 VN
+        endTime: '2026-10-25T15:00:00.000Z', // 22:00 VN
+      });
+    });
+
+    it('falls back safely without throwing when date string is invalid', () => {
+      const slots = buildOperatingHourSlots('invalid-date');
+      expect(slots).toHaveLength(30);
+      expect(new Date(slots[0].startTime).getTime()).toBeLessThan(
+        new Date(slots[29].endTime).getTime(),
+      );
     });
   });
 });

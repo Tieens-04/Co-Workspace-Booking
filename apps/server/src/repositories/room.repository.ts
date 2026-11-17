@@ -334,6 +334,7 @@ export class RoomRepository implements RoomRepositoryContract {
               startTime: { lt: dayEnd },
               endTime: { gt: dayStart },
             },
+            orderBy: [{ startTime: 'asc' }, { createdAt: 'asc' }, { id: 'asc' }],
             select: {
               startTime: true,
               endTime: true,
