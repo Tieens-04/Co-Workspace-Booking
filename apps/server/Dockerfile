@@ -48,6 +48,9 @@ COPY --from=builder /app/apps/server/package*.json ./apps/server/
 COPY --from=builder /app/apps/server/prisma ./apps/server/prisma
 COPY --from=builder /app/apps/server/dist ./apps/server/dist
 
+# URL-encode discrete DB_* credentials into DATABASE_URL before Prisma CLI, server, or exec scripts run.
+ENV NODE_OPTIONS="--import=file:///app/apps/server/dist/config/register-database-url.js"
+
 WORKDIR /app/apps/server
 
 # Run as non-root user
