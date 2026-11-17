@@ -1,7 +1,9 @@
 import dotenv from 'dotenv';
+import { applyDatabaseUrlFromEnv } from './database-url.config.js';
 import { smtpConfigFromEnv } from './smtp.config.js';
 import { parsePaymentConfig, type PaymentAccount } from './payment.config.js';
 dotenv.config();
+applyDatabaseUrlFromEnv(process.env);
 
 const rawTrustProxy = process.env.TRUST_PROXY;
 if (rawTrustProxy !== undefined && rawTrustProxy !== 'true' && rawTrustProxy !== 'false') {

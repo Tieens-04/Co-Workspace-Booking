@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
-const { mkdtemp, rm, writeFile } = require('node:fs/promises');
+const { mkdtemp, readFile, rm, writeFile } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
@@ -88,5 +88,87 @@ test('real env files are git-ignored everywhere while *.example templates stay t
     'apps/client/.env.production.example',
   ]) {
     assert.equal(isIgnored(template), false, `${template} must stay tracked`);
+  }
+});
+
+test('client Dockerfile healthcheck probes IPv4 127.0.0.1 instead of localhost (CWB-117)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const dockerfile = await readFile(path.join(repoRoot, 'apps/client/Dockerfile'), 'utf8');
+  assert.match(dockerfile, /HEALTHCHECK[\s\S]*http:\/\/127\.0\.0\.1\//);
+  assert.doesNotMatch(dockerfile, /http:\/\/localhost\//);
+});
+
+test('docker-compose.yml uses silent mysqladmin ping and discrete DB_* vars without raw DB_PASSWORD URL interpolation (CWB-117)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const compose = await readFile(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+
+  assert.match(
+    compose,
+    /test:\s*\['CMD',\s*'mysqladmin',\s*'ping',\s*'-h',\s*'127\.0\.0\.1',\s*'--silent'\]/,
+  );
+  assert.doesNotMatch(compose, /mysqladmin[^\r\n]*(-p|\bMYSQL_ROOT_PASSWORD\b|\bDB_PASSWORD\b)/);
+  assert.doesNotMatch(compose, /^\s*DATABASE_URL\s*:/m);
+  assert.doesNotMatch(compose, /^\s*NODE_OPTIONS\s*:/m);
+  assert.match(compose, /DB_HOST:\s*db/);
+  assert.match(compose, /DB_PORT:\s*['"]?3306['"]?/);
+  assert.match(compose, /DB_NAME:\s*\$\{DB_NAME:-cospace_db\}/);
+  assert.match(compose, /DB_USER:\s*\$\{DB_USER:-cospace_user\}/);
+  assert.match(compose, /DB_PASSWORD:\s*\$\{DB_PASSWORD\}/);
+  assert.match(
+    compose,
+    /wget',\s*'--no-verbose',\s*'--tries=1',\s*'--spider',\s*'http:\/\/127\.0\.0\.1\/'/,
+  );
+  assert.doesNotMatch(compose, /wget[^\r\n]*localhost/);
+
+  const serverDockerfile = await readFile(path.join(repoRoot, 'apps/server/Dockerfile'), 'utf8');
+  assert.match(
+    serverDockerfile,
+    /COPY --from=builder \/app\/apps\/server\/dist \.\/apps\/server\/dist[\s\S]*ENV NODE_OPTIONS="--import=file:\/\/\/app\/apps\/server\/dist\/config\/register-database-url\.js"/,
+  );
+
+  const composeProbe = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' });
+  if (composeProbe.status === 0) {
+    const specialPassword = ['ci', 'smoke', 'p@ss:w#rd/1?x=2%253'].join('-');
+    const cleanEnv = Object.fromEntries(
+      Object.entries(process.env).filter(([key]) =>
+        /^(PATH|SYSTEMROOT|WINDIR|TEMP|TMP|HOME|USERPROFILE|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG)$/i.test(
+          key,
+        ),
+      ),
+    );
+    cleanEnv.DB_PASSWORD = specialPassword;
+
+    const configResult = spawnSync(
+      'docker',
+      ['compose', '--env-file', '.env.production.example', 'config', '--format', 'json'],
+      { cwd: repoRoot, encoding: 'utf8', env: cleanEnv },
+    );
+    assert.equal(configResult.status, 0, configResult.stderr);
+
+    const parsed = JSON.parse(configResult.stdout);
+    assert.deepEqual(parsed.services.db.healthcheck.test, [
+      'CMD',
+      'mysqladmin',
+      'ping',
+      '-h',
+      '127.0.0.1',
+      '--silent',
+    ]);
+    assert.deepEqual(parsed.services.client.healthcheck.test, [
+      'CMD',
+      'wget',
+      '--no-verbose',
+      '--tries=1',
+      '--spider',
+      'http://127.0.0.1/',
+    ]);
+    assert.equal(parsed.services.server.environment.DATABASE_URL, undefined);
+    assert.equal(parsed.services.server.environment.NODE_OPTIONS, undefined);
+    assert.equal(parsed.services.server.environment.DB_HOST, 'db');
+    assert.equal(parsed.services.server.environment.DB_PORT, '3306');
+    assert.equal(parsed.services.server.environment.DB_NAME, 'cospace_db');
+    assert.equal(parsed.services.server.environment.DB_USER, 'cospace_user');
+    assert.equal(parsed.services.server.environment.DB_PASSWORD, specialPassword);
+    assert.equal(parsed.services.db.environment.MYSQL_PASSWORD, specialPassword);
   }
 });

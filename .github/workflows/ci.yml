@@ -164,6 +164,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - name: Validate Docker Compose configuration
+        run: docker compose --env-file .env.production.example config >/dev/null
       - name: Build production images without cache
         run: |
           docker build --pull --no-cache -f apps/server/Dockerfile -t cospace-server:cwb-50 .
@@ -174,5 +176,6 @@ jobs:
           docker run --rm --entrypoint npm cospace-server:cwb-50 --version
           test "$(docker run --rm --entrypoint node cospace-server:cwb-50 --version)" = "v$(cat .nvmrc)"
           test "$(docker run --rm --entrypoint npm cospace-server:cwb-50 --version)" = "11.11.0"
+          test "$(docker run --rm -e DB_HOST=db -e DB_PORT=3306 -e DB_USER=u -e 'DB_PASSWORD=a@b:c#d/e?f%25' -e DB_NAME=d --entrypoint node cospace-server:cwb-50 -e 'process.stdout.write(process.env.DATABASE_URL ?? "")')" = "mysql://u:a%40b%3Ac%23d%2Fe%3Ff%2525@db:3306/d"
       - name: Verify frontend build artifact
         run: docker run --rm --entrypoint sh cospace-client:cwb-50 -c 'test -s /usr/share/nginx/html/index.html'
