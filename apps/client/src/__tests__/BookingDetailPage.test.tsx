@@ -8,6 +8,7 @@ import { AuthProvider } from '../context/AuthContext';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult, GetBookingDetailResponse } from '../types/booking';
 import { TOKEN_STORAGE_KEY } from '../utils/token';
+import { formatVnDate } from '../utils/bookingTime';
 import { createMockJwt } from './test-utils';
 
 vi.mock('../services/booking.api', () => ({
@@ -28,7 +29,6 @@ vi.mock('../services/room.api', () => {
       slots.push({
         startTime: slotStart.toISOString(),
         endTime: slotEnd.toISOString(),
-        available: true,
         status: 'AVAILABLE' as const,
       });
     }
@@ -1083,7 +1083,7 @@ describe('BookingDetailPage', () => {
         }),
       );
 
-      // Suppose an admin acknowledged a closure over [10:00, 12:00) VN on that date
+      // Defensive guard: if slots inside [booking.startTime, booking.endTime) arrive directly as CLOSED, keep them disabled
       const startOfDay = new Date(`${dateStr}T00:00:00.000+07:00`);
       const slotsWithClosure = Array.from({ length: 48 }, (_, i) => {
         const slotStart = new Date(startOfDay.getTime() + i * 30 * 60 * 1000);
@@ -1118,6 +1118,221 @@ describe('BookingDetailPage', () => {
       const slot1000 = await screen.findByTestId('time-slot-10:00');
       expect(slot1000).toBeDisabled();
       expect(slot1000).toHaveAttribute('data-slot-state', 'closed');
+    });
+
+    it('keeps own booking slots CLOSED instead of unlocking them when covered by an active closure (CWB-116)', async () => {
+      const { roomApi } = await import('../services/room.api');
+      const dateStr = formatVnDate(new Date(Date.now() + 24 * 3600 * 1000));
+      const currentStartIso = new Date(`${dateStr}T10:00:00.000+07:00`).toISOString();
+      const currentEndIso = new Date(`${dateStr}T12:00:00.000+07:00`).toISOString();
+
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: currentStartIso,
+          endTime: currentEndIso,
+          paymentStatus: 'UNPAID',
+          roomUnavailable: true,
+          roomUnavailableCause: 'CLOSURE',
+          roomUnavailableReason: 'Bảo trì đột xuất',
+        }),
+      );
+
+      vi.mocked(roomApi.getRooms).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [
+            {
+              id: mockDetailData.room.id,
+              name: mockDetailData.room.name,
+              capacity: 6,
+              pricePerHour: '250000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+          ],
+          pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+        },
+      });
+
+      const startOfDay = new Date(`${dateStr}T00:00:00.000+07:00`);
+      const slotsWithClosure = Array.from({ length: 48 }, (_, i) => {
+        const slotStart = new Date(startOfDay.getTime() + i * 30 * 60 * 1000);
+        const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
+        // 09:00-10:00 & 12:00-13:00 -> CLOSED; 10:00-12:00 (own booking inside closure) -> BOOKED with reason
+        if ((i >= 18 && i < 20) || (i >= 24 && i < 26)) {
+          return {
+            startTime: slotStart.toISOString(),
+            endTime: slotEnd.toISOString(),
+            status: 'CLOSED' as const,
+            reason: 'Bảo trì đột xuất',
+          };
+        }
+        if (i >= 20 && i < 24) {
+          return {
+            startTime: slotStart.toISOString(),
+            endTime: slotEnd.toISOString(),
+            status: 'BOOKED' as const,
+            reason: 'Bảo trì đột xuất',
+          };
+        }
+        return {
+          startTime: slotStart.toISOString(),
+          endTime: slotEnd.toISOString(),
+          status: 'AVAILABLE' as const,
+        };
+      });
+
+      vi.mocked(roomApi.getAvailability).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: {
+          roomId: mockDetailData.room.id,
+          date: dateStr,
+          timezone: 'Asia/Ho_Chi_Minh',
+          slots: slotsWithClosure,
+          maxAdvanceDays: 30,
+        },
+      });
+
+      renderComponent();
+
+      const user = userEvent.setup();
+      await user.click(await screen.findByTestId('reschedule-booking-init-btn'));
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+
+      for (const time of ['10:00', '10:30', '11:00', '11:30']) {
+        const slotBtn = await screen.findByTestId(`time-slot-${time}`);
+        expect(slotBtn).toBeDisabled();
+        expect(slotBtn).toHaveAttribute('data-slot-state', 'closed');
+        expect(slotBtn).toHaveAttribute(
+          'aria-label',
+          expect.stringContaining('Đóng cửa (Bảo trì đột xuất)'),
+        );
+      }
+    });
+
+    it('unlocks only non-closed portion of own booking when closure partially overlaps (CWB-116)', async () => {
+      const { roomApi } = await import('../services/room.api');
+      const dateStr = formatVnDate(new Date(Date.now() + 24 * 3600 * 1000));
+      const currentStartIso = new Date(`${dateStr}T10:00:00.000+07:00`).toISOString();
+      const currentEndIso = new Date(`${dateStr}T12:00:00.000+07:00`).toISOString();
+
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse({
+          ...mockDetailData,
+          startTime: currentStartIso,
+          endTime: currentEndIso,
+          paymentStatus: 'UNPAID',
+          roomUnavailable: true,
+          roomUnavailableCause: 'CLOSURE',
+          roomUnavailableReason: 'Sửa điều hòa',
+        }),
+      );
+
+      vi.mocked(roomApi.getRooms).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [
+            {
+              id: mockDetailData.room.id,
+              name: mockDetailData.room.name,
+              capacity: 6,
+              pricePerHour: '250000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+          ],
+          pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+        },
+      });
+
+      const startOfDay = new Date(`${dateStr}T00:00:00.000+07:00`);
+      const slotsWithPartialClosure = Array.from({ length: 48 }, (_, i) => {
+        const slotStart = new Date(startOfDay.getTime() + i * 30 * 60 * 1000);
+        const slotEnd = new Date(slotStart.getTime() + 30 * 60 * 1000);
+        // Booking 10:00-12:00 (20-23); Closure 11:00-13:00 (22-25)
+        if (i === 20 || i === 21) {
+          return {
+            startTime: slotStart.toISOString(),
+            endTime: slotEnd.toISOString(),
+            status: 'BOOKED' as const,
+          };
+        }
+        if (i === 22 || i === 23) {
+          return {
+            startTime: slotStart.toISOString(),
+            endTime: slotEnd.toISOString(),
+            status: 'BOOKED' as const,
+            reason: 'Sửa điều hòa',
+          };
+        }
+        if (i === 24 || i === 25) {
+          return {
+            startTime: slotStart.toISOString(),
+            endTime: slotEnd.toISOString(),
+            status: 'CLOSED' as const,
+            reason: 'Sửa điều hòa',
+          };
+        }
+        return {
+          startTime: slotStart.toISOString(),
+          endTime: slotEnd.toISOString(),
+          status: 'AVAILABLE' as const,
+        };
+      });
+
+      vi.mocked(roomApi.getAvailability).mockResolvedValueOnce({
+        success: true,
+        message: 'OK',
+        data: {
+          roomId: mockDetailData.room.id,
+          date: dateStr,
+          timezone: 'Asia/Ho_Chi_Minh',
+          slots: slotsWithPartialClosure,
+          maxAdvanceDays: 30,
+        },
+      });
+
+      renderComponent();
+
+      const user = userEvent.setup();
+      await user.click(await screen.findByTestId('reschedule-booking-init-btn'));
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+
+      for (const time of ['10:00', '10:30']) {
+        const openSlot = await screen.findByTestId(`time-slot-${time}`);
+        expect(openSlot).toBeEnabled();
+        expect(openSlot).toHaveAttribute('data-slot-state', 'available');
+      }
+
+      for (const time of ['11:00', '11:30']) {
+        const closedSlot = await screen.findByTestId(`time-slot-${time}`);
+        expect(closedSlot).toBeDisabled();
+        expect(closedSlot).toHaveAttribute('data-slot-state', 'closed');
+        expect(closedSlot).toHaveAttribute(
+          'aria-label',
+          expect.stringContaining('Đóng cửa (Sửa điều hòa)'),
+        );
+      }
+
+      // Attempting a range across the 11:00-13:00 closed slots shows the closure reason error
+      await user.click(screen.getByTestId('time-slot-10:00'));
+      await user.click(screen.getByTestId('time-slot-13:00'));
+      const gridError = await screen.findByTestId('time-grid-error');
+      expect(gridError).toHaveTextContent(
+        'Khoảng thời gian đã chọn đi qua khung giờ đóng cửa (Sửa điều hòa)',
+      );
+
+      // Shifting to 09:00-11:00 reuses the unlocked non-closed portion (10:00-11:00) cleanly
+      await user.click(screen.getByTestId('time-slot-09:00'));
+      await user.click(screen.getByTestId('time-slot-10:30'));
+      expect(await screen.findByTestId('reschedule-preview-box')).toBeInTheDocument();
+      expect(screen.getByTestId('reschedule-confirm-btn')).toBeEnabled();
     });
   });
 

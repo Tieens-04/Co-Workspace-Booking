@@ -2,16 +2,13 @@ export type RoomStatus = 'AVAILABLE' | 'MAINTENANCE' | 'ARCHIVED';
 export type RoomSlotStatus = 'AVAILABLE' | 'BOOKED' | 'CLOSED';
 
 export type RoomSortOption =
-  | 'newest'
-  | 'price_asc'
-  | 'price_desc'
-  | 'capacity_asc'
-  | 'capacity_desc';
+  'newest' | 'price_asc' | 'price_desc' | 'capacity_asc' | 'capacity_desc';
 
 export interface RoomAvailabilitySlot {
   startTime: string;
   endTime: string;
   status: RoomSlotStatus;
+  /** Active Closure reason when overlapping a room or facility closure (present on CLOSED and closure-overlapped BOOKED slots). */
   reason?: string;
 }
 
