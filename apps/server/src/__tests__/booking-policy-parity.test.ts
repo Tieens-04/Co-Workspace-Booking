@@ -48,6 +48,7 @@ describe('Booking policy parity FE/BE and canonical values (CWB-62)', () => {
     expect(minutesOf(clientConst('OPENING_TIME'))).toBe(OPENING_HOUR * 60);
     expect(minutesOf(clientConst('CLOSING_TIME'))).toBe(CLOSING_HOUR * 60);
     expect(clientConst('VIETNAM_TIMEZONE')).toBe("'Asia/Ho_Chi_Minh'");
+    expect(Number(clientConst('DEFAULT_MAX_ADVANCE_DAYS'))).toBe(60);
   });
 
   it('rejects the superseded 4h maximum only above 8h and the 2h cancellation only below 1h', () => {

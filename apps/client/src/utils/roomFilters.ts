@@ -1,5 +1,11 @@
 import type { RoomSortOption } from '../types/room';
-import { getVietnamTodayString, parseVnDateTimeLocalToUtc } from './bookingTime';
+import {
+  DEFAULT_MAX_ADVANCE_DAYS,
+  getVietnamTodayString,
+  isValidVnCalendarDate,
+  parseVnDateTimeLocalToUtc,
+  validateBookingSelection,
+} from './bookingTime';
 
 export { getVietnamTodayString };
 
@@ -41,6 +47,7 @@ export interface NormalizedRoomSearch {
   date?: string;
   startTime?: string;
   endTime?: string;
+  strippedHorizonError?: string;
 }
 
 function parsePositiveInteger(value: string, maximum: bigint): number | null {
@@ -77,52 +84,29 @@ export function validateSlotRules(
   startTimeStr: string,
   endTimeStr: string,
   now: Date = new Date(),
+  maxAdvanceDays: number | null = DEFAULT_MAX_ADVANCE_DAYS,
 ): SlotValidationResult {
   if (!DATE_PATTERN.test(dateStr)) {
     return { isValid: false, error: 'Định dạng ngày không hợp lệ (YYYY-MM-DD)' };
   }
 
-  const todayVn = getVietnamTodayString(now);
-  if (dateStr < todayVn) {
-    return { isValid: false, error: 'Không được chọn ngày trong quá khứ' };
+  if (!isValidVnCalendarDate(dateStr)) {
+    return { isValid: false, error: 'Ngày đã chọn không tồn tại trên lịch' };
   }
 
-  const startMinutes = parseTimeToMinutes(startTimeStr);
-  const endMinutes = parseTimeToMinutes(endTimeStr);
-
-  if (startMinutes === null || endMinutes === null) {
+  if (!TIME_PATTERN.test(startTimeStr) || !TIME_PATTERN.test(endTimeStr)) {
     return { isValid: false, error: 'Định dạng thời gian không hợp lệ (HH:mm)' };
   }
 
-  if (startMinutes % 30 !== 0 || endMinutes % 30 !== 0) {
-    return { isValid: false, error: 'Thời gian phải đúng mốc 30 phút' };
-  }
+  const startUtc = parseVnDateTimeLocalToUtc(`${dateStr}T${startTimeStr}`);
+  const endUtc = parseVnDateTimeLocalToUtc(`${dateStr}T${endTimeStr}`);
+  const selection = validateBookingSelection(startUtc, endUtc, now, undefined, maxAdvanceDays);
 
-  const duration = endMinutes - startMinutes;
-  if (duration <= 0) {
-    return { isValid: false, error: 'Giờ kết thúc phải sau giờ bắt đầu' };
-  }
-  if (duration < 60) {
-    return { isValid: false, error: 'Thời lượng đặt phòng tối thiểu là 1 giờ' };
-  }
-  if (duration > 480) {
-    return { isValid: false, error: 'Thời lượng đặt phòng tối đa là 8 giờ' };
-  }
-  if (startMinutes < 7 * 60 || endMinutes > 22 * 60) {
+  if (!selection.isValid) {
     return {
       isValid: false,
-      error: 'Chỉ được đặt phòng trong khung giờ hoạt động (07:00 - 22:00)',
+      error: selection.errors.startTime ?? selection.errors.endTime ?? selection.errors.general,
     };
-  }
-
-  if (dateStr === todayVn) {
-    const startUtc = parseVnDateTimeLocalToUtc(`${dateStr}T${startTimeStr}`);
-    if (startUtc && startUtc.getTime() <= now.getTime()) {
-      return { isValid: false, error: 'Thời gian bắt đầu không được ở trong quá khứ' };
-    }
-    if (startUtc && startUtc.getTime() - now.getTime() < 30 * 60 * 1000) {
-      return { isValid: false, error: 'Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút' };
-    }
   }
 
   return { isValid: true };
@@ -133,8 +117,9 @@ export function isSlotValid(
   startTimeStr: string,
   endTimeStr: string,
   now: Date = new Date(),
+  maxAdvanceDays: number | null = DEFAULT_MAX_ADVANCE_DAYS,
 ): boolean {
-  return validateSlotRules(dateStr, startTimeStr, endTimeStr, now).isValid;
+  return validateSlotRules(dateStr, startTimeStr, endTimeStr, now, maxAdvanceDays).isValid;
 }
 
 export function validateRoomFilterInputs(
@@ -145,6 +130,7 @@ export function validateRoomFilterInputs(
   startTime?: string,
   endTime?: string,
   now: Date = new Date(),
+  maxAdvanceDays: number | null = DEFAULT_MAX_ADVANCE_DAYS,
 ): RoomFilterFieldErrors {
   const errors: RoomFilterFieldErrors = {};
   const trimmedCapacity = capacity.trim();
@@ -190,10 +176,20 @@ export function validateRoomFilterInputs(
   const trimmedEnd = endTime?.trim() || '';
 
   if (trimmedDate || trimmedStart || trimmedEnd) {
-    if (!trimmedDate || !trimmedStart || !trimmedEnd) {
+    if (trimmedDate && !DATE_PATTERN.test(trimmedDate)) {
+      errors.slot = 'Định dạng ngày không hợp lệ (YYYY-MM-DD)';
+    } else if (trimmedDate && !isValidVnCalendarDate(trimmedDate)) {
+      errors.slot = 'Ngày đã chọn không tồn tại trên lịch';
+    } else if (!trimmedDate || !trimmedStart || !trimmedEnd) {
       errors.slot = 'Vui lòng chọn đầy đủ ngày, giờ bắt đầu và giờ kết thúc';
     } else {
-      const slotValidation = validateSlotRules(trimmedDate, trimmedStart, trimmedEnd, now);
+      const slotValidation = validateSlotRules(
+        trimmedDate,
+        trimmedStart,
+        trimmedEnd,
+        now,
+        maxAdvanceDays,
+      );
       if (!slotValidation.isValid && slotValidation.error) {
         errors.slot = slotValidation.error;
       }
@@ -206,6 +202,8 @@ export function validateRoomFilterInputs(
 export function normalizeRoomSearchParams(
   source: URLSearchParams,
   pageLimit: number,
+  now: Date = new Date(),
+  maxAdvanceDays: number | null = DEFAULT_MAX_ADVANCE_DAYS,
 ): NormalizedRoomSearch {
   const normalized = new URLSearchParams(source);
   const maxPage = BigInt(Math.floor(MYSQL_INT_MAX / pageLimit) + 1);
@@ -264,12 +262,18 @@ export function normalizeRoomSearchParams(
   const rawStartTime = source.get('startTime')?.trim() ?? '';
   const rawEndTime = source.get('endTime')?.trim() ?? '';
 
-  const validSlot = Boolean(
-    rawDate &&
-      rawStartTime &&
-      rawEndTime &&
-      isSlotValid(rawDate, rawStartTime, rawEndTime),
-  );
+  const hasCompleteRawSlot = Boolean(rawDate && rawStartTime && rawEndTime);
+  const slotCheck = hasCompleteRawSlot
+    ? validateSlotRules(rawDate, rawStartTime, rawEndTime, now, maxAdvanceDays)
+    : { isValid: false };
+  const validSlot = slotCheck.isValid;
+  const strippedHorizonError =
+    !validSlot &&
+    hasCompleteRawSlot &&
+    maxAdvanceDays !== null &&
+    validateSlotRules(rawDate, rawStartTime, rawEndTime, now, null).isValid
+      ? slotCheck.error
+      : undefined;
 
   if (validSlot) {
     normalized.set('date', rawDate);
@@ -292,5 +296,6 @@ export function normalizeRoomSearchParams(
     ...(q ? { q } : {}),
     ...(sort ? { sort } : {}),
     ...(validSlot ? { date: rawDate, startTime: rawStartTime, endTime: rawEndTime } : {}),
+    ...(strippedHorizonError ? { strippedHorizonError } : {}),
   };
 }

@@ -133,6 +133,7 @@ export class RoomService {
         total,
         totalPages,
       },
+      maxAdvanceDays: ENV.BOOKING_MAX_ADVANCE_DAYS,
     };
   }
 
