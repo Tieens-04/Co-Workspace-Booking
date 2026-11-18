@@ -110,6 +110,30 @@ describe('Admin CSV exports (CWB-69, real MySQL)', () => {
           'Phòng khác',
           otherRoomId,
         ),
+        {
+          ...booking(
+            'F',
+            '2031-03-11T02:00:00Z',
+            PaymentStatus.PARTIALLY_REFUNDED,
+            BookingStatus.CANCELLED,
+            '200000.00',
+            'Hoàn một phần',
+          ),
+          paymentMethod: PaymentMethod.QR,
+          refundedAmount: new Prisma.Decimal('50000.00'),
+        },
+        {
+          ...booking(
+            'G',
+            '2031-03-11T05:00:00Z',
+            PaymentStatus.REFUNDED,
+            BookingStatus.CANCELLED,
+            '100000.00',
+            'Hoàn toàn bộ',
+          ),
+          paymentMethod: PaymentMethod.CASH,
+          refundedAmount: new Prisma.Decimal('100000.00'),
+        },
       ],
     });
   });
@@ -175,5 +199,47 @@ describe('Admin CSV exports (CWB-69, real MySQL)', () => {
     // A paid 200k; B unpaid 150k; C cancelled+unpaid contributes nothing.
     expect(lines[2]).toBe('2031-03-10,3,1,1,1,200000.00,150000.00,350000.00');
     expect(lines[3]).toBe('Tổng,4,2,1,1,250000.00,150000.00,400000.00');
+  });
+
+  it('supports PARTIALLY_REFUNDED and REFUNDED filters and calculates retained revenue in revenue.csv (CWB-120)', async () => {
+    const refundDay = '2031-03-11';
+
+    const partialBookings = await get(
+      `/api/v1/admin/reports/bookings.csv?startDate=${refundDay}&endDate=${refundDay}&roomId=${roomId}&paymentStatus=PARTIALLY_REFUNDED`,
+    );
+    expect(partialBookings.status).toBe(200);
+    expect(partialBookings.text).toContain(`CS-${tag}-F`);
+    expect(partialBookings.text).toContain('PARTIALLY_REFUNDED,QR,200000.00,50000.00');
+    expect(partialBookings.text).not.toContain(`CS-${tag}-G`);
+
+    const refundedBookings = await get(
+      `/api/v1/admin/reports/bookings.csv?startDate=${refundDay}&endDate=${refundDay}&roomId=${roomId}&paymentStatus=REFUNDED`,
+    );
+    expect(refundedBookings.status).toBe(200);
+    expect(refundedBookings.text).toContain(`CS-${tag}-G`);
+    expect(refundedBookings.text).toContain('REFUNDED,CASH,100000.00,100000.00');
+    expect(refundedBookings.text).not.toContain(`CS-${tag}-F`);
+
+    const allRevenue = await get(
+      `/api/v1/admin/reports/revenue.csv?startDate=${refundDay}&endDate=${refundDay}&roomId=${roomId}`,
+    );
+    expect(allRevenue.status).toBe(200);
+    const allLines = allRevenue.text.replace(BOM, '').trim().split('\r\n');
+    expect(allLines[1]).toBe('2031-03-11,2,1,0,2,150000.00,0.00,150000.00');
+    expect(allLines[2]).toBe('Tổng,2,1,0,2,150000.00,0.00,150000.00');
+
+    const partialRevenue = await get(
+      `/api/v1/admin/reports/revenue.csv?startDate=${refundDay}&endDate=${refundDay}&roomId=${roomId}&paymentStatus=PARTIALLY_REFUNDED`,
+    );
+    expect(partialRevenue.status).toBe(200);
+    const partialLines = partialRevenue.text.replace(BOM, '').trim().split('\r\n');
+    expect(partialLines[1]).toBe('2031-03-11,1,1,0,1,150000.00,0.00,150000.00');
+
+    const fullRefundRevenue = await get(
+      `/api/v1/admin/reports/revenue.csv?startDate=${refundDay}&endDate=${refundDay}&roomId=${roomId}&paymentStatus=REFUNDED`,
+    );
+    expect(fullRefundRevenue.status).toBe(200);
+    const fullRefundLines = fullRefundRevenue.text.replace(BOM, '').trim().split('\r\n');
+    expect(fullRefundLines[1]).toBe('2031-03-11,1,0,0,1,0.00,0.00,0.00');
   });
 });

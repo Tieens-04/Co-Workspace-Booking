@@ -6,7 +6,12 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { adminReportApi, ReportKind, saveBlob } from '../../../services/admin-report.api';
+import {
+  adminReportApi,
+  ReportKind,
+  ReportPaymentStatus,
+  saveBlob,
+} from '../../../services/admin-report.api';
 import { getVietnamTodayString } from '../../../utils/bookingTime';
 
 const MAX_DAYS = 92;
@@ -30,7 +35,7 @@ export function ReportExport() {
   const today = getVietnamTodayString();
   const [startDate, setStartDate] = useState(`${today.slice(0, 8)}01`);
   const [endDate, setEndDate] = useState(today);
-  const [paymentStatus, setPaymentStatus] = useState<'' | 'PAID' | 'UNPAID'>('');
+  const [paymentStatus, setPaymentStatus] = useState<'' | ReportPaymentStatus>('');
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<ReportKind | null>(null);
 
@@ -78,11 +83,13 @@ export function ReportExport() {
         <Field id="report-payment" label="Thanh toán">
           <NativeSelect
             value={paymentStatus}
-            onChange={(e) => setPaymentStatus(e.target.value as '' | 'PAID' | 'UNPAID')}
+            onChange={(e) => setPaymentStatus(e.target.value as '' | ReportPaymentStatus)}
           >
             <option value="">Tất cả</option>
             <option value="PAID">Đã thanh toán</option>
             <option value="UNPAID">Chưa thanh toán</option>
+            <option value="PARTIALLY_REFUNDED">Hoàn một phần</option>
+            <option value="REFUNDED">Đã hoàn tiền</option>
           </NativeSelect>
         </Field>
       </div>
