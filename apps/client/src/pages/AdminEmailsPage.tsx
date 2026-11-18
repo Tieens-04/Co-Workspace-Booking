@@ -26,7 +26,7 @@ const STATUS_LABELS: Record<EmailOutboxStatus, string> = {
   FAILED: 'Gửi thất bại',
   SKIPPED: 'Bỏ qua',
 };
-const KIND_LABELS: Record<string, string> = {
+const KIND_LABELS: Record<EmailOutboxKind, string> = {
   BOOKING_CONFIRMATION: 'Xác nhận đặt phòng',
   BOOKING_CANCELLATION: 'Thông báo hủy',
   BOOKING_REMINDER: 'Nhắc lịch',
@@ -40,6 +40,7 @@ const REASON_LABELS: Record<string, string> = {
   SMTP_DISABLED: 'Chưa cấu hình SMTP',
   NO_RECIPIENT: 'Không có địa chỉ nhận',
   ACCOUNT_DELETED: 'Tài khoản đã xóa',
+  ACCOUNT_LOCKED: 'Tài khoản bị khóa',
   BOOKING_CANCELLED: 'Đơn đã hủy trước khi gửi',
   BOOKING_NOT_ACTIVE: 'Đơn không còn ở trạng thái đã xác nhận',
   REMINDER_EXPIRED: 'Đã qua giờ bắt đầu',
