@@ -39,7 +39,9 @@ Khi nâng toolchain, cập nhật đồng bộ `.nvmrc`, `engines` và `packageM
 
 ### Bản vá dependency và kiểm thử tooling
 
-Các dependency trực tiếp khai báo minimum version đã vá; root lockfile khóa cả dependency gián tiếp. Chạy `npm audit` để kiểm tra toàn bộ cây dependency, kể cả công cụ development. CI chạy audit và `npm run test:tooling` sau `npm ci`; không bỏ qua advisory hoặc dùng `npm audit fix --force` để nâng major tự động.
+Các dependency trực tiếp khai báo minimum version đã vá; root lockfile khóa cả dependency gián tiếp. Chạy `npm audit --omit=dev` (0 lỗi bắt buộc ở runtime) và `node scripts/audit-dependencies.cjs` để kiểm tra toàn bộ cây dependency kể cả công cụ development. CI chạy cả hai bước cùng `npm run test:tooling` sau `npm ci`; không dùng `npm audit fix --force` để nâng major tự động.
+
+`vite`, `vitest` và `typescript-eslint` phụ thuộc gián tiếp vào `picomatch` 4.0.7 đang có advisory [ReDoS trên single-branch repeated extglob (GHSA-fc5q-39xc-vjpf / CVE-2026-112366)](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) chưa có bản vá phát hành trên npm (`first_patched_version: null`, chỉ nằm ở devDependencies). `scripts/audit-dependencies.cjs` giữ nguyên kiểm tra `npm audit --omit=dev` bằng 0 và chỉ cho qua đúng mã `GHSA-fc5q-39xc-vjpf` trên `picomatch` trong full audit (fail-closed với mọi lỗi mạng hoặc advisory khác). Gỡ mục tạm này ngay khi `picomatch` phát hành bản vá trên npm và cập nhật lockfile/override.
 
 Prisma 6.19.3 dùng `deepmerge-ts` 7 bị [stack exhaustion với cấu trúc đệ quy (GHSA-ggr8-5vv4-36mx)](https://github.com/advisories/GHSA-ggr8-5vv4-36mx). Root `overrides` chỉ thay dependency này trong `@prisma/config` bằng bản vá 8.0.0, giữ nguyên Prisma 6 và hợp đồng database. `test:tooling` kiểm tra đầu vào đệ quy và việc Prisma thực sự nạp cấu hình với merger đã vá. Chỉ bỏ override sau khi Prisma đã tự phụ thuộc bản an toàn và các kiểm tra này vẫn pass.
 

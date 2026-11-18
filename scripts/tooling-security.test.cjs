@@ -172,3 +172,76 @@ test('docker-compose.yml uses silent mysqladmin ping and discrete DB_* vars with
     assert.equal(parsed.services.db.environment.MYSQL_PASSWORD, specialPassword);
   }
 });
+
+test('dependency audit evaluator fails closed on prod vulns, errors, and non-allowlisted advisories while scoping GHSA-fc5q-39xc-vjpf', () => {
+  const { evaluateProdAuditReport, evaluateFullAuditReport } = require('./audit-dependencies.cjs');
+
+  const cleanReport = {
+    auditReportVersion: 2,
+    vulnerabilities: {},
+    metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 } },
+  };
+  assert.deepEqual(evaluateProdAuditReport(cleanReport), { ok: true, errors: [] });
+  assert.deepEqual(evaluateFullAuditReport(cleanReport), { ok: true, errors: [], exempted: [] });
+
+  // Registry/network errors or malformed payloads must fail closed.
+  assert.equal(evaluateProdAuditReport({ error: { code: 'ENOTFOUND' } }).ok, false);
+  assert.equal(evaluateFullAuditReport({ auditReportVersion: 1, vulnerabilities: {} }).ok, false);
+
+  const picomatchUnpatchedGraph = {
+    auditReportVersion: 2,
+    vulnerabilities: {
+      picomatch: {
+        name: 'picomatch',
+        severity: 'high',
+        via: [
+          {
+            source: 1247710,
+            name: 'picomatch',
+            url: 'https://github.com/advisories/GHSA-fc5q-39xc-vjpf',
+            range: '<=4.0.7',
+          },
+        ],
+      },
+      tinyglobby: {
+        name: 'tinyglobby',
+        severity: 'high',
+        via: ['picomatch'],
+      },
+      vite: {
+        name: 'vite',
+        severity: 'high',
+        via: ['picomatch', 'tinyglobby'],
+      },
+    },
+    metadata: { vulnerabilities: { info: 0, low: 0, moderate: 0, high: 3, critical: 0, total: 3 } },
+  };
+
+  // Production audit NEVER allows even GHSA-fc5q-39xc-vjpf.
+  assert.equal(evaluateProdAuditReport(picomatchUnpatchedGraph).ok, false);
+
+  // Full audit allows ONLY the unpatched dev-only picomatch advisory graph.
+  const allowedResult = evaluateFullAuditReport(picomatchUnpatchedGraph);
+  assert.equal(allowedResult.ok, true);
+  assert.equal(allowedResult.exempted.length, 1);
+  assert.equal(allowedResult.exempted[0].ghsaId, 'GHSA-fc5q-39xc-vjpf');
+
+  // A second advisory on picomatch or a direct advisory on vite must fail immediately.
+  const mixedViteReport = structuredClone(picomatchUnpatchedGraph);
+  mixedViteReport.vulnerabilities.vite.via.push({
+    source: 9999999,
+    name: 'vite',
+    url: 'https://github.com/advisories/GHSA-0000-0000-0000',
+    range: '<=6.4.5',
+  });
+  assert.equal(evaluateFullAuditReport(mixedViteReport).ok, false);
+
+  const secondPicomatchAdvisory = structuredClone(picomatchUnpatchedGraph);
+  secondPicomatchAdvisory.vulnerabilities.picomatch.via.push({
+    source: 9999998,
+    name: 'picomatch',
+    url: 'https://github.com/advisories/GHSA-1111-2222-3333',
+    range: '<=4.0.7',
+  });
+  assert.equal(evaluateFullAuditReport(secondPicomatchAdvisory).ok, false);
+});
