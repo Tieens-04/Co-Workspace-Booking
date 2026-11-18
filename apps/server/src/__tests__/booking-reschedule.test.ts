@@ -3,7 +3,7 @@ import request from 'supertest';
 import { Role, BookingStatus, PaymentStatus } from '@prisma/client';
 import app from '../app.js';
 import { generateToken } from '../utils/jwt.util.js';
-import { bookingRepository } from '../repositories/booking.repository.js';
+import { bookingRepository, RescheduledBookingResult } from '../repositories/booking.repository.js';
 import { BookingResponseDto } from '../types/booking.type.js';
 import { AppError } from '../utils/error.util.js';
 import {
@@ -11,6 +11,7 @@ import {
   RESCHEDULE_MIN_LEAD_MINUTES,
 } from '../utils/booking-time.util.js';
 import { emailOutboxService } from '../services/email-outbox.service.js';
+import { ENV } from '../config/env.config.js';
 
 // Prevent real DB access during unit tests
 vi.mock('../utils/prisma.util.js', () => ({ default: {}, prisma: {} }));
@@ -30,7 +31,7 @@ const mockBookingFixture = (override?: Partial<BookingResponseDto>): BookingResp
       name: 'Creative Studio',
     },
     startTime: new Date('2026-11-08T03:00:00.000Z'), // 10:00 VN
-    endTime: new Date('2026-11-08T05:00:00.000Z'),   // 12:00 VN
+    endTime: new Date('2026-11-08T05:00:00.000Z'), // 12:00 VN
     totalAmount: '500000.00',
     note: 'Cần bảng trắng',
     status: BookingStatus.CONFIRMED,
@@ -53,12 +54,10 @@ describe('Customer Booking Reschedule Unit Tests (PATCH /api/v1/bookings/:id)', 
 
   describe('Authentication & RBAC Controls', () => {
     it('returns 401 UNAUTHORIZED when no token is provided', async () => {
-      const res = await request(app)
-        .patch(`/api/v1/bookings/${validBookingId}`)
-        .send({
-          startTime: '2026-11-08T04:00:00.000Z',
-          endTime: '2026-11-08T06:00:00.000Z',
-        });
+      const res = await request(app).patch(`/api/v1/bookings/${validBookingId}`).send({
+        startTime: '2026-11-08T04:00:00.000Z',
+        endTime: '2026-11-08T06:00:00.000Z',
+      });
       expect(res.status).toBe(401);
       expect(res.body.code).toBe('UNAUTHORIZED');
     });
@@ -293,11 +292,14 @@ describe('Customer Booking Reschedule Unit Tests (PATCH /api/v1/bookings/:id)', 
 
   describe('Success & Side Effects', () => {
     it('successfully reschedules booking and returns 200 with updated details and kicks email outbox', async () => {
-      const updatedFixture = mockBookingFixture({
-        startTime: new Date('2026-11-08T06:00:00.000Z'),
-        endTime: new Date('2026-11-08T08:00:00.000Z'),
-        totalAmount: '600000.00',
-      });
+      const updatedFixture: RescheduledBookingResult = {
+        ...mockBookingFixture({
+          startTime: new Date('2026-11-08T06:00:00.000Z'),
+          endTime: new Date('2026-11-08T08:00:00.000Z'),
+          totalAmount: '600000.00',
+        }),
+        isRescheduled: true,
+      };
       vi.spyOn(bookingRepository, 'rescheduleBooking').mockResolvedValue(updatedFixture);
       const kickSpy = vi.spyOn(emailOutboxService, 'kick').mockReturnValue();
 
@@ -329,6 +331,48 @@ describe('Customer Booking Reschedule Unit Tests (PATCH /api/v1/bookings/:id)', 
         undefined,
       );
       expect(kickSpy).toHaveBeenCalledTimes(1);
+      expect(res.body.data.isRescheduled).toBeUndefined();
+    });
+
+    it('returns paymentInstructions for UNPAID CONFIRMED bookings and skips emailOutbox.kick on no-op reschedule (CWB-120)', async () => {
+      const originalPayment = ENV.PAYMENT;
+      ENV.PAYMENT = {
+        bankName: 'Vietcombank',
+        accountNumber: '1234567890',
+        accountName: 'COSPACE WORKING',
+      };
+      try {
+        const unchangedFixture: RescheduledBookingResult = {
+          ...mockBookingFixture({
+            totalAmount: '500000.00',
+          }),
+          isRescheduled: false,
+        };
+        vi.spyOn(bookingRepository, 'rescheduleBooking').mockResolvedValue(unchangedFixture);
+        const kickSpy = vi.spyOn(emailOutboxService, 'kick').mockReturnValue();
+
+        const res = await request(app)
+          .patch(`/api/v1/bookings/${validBookingId}`)
+          .set('Authorization', `Bearer ${customerToken}`)
+          .send({
+            startTime: '2026-11-08T03:00:00.000Z',
+            endTime: '2026-11-08T05:00:00.000Z',
+            roomId: validRoomId,
+          });
+
+        expect(res.status).toBe(200);
+        expect(res.body.data.paymentInstructions).toEqual({
+          bankName: 'Vietcombank',
+          accountNumber: '1234567890',
+          accountName: 'COSPACE WORKING',
+          transferContent: 'CS-20261108-ABCD',
+          amount: '500000.00',
+        });
+        expect(res.body.data.isRescheduled).toBeUndefined();
+        expect(kickSpy).not.toHaveBeenCalled();
+      } finally {
+        ENV.PAYMENT = originalPayment;
+      }
     });
   });
 

@@ -167,6 +167,9 @@ async function assertRoomNotClosed(
 /** Result of createBooking; `idempotentReplay` marks a retried request answered with the original. */
 export type CreatedBookingResult = BookingResponseDto & { idempotentReplay?: boolean };
 
+/** Result of rescheduleBooking; `isRescheduled` signals whether schedule fields actually changed. */
+export type RescheduledBookingResult = BookingResponseDto & { isRescheduled: boolean };
+
 const createdBookingInclude = { room: { select: { id: true, name: true } } } as const;
 
 function toBookingResponse(
@@ -563,7 +566,7 @@ export interface BookingRepositoryContract {
     id: string,
     input: RescheduleBookingRepoInput,
     clock?: (() => Date) | Date,
-  ): Promise<BookingResponseDto>;
+  ): Promise<RescheduledBookingResult>;
 }
 
 export interface RescheduleBookingRepoInput {
@@ -896,7 +899,7 @@ export class BookingRepository
     id: string,
     input: RescheduleBookingRepoInput,
     clock?: (() => Date) | Date,
-  ): Promise<BookingResponseDto> {
+  ): Promise<RescheduledBookingResult> {
     return prisma.$transaction(async (tx) => {
       // 0. CWB-78, CWB-112: lock user row first (user -> booking -> room) and enforce lifecycle guards
       await lockBookableCustomer(tx, userId);
@@ -941,12 +944,15 @@ export class BookingRepository
         );
       }
 
-      const evaluationTime = typeof clock === 'function' ? clock() : (clock ?? new Date());
-      validateCustomerRescheduleTime(new Date(lockedBooking.start_time), evaluationTime);
-
-      // 2. Lock target room (defaults to current room)
+      // 2. Lock target room (defaults to current room) BEFORE reading evaluationTime so lock wait
+      // time cannot mask expired reschedule lead time or 30-minute advance notice.
       const targetRoomId = input.roomId ?? lockedBooking.room_id;
       const lockedRoom = await lockRoomRow(tx, targetRoomId);
+      const evaluationTime = typeof clock === 'function' ? clock() : (clock ?? new Date());
+
+      const existingStartDate = new Date(lockedBooking.start_time);
+      const existingEndDate = new Date(lockedBooking.end_time);
+      validateCustomerRescheduleTime(existingStartDate, evaluationTime);
       assertRoomBookable(lockedRoom);
 
       // 3. Validate new time slot
@@ -956,6 +962,38 @@ export class BookingRepository
 
       // 4. CWB-86: Check closure inside transaction (closure takes precedence over booking overlap)
       await assertRoomNotClosed(tx, targetRoomId, newStartDate, newEndDate);
+
+      const isScheduleChanged =
+        targetRoomId !== lockedBooking.room_id ||
+        newStartDate.getTime() !== existingStartDate.getTime() ||
+        newEndDate.getTime() !== existingEndDate.getTime();
+      const nextNote = input.note !== undefined ? input.note : lockedBooking.note;
+      const isNoteChanged = nextNote !== lockedBooking.note;
+
+      // Intentional defense-in-depth (CWB-120): room bookability, time policy, and closure checks
+      // run above even when the submitted slot matches the existing booking so PATCH never returns
+      // 200 "Đổi lịch đặt phòng thành công" for a CLOSED slot or MAINTENANCE/ARCHIVED room. Valid
+      // no-op / note-only updates skip overlap checks, price recalculation, BOOKING_RESCHEDULED
+      // audit logs, BOOKING_REMINDER deletion, and reschedule outbox enqueueing.
+      if (!isScheduleChanged) {
+        const currentRecord = isNoteChanged
+          ? await tx.booking.update({
+              where: { id },
+              data: { note: nextNote },
+              select: bookingReadSelect,
+            })
+          : await tx.booking.findUniqueOrThrow({
+              where: { id },
+              select: bookingReadSelect,
+            });
+        const closures = await loadOverlappingClosuresForConfirmed(
+          tx,
+          [currentRecord],
+          evaluationTime,
+        );
+        const dto = mapBookingRecordToDto(currentRecord, closures, evaluationTime);
+        return { ...dto, isRescheduled: false };
+      }
 
       // 5. Check overlap on target room, strictly excluding this booking
       const conflictingBookings = await tx.booking.findMany({
@@ -978,11 +1016,11 @@ export class BookingRepository
         );
       }
 
-      // 5. Calculate new totalAmount deterministically
+      // 6. Calculate new totalAmount deterministically
       const durationMinutes = (newEndDate.getTime() - newStartDate.getTime()) / (60 * 1000);
       const newTotalAmount = calculateBookingTotal(lockedRoom.pricePerHour, durationMinutes);
 
-      // 6. Update booking (bookingCode is preserved)
+      // 7. Update booking (bookingCode is preserved)
       const updated = await tx.booking.update({
         where: { id },
         data: {
@@ -995,7 +1033,7 @@ export class BookingRepository
         select: bookingReadSelect,
       });
 
-      // 7. Audit log
+      // 8. Audit log
       await recordAuditEvent(tx, {
         actor: { id: userId, role: Role.CUSTOMER },
         action: 'BOOKING_RESCHEDULED',
@@ -1004,8 +1042,8 @@ export class BookingRepository
         before: {
           bookingCode: lockedBooking.booking_code,
           roomId: lockedBooking.room_id,
-          startTime: new Date(lockedBooking.start_time).toISOString(),
-          endTime: new Date(lockedBooking.end_time).toISOString(),
+          startTime: existingStartDate.toISOString(),
+          endTime: existingEndDate.toISOString(),
           totalAmount: formatAmount(lockedBooking.total_amount),
         },
         after: {
@@ -1017,7 +1055,7 @@ export class BookingRepository
         },
       });
 
-      // 8. Enqueue outbox email and reset/remove any prior reminder
+      // 9. Enqueue outbox email and reset/remove any prior reminder
       await tx.emailOutbox.deleteMany({
         where: { bookingId: id, kind: 'BOOKING_REMINDER' },
       });
@@ -1050,7 +1088,8 @@ export class BookingRepository
       });
 
       const closures = await loadOverlappingClosuresForConfirmed(tx, [updated], evaluationTime);
-      return mapBookingRecordToDto(updated, closures, evaluationTime);
+      const dto = mapBookingRecordToDto(updated, closures, evaluationTime);
+      return { ...dto, isRescheduled: true };
     });
   }
 

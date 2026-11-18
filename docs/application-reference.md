@@ -196,6 +196,7 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
   - Bất kỳ query parameter nào không nằm trong danh sách cho phép (ví dụ `sort`, `order`) hoặc sai định dạng sẽ bị từ chối ngay lập tức với `400 VALIDATION_ERROR` trước khi truy cập cơ sở dữ liệu.
 - **Phân trang & Ảnh bìa (Pagination & Cover Fallback)**:
   - `data.pagination`: Chứa `{ page, limit, total, totalPages }`. Trang vượt quá phạm vi dữ liệu sẽ trả danh sách `items: []` rỗng kèm metadata, không báo lỗi.
+  - `data.maxAdvanceDays` (CWB-120): Số ngày đặt trước tối đa (`BOOKING_MAX_ADVANCE_DAYS`) để bộ lọc khung giờ ở client đồng bộ ngưỡng thời gian với backend.
   - `coverImage`: Lấy ảnh primary đầu tiên; nếu phòng không có ảnh primary thì lấy ảnh đầu tiên theo thứ tự tạo (`createdAt/id`); nếu phòng không có ảnh nào thì trả về `null`.
   - `pricePerHour`: Luôn được định dạng chuỗi số thập phân 2 chữ số (ví dụ `"180000.00"`).
   - Sắp xếp mặc định: Cố định theo `createdAt DESC`, sau đó `id ASC`.
@@ -236,7 +237,8 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
       "limit": 10,
       "total": 1,
       "totalPages": 1
-    }
+    },
+    "maxAdvanceDays": 60
   }
 }
 ```
@@ -699,6 +701,10 @@ Hệ thống cung cấp tính năng theo dõi lịch sử và mở xem chi tiế
   - Xử lý đầy đủ các trạng thái loading (skeleton), lỗi mạng (kèm nút thử lại), và lỗi không tìm thấy (404/IDOR) với các liên kết quay lại lịch sử và danh sách phòng.
   - Hiển thị banner chi tiết hủy (`cancellation-info-banner`): Khi đơn ở trạng thái `CANCELLED`, hiển thị banner notice tông lỗi (`tone="error"`) ghi rõ bên hủy ("Đã hủy bởi Co-Space" / "Bạn đã hủy"), thời điểm hủy theo giờ Việt Nam, và lý do hủy nếu do Co-Space hủy (nội dung lý do được render dạng text an toàn chống XSS, hỗ trợ ngắt dòng text dài).
   - Hiển thị banner cảnh báo gián đoạn (`room-unavailable-banner`, CWB-91): Khi đơn `CONFIRMED` có `roomUnavailable = true`, hiển thị banner cảnh báo nêu rõ nguyên nhân (đóng cửa / bảo trì / lưu trữ) kèm hướng dẫn đổi sang phòng/khung giờ khác trên `RescheduleBookingDialog` (nếu `UNPAID`) hoặc liên hệ quầy lễ tân (nếu `PAID`).
+- **API Đổi lịch đặt phòng (`PATCH /api/v1/bookings/:id`, CWB-81, cập nhật CWB-120)**:
+  - Cho phép chủ đơn (`CUSTOMER`) đổi phòng (`roomId?`), khung giờ (`startTime`, `endTime`) và/hoặc ghi chú (`note?`) của đơn `CONFIRMED` + `UNPAID` còn ≥ 1 giờ trước giờ bắt đầu cũ.
+  - Khóa lần lượt `users → bookings → rooms` (`FOR UPDATE`), đọc thời điểm đánh giá `now` **sau** khi nhận khóa phòng đích để chống lệch thời gian chờ khóa, kiểm tra rule thời gian/closure/overlap và tính lại `totalAmount` theo đơn giá phòng đích.
+  - Phản hồi trả kèm `paymentInstructions` (tính theo `totalAmount` mới nếu đã cấu hình tài khoản ngân hàng). Nếu `roomId`, `startTime` và `endTime` không đổi (no-op hoặc chỉ đổi `note`), server vẫn kiểm tra trạng thái phòng, quy tắc thời gian và lịch đóng cửa hiệu lực (`409 ROOM_NOT_AVAILABLE` / `409 ROOM_CLOSED`), sau đó bỏ qua việc ghi `AuditEvent` `BOOKING_RESCHEDULED`, không xóa `BOOKING_REMINDER` cũ và không xếp hàng/gửi lại email đổi lịch.
 
 ### 5. Chính Sách & Quy Trình Hủy Đặt Phòng Phía Khách Hàng (CWB-26)
 
@@ -765,7 +771,7 @@ Revenue API (`GET /api/v1/admin/revenue`, alias `/admin/bookings/revenue`) và K
 
 **Xuất CSV (CWB-69):** `GET /api/v1/admin/reports/bookings.csv` và `GET /api/v1/admin/reports/revenue.csv` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`).
 
-- Query bắt buộc `startDate`, `endDate` (`YYYY-MM-DD`, theo ngày bắt đầu giờ Việt Nam, kỳ tối đa 92 ngày); tùy chọn `roomId`, `paymentStatus` (`PAID`/`UNPAID`). Query khác hoặc kỳ sai trả `400 VALIDATION_ERROR`. Hơn 10.000 đơn trả `400 EXPORT_TOO_LARGE` (cần thu hẹp kỳ).
+- Query bắt buộc `startDate`, `endDate` (`YYYY-MM-DD`, theo ngày bắt đầu giờ Việt Nam, kỳ tối đa 92 ngày); tùy chọn `roomId`, `paymentStatus` (thuộc enum `PaymentStatus`: `UNPAID`, `PAID`, `PARTIALLY_REFUNDED`, `REFUNDED`). Query khác hoặc kỳ sai trả `400 VALIDATION_ERROR`. Hơn 10.000 đơn trả `400 EXPORT_TOO_LARGE` (cần thu hẹp kỳ).
 - File UTF-8 có BOM (Excel đọc đúng tiếng Việt), dòng CRLF, `Content-Disposition: attachment`, `Cache-Control: no-store`. Thời gian theo giờ Việt Nam. Ô bắt đầu bằng `=`, `+`, `-`, `@` hoặc tab được thêm `'` để chống CSV/formula injection; giá trị có dấu phẩy/ngoặc kép/xuống dòng được bọc ngoặc kép theo RFC 4180.
 - `bookings.csv`: mã đơn, phòng, tên khách, loại khách (tài khoản/vãng lai), bắt đầu/kết thúc, trạng thái, thanh toán, phương thức, số tiền. Không xuất email, mật khẩu, token hay dữ liệu ngoài quyền ADMIN.
 - `revenue.csv`: theo ngày và dòng `Tổng`, dùng cùng quy tắc doanh thu với API (`actual` chỉ tính PAID; CANCELLED + UNPAID không đóng góp). Trước khi xuất chạy lazy no-show evaluation trong phạm vi kỳ/phòng được xuất (CWB-57).
