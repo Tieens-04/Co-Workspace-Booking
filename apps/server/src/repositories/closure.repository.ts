@@ -74,7 +74,9 @@ export class ClosureRepository {
     const where: Prisma.ClosureWhereInput = {};
 
     if (filter.roomId !== undefined) {
-      where.roomId = filter.roomId;
+      // Include facility-wide closures (roomId: null) alongside room-specific closures; top-level
+      // startTime/endTime filters below combine via AND. Do not set where.roomId or overwrite where.OR.
+      where.OR = [{ roomId: filter.roomId }, { roomId: null }];
     }
 
     const now = filter.upcoming ? new Date() : undefined;

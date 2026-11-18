@@ -1327,4 +1327,70 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       }
     });
   });
+
+  describe('10. Filtering Closures by Room Includes Facility-Wide Closures (CWB-120)', () => {
+    it('returns room-specific and facility-wide (roomId = null) closures when filtering by roomId', async () => {
+      const filterDate = vnFutureDate(45);
+      const fromIso = `${filterDate}T00:00:00.000Z`;
+      const toIso = `${filterDate}T16:00:00.000Z`;
+      const createdIds: string[] = [];
+
+      try {
+        const [facilityRes, roomARes, roomBRes] = await Promise.all([
+          request(app)
+            .post('/api/v1/admin/closures')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+              roomId: null,
+              startTime: `${filterDate}T01:00:00.000Z`,
+              endTime: `${filterDate}T03:00:00.000Z`,
+              reason: `${testPrefix} Facility filter check`,
+            }),
+          request(app)
+            .post('/api/v1/admin/closures')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+              roomId: testRoomAId,
+              startTime: `${filterDate}T04:00:00.000Z`,
+              endTime: `${filterDate}T06:00:00.000Z`,
+              reason: `${testPrefix} Room A filter check`,
+            }),
+          request(app)
+            .post('/api/v1/admin/closures')
+            .set('Authorization', `Bearer ${adminToken}`)
+            .send({
+              roomId: testRoomBId,
+              startTime: `${filterDate}T07:00:00.000Z`,
+              endTime: `${filterDate}T09:00:00.000Z`,
+              reason: `${testPrefix} Room B filter check`,
+            }),
+        ]);
+
+        expect(facilityRes.status).toBe(201);
+        expect(roomARes.status).toBe(201);
+        expect(roomBRes.status).toBe(201);
+
+        const facilityId = facilityRes.body.data.id as string;
+        const roomAClosureId = roomARes.body.data.id as string;
+        const roomBClosureId = roomBRes.body.data.id as string;
+        createdIds.push(facilityId, roomAClosureId, roomBClosureId);
+
+        const listRes = await request(app)
+          .get(
+            `/api/v1/admin/closures?roomId=${testRoomAId}&from=${encodeURIComponent(fromIso)}&to=${encodeURIComponent(toIso)}&limit=50`,
+          )
+          .set('Authorization', `Bearer ${adminToken}`);
+
+        expect(listRes.status).toBe(200);
+        const returnedIds = (listRes.body.data.items as Array<{ id: string }>).map((c) => c.id);
+        expect(returnedIds).toContain(facilityId);
+        expect(returnedIds).toContain(roomAClosureId);
+        expect(returnedIds).not.toContain(roomBClosureId);
+      } finally {
+        if (createdIds.length > 0) {
+          await prisma.closure.deleteMany({ where: { id: { in: createdIds } } });
+        }
+      }
+    });
+  });
 });
