@@ -5,6 +5,7 @@ import {
   formatVnTime,
   formatVnDateTimeLocal,
   parseVnDateTimeLocalToUtc,
+  isValidVnCalendarDate,
   getCoveredVnDates,
   parsePriceToCents,
   calculateEstimatedTotal,
@@ -305,6 +306,18 @@ describe('bookingTime utility', () => {
       expect(new Date(slots[0].startTime).getTime()).toBeLessThan(
         new Date(slots[29].endTime).getTime(),
       );
+    });
+  });
+
+  describe('isValidVnCalendarDate (CWB-120)', () => {
+    it('accepts valid dates including leap Feb 29 and rejects impossible dates', () => {
+      expect(isValidVnCalendarDate('2026-11-25')).toBe(true);
+      expect(isValidVnCalendarDate('2028-02-29')).toBe(true);
+      expect(isValidVnCalendarDate('2027-02-31')).toBe(false);
+      expect(isValidVnCalendarDate('2026-02-29')).toBe(false);
+      expect(isValidVnCalendarDate('2026-04-31')).toBe(false);
+      expect(isValidVnCalendarDate('2026-13-01')).toBe(false);
+      expect(isValidVnCalendarDate('2026/11/25')).toBe(false);
     });
   });
 });

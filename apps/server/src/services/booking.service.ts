@@ -196,8 +196,13 @@ export class BookingService {
     input: RescheduleBookingBodyInput,
     clock?: (() => Date) | Date,
   ): Promise<BookingResponseDto> {
-    const booking = await this.bookingRepo.rescheduleBooking(userId, id, input, clock);
-    this.emailOutbox.kick();
+    const { isRescheduled, ...booking } = await this.bookingRepo.rescheduleBooking(
+      userId,
+      id,
+      input,
+      clock,
+    );
+    if (isRescheduled === true) this.emailOutbox.kick();
     return { ...booking, paymentInstructions: paymentInstructionsFor(booking, ENV.PAYMENT) };
   }
 }

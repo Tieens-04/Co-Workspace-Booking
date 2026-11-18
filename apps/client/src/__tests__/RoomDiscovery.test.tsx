@@ -9,6 +9,7 @@ import { roomApi } from '../services/room.api';
 import { RoomListItem, Amenity, ApiResponse, GetRoomsResponseData } from '../types/room';
 import { TOKEN_STORAGE_KEY } from '../utils/token';
 import { createMockJwt } from './test-utils';
+import { ToastContext } from '../context/toast-context-base';
 
 vi.mock('../services/room.api', () => ({
   roomApi: {
@@ -113,25 +114,27 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
     vi.useRealTimers();
   });
 
-  const renderComponent = (initialEntry = '/rooms') => {
+  const renderComponent = (initialEntry = '/rooms', showToast = vi.fn()) => {
     return render(
       <MemoryRouter initialEntries={[initialEntry]}>
-        <AuthProvider>
-          <Routes>
-            <Route element={<PublicLayout />}>
-              <Route
-                path="/rooms"
-                element={
-                  <>
-                    <RoomsPage />
-                    <LocationProbe />
-                  </>
-                }
-              />
-              <Route path="/rooms/:id" element={<DetailStateProbe />} />
-            </Route>
-          </Routes>
-        </AuthProvider>
+        <ToastContext.Provider value={{ showToast, removeToast: vi.fn() }}>
+          <AuthProvider>
+            <Routes>
+              <Route element={<PublicLayout />}>
+                <Route
+                  path="/rooms"
+                  element={
+                    <>
+                      <RoomsPage />
+                      <LocationProbe />
+                    </>
+                  }
+                />
+                <Route path="/rooms/:id" element={<DetailStateProbe />} />
+              </Route>
+            </Routes>
+          </AuthProvider>
+        </ToastContext.Provider>
       </MemoryRouter>,
     );
   };
@@ -611,7 +614,9 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
       fireEvent.change(startSelect, { target: { value: '11:00' } });
       fireEvent.change(endSelect, { target: { value: '09:00' } });
 
-      expect(await screen.findByText('Giờ kết thúc phải sau giờ bắt đầu')).toBeInTheDocument();
+      expect(
+        await screen.findByText('Thời gian kết thúc phải sau thời gian bắt đầu'),
+      ).toBeInTheDocument();
       expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2026-11-20');
     });
 
@@ -720,8 +725,66 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
       fireEvent.change(startSelect, { target: { value: '09:00' } });
       fireEvent.change(endSelect, { target: { value: '11:00' } });
 
-      expect(await screen.findByText('Không được chọn ngày trong quá khứ')).toBeInTheDocument();
+      expect(
+        await screen.findByText('Thời gian bắt đầu không được ở trong quá khứ'),
+      ).toBeInTheDocument();
       expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2020-01-01');
+    });
+
+    it('cleanses impossible calendar dates and beyond-horizon URL slots before requesting API (CWB-120)', async () => {
+      renderComponent('/rooms?date=2027-02-31&startTime=09:00&endTime=11:00');
+      await screen.findByText('Focus Room Creative');
+
+      expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2027-02-31');
+      expect(vi.mocked(roomApi.getRooms)).not.toHaveBeenCalledWith(
+        expect.objectContaining({ date: '2027-02-31' }),
+        expect.anything(),
+      );
+
+      vi.clearAllMocks();
+      vi.mocked(roomApi.getAmenities).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: mockAmenitiesData,
+      });
+      vi.mocked(roomApi.getRooms).mockResolvedValue(mockRoomsResponse());
+
+      const beyondHorizonDate = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+      }).format(new Date(Date.now() + 90 * 24 * 60 * 60 * 1000));
+      renderComponent(`/rooms?date=${beyondHorizonDate}&startTime=09:00&endTime=11:00`);
+      await screen.findAllByText('Focus Room Creative');
+
+      expect(vi.mocked(roomApi.getRooms)).not.toHaveBeenCalledWith(
+        expect.objectContaining({ date: beyondHorizonDate }),
+        expect.anything(),
+      );
+    });
+
+    it('notifies user with warning toast when URL date exceeds server maxAdvanceDays (CWB-120 Finding 05)', async () => {
+      const fortyFiveDaysAhead = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+      }).format(new Date(Date.now() + 45 * 24 * 60 * 60 * 1000));
+
+      const baseRes = mockRoomsResponse();
+      vi.mocked(roomApi.getRooms).mockResolvedValue({
+        ...baseRes,
+        data: {
+          ...baseRes.data,
+          maxAdvanceDays: 30,
+        },
+      });
+      const showToast = vi.fn();
+
+      renderComponent(`/rooms?date=${fortyFiveDaysAhead}&startTime=09:00&endTime=11:00`, showToast);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-search')).not.toHaveTextContent(
+          `date=${fortyFiveDaysAhead}`,
+        );
+      });
+      expect(showToast).toHaveBeenCalledTimes(1);
+      expect(showToast).toHaveBeenCalledWith('Chỉ được đặt phòng trước tối đa 30 ngày', 'warning');
     });
   });
 });

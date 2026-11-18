@@ -28,13 +28,21 @@ import { useSmoothScroll } from '../components/editorial/useSmoothScroll';
 import { SwapValue } from '../components/motion/SwapValue';
 import { MOBILE_FILTERS_QUERY, useMediaQuery } from '../components/rooms/useMediaQuery';
 import { roomApi } from '../services/room.api';
-import { RoomListItem, Amenity, PaginationMeta, RoomSortOption, GetRoomsParams } from '../types/room';
+import {
+  RoomListItem,
+  Amenity,
+  PaginationMeta,
+  RoomSortOption,
+  GetRoomsParams,
+} from '../types/room';
 import { useDebounce } from '../hooks/useDebounce';
+import { useToast } from '../hooks/useToast';
 import {
   normalizeRoomSearchParams,
   RoomFilterFieldErrors,
   validateRoomFilterInputs,
 } from '../utils/roomFilters';
+import { DEFAULT_MAX_ADVANCE_DAYS } from '../utils/bookingTime';
 
 const PAGE_LIMIT = 10;
 
@@ -45,11 +53,16 @@ export const RoomsPage: React.FC = () => {
   // Same inertial wheel scrolling as the landing; the filter rail keeps native scroll.
   useSmoothScroll();
   const [filtersOpen, setFiltersOpen] = useState<boolean>(false);
+  const [maxAdvanceDays, setMaxAdvanceDays] = useState<number>(DEFAULT_MAX_ADVANCE_DAYS);
+  const maxAdvanceDaysRef = useRef<number>(maxAdvanceDays);
+  maxAdvanceDaysRef.current = maxAdvanceDays;
+  const { showToast } = useToast();
+  const lastHorizonToastKeyRef = useRef<string | null>(null);
 
   // URL is the committed filter state. Invalid values are removed before any API request.
   const normalizedSearch = useMemo(
-    () => normalizeRoomSearchParams(searchParams, PAGE_LIMIT),
-    [searchParams],
+    () => normalizeRoomSearchParams(searchParams, PAGE_LIMIT, new Date(), maxAdvanceDays),
+    [searchParams, maxAdvanceDays],
   );
   const urlPage = normalizedSearch.page;
   const urlCapacity = normalizedSearch.capacity?.toString() ?? '';
@@ -65,9 +78,18 @@ export const RoomsPage: React.FC = () => {
 
   useEffect(() => {
     if (normalizedSearch.changed) {
+      if (normalizedSearch.strippedHorizonError) {
+        const toastKey = `${searchParams.toString()}::${maxAdvanceDays}`;
+        if (lastHorizonToastKeyRef.current !== toastKey) {
+          lastHorizonToastKeyRef.current = toastKey;
+          showToast(normalizedSearch.strippedHorizonError, 'warning');
+        }
+      }
       setSearchParams(normalizedSearch.searchParams, { replace: true });
+    } else {
+      lastHorizonToastKeyRef.current = null;
     }
-  }, [normalizedSearch, setSearchParams]);
+  }, [normalizedSearch, searchParams, maxAdvanceDays, setSearchParams, showToast]);
 
   // --- Local Input States for Debouncing ---
   const [capacityInput, setCapacityInput] = useState<string>(urlCapacity);
@@ -125,9 +147,19 @@ export const RoomsPage: React.FC = () => {
       dateInput,
       startTimeInput,
       endTimeInput,
+      new Date(),
+      maxAdvanceDays,
     );
     setErrors(currentErrors);
-  }, [capacityInput, minPriceInput, maxPriceInput, dateInput, startTimeInput, endTimeInput]);
+  }, [
+    capacityInput,
+    minPriceInput,
+    maxPriceInput,
+    dateInput,
+    startTimeInput,
+    endTimeInput,
+    maxAdvanceDays,
+  ]);
 
   // Refs let this effect react only to debounced input, not to browser navigation.
   const searchParamsRef = useRef(searchParams);
@@ -223,14 +255,12 @@ export const RoomsPage: React.FC = () => {
       dateInput,
       startTimeInput,
       endTimeInput,
+      new Date(),
+      maxAdvanceDays,
     );
 
     if (!currentErrors.slot && dateInput && startTimeInput && endTimeInput) {
-      if (
-        dateInput !== urlDate ||
-        startTimeInput !== urlStartTime ||
-        endTimeInput !== urlEndTime
-      ) {
+      if (dateInput !== urlDate || startTimeInput !== urlStartTime || endTimeInput !== urlEndTime) {
         const nextParams = new URLSearchParams(searchParamsRef.current);
         nextParams.set('date', dateInput);
         nextParams.set('startTime', startTimeInput);
@@ -239,7 +269,7 @@ export const RoomsPage: React.FC = () => {
         setSearchParamsRef.current(nextParams, { replace: true });
       }
     }
-  }, [dateInput, startTimeInput, endTimeInput, urlDate, urlStartTime, urlEndTime]);
+  }, [dateInput, startTimeInput, endTimeInput, urlDate, urlStartTime, urlEndTime, maxAdvanceDays]);
 
   // --- Amenities State & Independent Fetching ---
   const [amenities, setAmenities] = useState<Amenity[]>([]);
@@ -326,6 +356,14 @@ export const RoomsPage: React.FC = () => {
       .then((res) => {
         if (controller.signal.aborted) return;
         hasLoadedOnceRef.current = true;
+        const serverMaxAdvance = res.data.maxAdvanceDays;
+        if (
+          typeof serverMaxAdvance === 'number' &&
+          Number.isInteger(serverMaxAdvance) &&
+          serverMaxAdvance > 0
+        ) {
+          setMaxAdvanceDays(serverMaxAdvance);
+        }
         setRooms(res.data.items);
         setPagination(res.data.pagination);
         setIsInitialLoading(false);
@@ -333,6 +371,23 @@ export const RoomsPage: React.FC = () => {
       })
       .catch((err) => {
         if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return;
+        const details = err.response?.data?.details as
+          Array<{ field?: string; message?: string }> | undefined;
+        const horizonIssue = urlDate
+          ? details
+              ?.find((d) => d.field === 'date')
+              ?.message?.match(/Chỉ được đặt phòng trước tối đa (\d+) ngày/)
+          : undefined;
+        const parsedHorizon = horizonIssue ? Number(horizonIssue[1]) : NaN;
+        if (
+          urlDate &&
+          Number.isInteger(parsedHorizon) &&
+          parsedHorizon > 0 &&
+          parsedHorizon !== maxAdvanceDaysRef.current
+        ) {
+          setMaxAdvanceDays(parsedHorizon);
+          return;
+        }
         setRoomsError(
           err.response?.data?.message || err.message || 'Không thể tải danh sách phòng',
         );
@@ -475,11 +530,11 @@ export const RoomsPage: React.FC = () => {
 
   const hasActiveFilters = Boolean(
     urlCapacity ||
-      urlMinPrice ||
-      urlMaxPrice ||
-      urlAmenityIds.length > 0 ||
-      urlQ ||
-      (urlDate && urlStartTime && urlEndTime),
+    urlMinPrice ||
+    urlMaxPrice ||
+    urlAmenityIds.length > 0 ||
+    urlQ ||
+    (urlDate && urlStartTime && urlEndTime),
   );
   const activeFilterCount =
     (urlCapacity ? 1 : 0) +
@@ -504,6 +559,7 @@ export const RoomsPage: React.FC = () => {
       onStartTimeChange={setStartTimeInput}
       onEndTimeChange={setEndTimeInput}
       onClearSlot={handleClearSlot}
+      maxAdvanceDays={maxAdvanceDays}
       errors={errors}
       amenities={amenities}
       loadingAmenities={loadingAmenities}

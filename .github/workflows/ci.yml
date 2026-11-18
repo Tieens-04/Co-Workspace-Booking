@@ -63,8 +63,10 @@ jobs:
           test "$(node --version)" = "v$(cat .nvmrc)"
           test "npm@$(npm --version)" = "$(node -p 'require("./package.json").packageManager')"
       - run: npm ci
+      - name: Audit production dependencies
+        run: npm audit --omit=dev
       - name: Audit all dependencies
-        run: npm audit
+        run: node scripts/audit-dependencies.cjs
       - name: Tooling security regressions
         run: npm run test:tooling
       - name: Generate and validate Prisma

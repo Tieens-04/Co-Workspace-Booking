@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BookingStatus, PaymentMethod } from '@prisma/client';
+import { BookingStatus, PaymentMethod, PaymentStatus } from '@prisma/client';
 import { positiveIntSchema, MYSQL_INT_MAX, isValidCalendarDate } from './room.validator.js';
 import { guestPhoneSchema } from './phone.validator.js';
 
@@ -189,7 +189,7 @@ export const exportReportQuerySchema = z
     startDate: exportDate('startDate'),
     endDate: exportDate('endDate'),
     roomId: z.string().uuid('ID phòng không đúng định dạng UUID').optional(),
-    paymentStatus: z.enum(['PAID', 'UNPAID']).optional(),
+    paymentStatus: z.nativeEnum(PaymentStatus).optional(),
   })
   .strict()
   .refine((data) => data.startDate <= data.endDate, {

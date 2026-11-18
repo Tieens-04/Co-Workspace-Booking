@@ -1219,5 +1219,31 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       expect(customerInput.value).toBe('Nguyễn Văn Draft');
       expect(codeInput.value).toBe('CS-DRAFT-01');
     });
+
+    it('cleanses impossible calendar date query params and blocks invalid date submission (CWB-120)', async () => {
+      const user = userEvent.setup();
+      renderComponent('/admin/bookings?date=2027-02-31');
+
+      await screen.findByText('CS-20261003-USER');
+      expect(adminBookingApi.getBookings).not.toHaveBeenCalledWith(
+        expect.objectContaining({ date: '2027-02-31' }),
+        expect.anything(),
+      );
+      expect(adminBookingApi.getRevenue).not.toHaveBeenCalledWith(
+        expect.objectContaining({ startDate: '2027-02-31' }),
+        expect.anything(),
+      );
+
+      const dateInput = screen.getByTestId('filter-date-input');
+      dateInput.setAttribute('type', 'text');
+      fireEvent.change(dateInput, { target: { value: '2027-02-31' } });
+      await user.click(screen.getByTestId('apply-filters-btn'));
+
+      expect(await screen.findByText('Ngày bắt đầu không hợp lệ')).toBeInTheDocument();
+      expect(adminBookingApi.getBookings).not.toHaveBeenCalledWith(
+        expect.objectContaining({ date: '2027-02-31' }),
+        expect.anything(),
+      );
+    });
   });
 });

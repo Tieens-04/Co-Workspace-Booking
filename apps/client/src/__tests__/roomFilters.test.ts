@@ -36,8 +36,22 @@ describe('roomFilters utility functions (Findings 2, 7 Regressions)', () => {
     it('rejects date in the past', () => {
       const res = validateSlotRules('2026-11-19', '09:00', '11:00', mockNow);
       expect(res.isValid).toBe(false);
-      expect(res.error).toBe('Không được chọn ngày trong quá khứ');
+      expect(res.error).toBe('Thời gian bắt đầu không được ở trong quá khứ');
       expect(isSlotValid('2026-11-19', '09:00', '11:00', mockNow)).toBe(false);
+    });
+
+    it('rejects impossible calendar dates like 2027-02-31 (CWB-120)', () => {
+      const res = validateSlotRules('2027-02-31', '09:00', '11:00', mockNow);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toBe('Ngày đã chọn không tồn tại trên lịch');
+      expect(isSlotValid('2027-02-31', '09:00', '11:00', mockNow)).toBe(false);
+    });
+
+    it('rejects dates beyond BOOKING_MAX_ADVANCE_DAYS (CWB-120)', () => {
+      const res = validateSlotRules('2027-02-01', '09:00', '11:00', mockNow, 60);
+      expect(res.isValid).toBe(false);
+      expect(res.error).toBe('Chỉ được đặt phòng trước tối đa 60 ngày');
+      expect(isSlotValid('2027-02-01', '09:00', '11:00', mockNow, 60)).toBe(false);
     });
 
     it('rejects startTime in the past on the current day', () => {
@@ -60,7 +74,7 @@ describe('roomFilters utility functions (Findings 2, 7 Regressions)', () => {
     it('rejects endTime before or equal to startTime', () => {
       const res = validateSlotRules('2026-11-25', '11:00', '09:00', mockNow);
       expect(res.isValid).toBe(false);
-      expect(res.error).toBe('Giờ kết thúc phải sau giờ bắt đầu');
+      expect(res.error).toBe('Thời gian kết thúc phải sau thời gian bắt đầu');
     });
 
     it('rejects duration under 1 hour', () => {
@@ -78,17 +92,21 @@ describe('roomFilters utility functions (Findings 2, 7 Regressions)', () => {
     it('rejects times outside operating hours 07:00 - 22:00', () => {
       const res1 = validateSlotRules('2026-11-25', '06:30', '08:30', mockNow);
       expect(res1.isValid).toBe(false);
-      expect(res1.error).toBe('Chỉ được đặt phòng trong khung giờ hoạt động (07:00 - 22:00)');
+      expect(res1.error).toBe(
+        'Chỉ được đặt phòng từ 07:00 đến 22:00 trong cùng ngày (giờ Việt Nam)',
+      );
 
       const res2 = validateSlotRules('2026-11-25', '20:30', '22:30', mockNow);
       expect(res2.isValid).toBe(false);
-      expect(res2.error).toBe('Chỉ được đặt phòng trong khung giờ hoạt động (07:00 - 22:00)');
+      expect(res2.error).toBe(
+        'Chỉ được đặt phòng từ 07:00 đến 22:00 trong cùng ngày (giờ Việt Nam)',
+      );
     });
 
     it('rejects unaligned slots (not multiple of 30 min)', () => {
       const res = validateSlotRules('2026-11-25', '09:15', '11:15', mockNow);
       expect(res.isValid).toBe(false);
-      expect(res.error).toBe('Thời gian phải đúng mốc 30 phút');
+      expect(res.error).toBe('Thời gian bắt đầu phải theo mốc 30 phút (ví dụ: 09:00, 09:30)');
     });
   });
 
@@ -107,45 +125,66 @@ describe('roomFilters utility functions (Findings 2, 7 Regressions)', () => {
     });
 
     it('reports error when only partial slot information is provided', () => {
-      const errors = validateRoomFilterInputs(
-        '',
-        '',
-        '',
-        '2026-11-25',
-        '09:00',
-        '',
-        mockNow,
-      );
+      const errors = validateRoomFilterInputs('', '', '', '2026-11-25', '09:00', '', mockNow);
       expect(errors.slot).toBe('Vui lòng chọn đầy đủ ngày, giờ bắt đầu và giờ kết thúc');
     });
 
+    it('reports error immediately when date is an impossible calendar date (CWB-120)', () => {
+      const errors = validateRoomFilterInputs('', '', '', '2027-02-31', '', '', mockNow);
+      expect(errors.slot).toBe('Ngày đã chọn không tồn tại trên lịch');
+    });
+
     it('reports error when date is in the past', () => {
-      const errors = validateRoomFilterInputs(
-        '',
-        '',
-        '',
-        '2020-01-01',
-        '09:00',
-        '11:00',
-        mockNow,
-      );
-      expect(errors.slot).toBe('Không được chọn ngày trong quá khứ');
+      const errors = validateRoomFilterInputs('', '', '', '2020-01-01', '09:00', '11:00', mockNow);
+      expect(errors.slot).toBe('Thời gian bắt đầu không được ở trong quá khứ');
     });
   });
 
   describe('normalizeRoomSearchParams', () => {
     it('cleanses past date slots from search params to prevent 400 error state', () => {
       const params = new URLSearchParams('date=2020-01-01&startTime=09:00&endTime=11:00');
-      const normalized = normalizeRoomSearchParams(params, 10);
+      const normalized = normalizeRoomSearchParams(params, 10, mockNow);
       expect(normalized.date).toBeUndefined();
       expect(normalized.startTime).toBeUndefined();
       expect(normalized.endTime).toBeUndefined();
       expect(normalized.searchParams.has('date')).toBe(false);
     });
 
+    it('cleanses impossible calendar dates and beyond-horizon dates from search params (CWB-120)', () => {
+      const impossible = normalizeRoomSearchParams(
+        new URLSearchParams('date=2027-02-31&startTime=09:00&endTime=11:00'),
+        10,
+        mockNow,
+      );
+      expect(impossible.date).toBeUndefined();
+      expect(impossible.searchParams.has('date')).toBe(false);
+      expect(impossible.strippedHorizonError).toBeUndefined();
+
+      const beyondHorizon = normalizeRoomSearchParams(
+        new URLSearchParams('date=2027-02-01&startTime=09:00&endTime=11:00'),
+        10,
+        mockNow,
+        60,
+      );
+      expect(beyondHorizon.date).toBeUndefined();
+      expect(beyondHorizon.searchParams.has('date')).toBe(false);
+      expect(beyondHorizon.strippedHorizonError).toBe('Chỉ được đặt phòng trước tối đa 60 ngày');
+
+      // 45 days after 2026-11-20 is 2027-01-04 (within 60d default, exceeds 30d server horizon)
+      const tightenedHorizon = normalizeRoomSearchParams(
+        new URLSearchParams('date=2027-01-04&startTime=09:00&endTime=11:00'),
+        10,
+        mockNow,
+        30,
+      );
+      expect(tightenedHorizon.date).toBeUndefined();
+      expect(tightenedHorizon.searchParams.has('date')).toBe(false);
+      expect(tightenedHorizon.strippedHorizonError).toBe('Chỉ được đặt phòng trước tối đa 30 ngày');
+    });
+
     it('preserves valid future date slots', () => {
       const params = new URLSearchParams('date=2026-11-25&startTime=09:00&endTime=11:00');
-      const normalized = normalizeRoomSearchParams(params, 10);
+      const normalized = normalizeRoomSearchParams(params, 10, mockNow);
       expect(normalized.date).toBe('2026-11-25');
       expect(normalized.startTime).toBe('09:00');
       expect(normalized.endTime).toBe('11:00');

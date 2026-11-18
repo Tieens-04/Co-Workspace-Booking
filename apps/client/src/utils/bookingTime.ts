@@ -9,6 +9,7 @@ export const MIN_DURATION_MINUTES = 60;
 export const MAX_DURATION_MINUTES = 480;
 export const MIN_LEAD_TIME_MS = 30 * 60 * 1000;
 export const DAY_MS = 24 * 60 * 60 * 1000;
+export const DEFAULT_MAX_ADVANCE_DAYS = 60;
 
 /** Latest allowed start for a server horizon of `maxAdvanceDays` (CWB-75), mirroring the backend. */
 export function getBookingHorizonEnd(maxAdvanceDays: number, now: Date = new Date()): Date {
@@ -156,6 +157,15 @@ export function parseVnDateTimeLocalToUtc(val: string): Date | null {
   }
 
   return parsed;
+}
+
+/**
+ * Checks whether a YYYY-MM-DD string represents an actual Vietnam calendar date
+ * (rejects non-existent dates such as 2027-02-31 or 2026-02-29).
+ */
+export function isValidVnCalendarDate(dateStr: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  return parseVnDateTimeLocalToUtc(`${dateStr}T00:00`) !== null;
 }
 
 /**

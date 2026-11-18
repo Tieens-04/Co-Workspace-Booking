@@ -9,6 +9,7 @@ interface BookingFiltersProps {
   code: string;
   customer: string;
   date: string;
+  dateError?: string | null;
   status: string;
   needsAttention: boolean;
   onCodeChange: (value: string) => void;
@@ -25,6 +26,7 @@ export function BookingFilters({
   code,
   customer,
   date,
+  dateError,
   status,
   needsAttention,
   onCodeChange,
@@ -63,7 +65,12 @@ export function BookingFilters({
           />
         </Field>
 
-        <Field id="filterDate" label="Ngày bắt đầu (giờ Việt Nam)">
+        <Field
+          id="filterDate"
+          label="Ngày bắt đầu (giờ Việt Nam)"
+          error={dateError ?? undefined}
+          errorId="filter-date-error"
+        >
           <Input
             type="date"
             className="tabular-nums"

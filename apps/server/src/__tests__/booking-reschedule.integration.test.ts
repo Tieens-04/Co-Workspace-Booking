@@ -8,6 +8,8 @@ import { generateToken } from '../utils/jwt.util.js';
 import { TestAccounts } from './support/test-accounts.js';
 import { EmailOutboxService } from '../services/email-outbox.service.js';
 import { NotificationService } from '../services/notification.service.js';
+import { ENV } from '../config/env.config.js';
+import { bookingRepository } from '../repositories/booking.repository.js';
 
 describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locking)', () => {
   const accounts = new TestAccounts();
@@ -437,15 +439,26 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
       });
 
       // Switch to Room 2 for 2 hours (19:00 - 21:00 VN) -> expected: 2 * 250k = 500k
-      const res = await request(app)
-        .patch(`/api/v1/bookings/${booking.id}`)
-        .set('Authorization', `Bearer ${user1Token}`)
-        .send({
-          roomId: room2Id,
-          startTime: makeIso(19, 0),
-          endTime: makeIso(21, 0),
-          note: 'Đã đổi sang phòng lớn',
-        });
+      const originalPayment = ENV.PAYMENT;
+      ENV.PAYMENT = {
+        bankName: 'Vietcombank',
+        accountNumber: '1234567890',
+        accountName: 'COSPACE WORKING',
+      };
+      let res: request.Response;
+      try {
+        res = await request(app)
+          .patch(`/api/v1/bookings/${booking.id}`)
+          .set('Authorization', `Bearer ${user1Token}`)
+          .send({
+            roomId: room2Id,
+            startTime: makeIso(19, 0),
+            endTime: makeIso(21, 0),
+            note: 'Đã đổi sang phòng lớn',
+          });
+      } finally {
+        ENV.PAYMENT = originalPayment;
+      }
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -453,6 +466,14 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
       expect(res.body.data.room.id).toBe(room2Id);
       expect(res.body.data.totalAmount).toBe('500000.00');
       expect(res.body.data.note).toBe('Đã đổi sang phòng lớn');
+      expect(res.body.data.paymentInstructions).toEqual({
+        bankName: 'Vietcombank',
+        accountNumber: '1234567890',
+        accountName: 'COSPACE WORKING',
+        transferContent: originalCode,
+        amount: '500000.00',
+      });
+      expect(res.body.data.isRescheduled).toBeUndefined();
 
       // Verify Audit Event
       const audit = await prisma.auditEvent.findFirst({
@@ -518,6 +539,272 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
         },
       });
       expect(deliveredOutbox?.status).toBe('SENT');
+    });
+
+    it('skips audit event, reminder deletion and outbox email when reschedule is a no-op (CWB-120)', async () => {
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-${randomUUID().slice(0, 8)}`,
+          userId: user1Id,
+          roomId: room1Id,
+          startTime: new Date(makeIso(18, 0)),
+          endTime: new Date(makeIso(19, 0)),
+          totalAmount: new Prisma.Decimal('100000.00'),
+          note: 'Ghi chú ban đầu',
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+      await prisma.emailOutbox.create({
+        data: {
+          kind: 'BOOKING_REMINDER',
+          bookingId: booking.id,
+          eventKey: '',
+          status: 'QUEUED',
+        },
+      });
+
+      const originalPayment = ENV.PAYMENT;
+      ENV.PAYMENT = {
+        bankName: 'Vietcombank',
+        accountNumber: '1234567890',
+        accountName: 'COSPACE WORKING',
+      };
+      let closureId: string | undefined;
+      try {
+        // 1. Exact no-op (same room, start, end, note)
+        const noOpRes = await request(app)
+          .patch(`/api/v1/bookings/${booking.id}`)
+          .set('Authorization', `Bearer ${user1Token}`)
+          .send({
+            roomId: room1Id,
+            startTime: makeIso(18, 0),
+            endTime: makeIso(19, 0),
+            note: 'Ghi chú ban đầu',
+          });
+
+        expect(noOpRes.status).toBe(200);
+        expect(noOpRes.body.data.paymentInstructions).toEqual({
+          bankName: 'Vietcombank',
+          accountNumber: '1234567890',
+          accountName: 'COSPACE WORKING',
+          transferContent: booking.bookingCode,
+          amount: '100000.00',
+        });
+        expect(noOpRes.body.data.isRescheduled).toBeUndefined();
+
+        const auditsAfterNoOp = await prisma.auditEvent.findMany({
+          where: { entityId: booking.id, action: 'BOOKING_RESCHEDULED' },
+        });
+        expect(auditsAfterNoOp).toHaveLength(0);
+
+        const rescheduledMailAfterNoOp = await prisma.emailOutbox.findUnique({
+          where: {
+            kind_bookingId_eventKey: {
+              kind: 'BOOKING_RESCHEDULED',
+              bookingId: booking.id,
+              eventKey: '',
+            },
+          },
+        });
+        expect(rescheduledMailAfterNoOp).toBeNull();
+
+        const reminderMailAfterNoOp = await prisma.emailOutbox.findUnique({
+          where: {
+            kind_bookingId_eventKey: {
+              kind: 'BOOKING_REMINDER',
+              bookingId: booking.id,
+              eventKey: '',
+            },
+          },
+        });
+        expect(reminderMailAfterNoOp).not.toBeNull();
+        expect(reminderMailAfterNoOp?.status).toBe('QUEUED');
+
+        // 2. Note-only update: updates note without recording BOOKING_RESCHEDULED audit or email
+        const noteOnlyRes = await request(app)
+          .patch(`/api/v1/bookings/${booking.id}`)
+          .set('Authorization', `Bearer ${user1Token}`)
+          .send({
+            roomId: room1Id,
+            startTime: makeIso(18, 0),
+            endTime: makeIso(19, 0),
+            note: 'Chỉ đổi ghi chú',
+          });
+
+        expect(noteOnlyRes.status).toBe(200);
+        expect(noteOnlyRes.body.data.note).toBe('Chỉ đổi ghi chú');
+        expect(noteOnlyRes.body.data.totalAmount).toBe('100000.00');
+
+        const audits = await prisma.auditEvent.findMany({
+          where: { entityId: booking.id, action: 'BOOKING_RESCHEDULED' },
+        });
+        expect(audits).toHaveLength(0);
+
+        const rescheduledMail = await prisma.emailOutbox.findUnique({
+          where: {
+            kind_bookingId_eventKey: {
+              kind: 'BOOKING_RESCHEDULED',
+              bookingId: booking.id,
+              eventKey: '',
+            },
+          },
+        });
+        expect(rescheduledMail).toBeNull();
+
+        const reminderMail = await prisma.emailOutbox.findUnique({
+          where: {
+            kind_bookingId_eventKey: {
+              kind: 'BOOKING_REMINDER',
+              bookingId: booking.id,
+              eventKey: '',
+            },
+          },
+        });
+        expect(reminderMail).not.toBeNull();
+        expect(reminderMail?.status).toBe('QUEUED');
+
+        // 3. Defense-in-depth (CWB-120 Finding 04): even an unchanged slot is rejected with 409 ROOM_CLOSED
+        // when covered by an active closure.
+        const closure = await prisma.closure.create({
+          data: {
+            roomId: room1Id,
+            startTime: new Date(makeIso(18, 0)),
+            endTime: new Date(makeIso(19, 0)),
+            reason: `${testPrefix} No-op closed slot check`,
+            createdById: user1Id,
+          },
+        });
+        closureId = closure.id;
+
+        const closedNoOpRes = await request(app)
+          .patch(`/api/v1/bookings/${booking.id}`)
+          .set('Authorization', `Bearer ${user1Token}`)
+          .send({
+            roomId: room1Id,
+            startTime: makeIso(18, 0),
+            endTime: makeIso(19, 0),
+          });
+        expect(closedNoOpRes.status).toBe(409);
+        expect(closedNoOpRes.body.code).toBe('ROOM_CLOSED');
+      } finally {
+        if (closureId) {
+          await prisma.closure.deleteMany({ where: { id: closureId } });
+        }
+        ENV.PAYMENT = originalPayment;
+      }
+    });
+
+    it('re-reads evaluationTime after acquiring lockRoomRow so lock-wait skew cannot bypass lead time (CWB-120)', async () => {
+      async function waitForBookingRowLocked(bookingId: string, timeoutMs = 5000): Promise<void> {
+        const deadline = Date.now() + timeoutMs;
+        while (Date.now() < deadline) {
+          try {
+            await prisma.$transaction((tx) =>
+              tx.$queryRaw(
+                Prisma.sql`SELECT id FROM bookings WHERE id = ${bookingId} FOR UPDATE NOWAIT`,
+              ),
+            );
+          } catch (err) {
+            const msg = String(err);
+            if (msg.includes('3572') || msg.toLowerCase().includes('nowait')) {
+              return;
+            }
+            throw err;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 15));
+        }
+        throw new Error(`Timed out waiting for booking row lock on ${bookingId}`);
+      }
+
+      const targetRoom = await prisma.room.create({
+        data: {
+          name: `${testPrefix}_LockClockRoom_${randomUUID().slice(0, 6)}`,
+          capacity: 4,
+          pricePerHour: new Prisma.Decimal('150000.00'),
+          status: RoomStatus.AVAILABLE,
+        },
+      });
+      const bookingStart = new Date(makeIso(17, 0));
+      const bookingEnd = new Date(makeIso(18, 0));
+      const booking = await prisma.booking.create({
+        data: {
+          bookingCode: `CS-${randomUUID().slice(0, 8)}`,
+          userId: user1Id,
+          roomId: room1Id,
+          startTime: bookingStart,
+          endTime: bookingEnd,
+          totalAmount: new Prisma.Decimal('100000.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.UNPAID,
+        },
+      });
+
+      let releaseRoomLock!: () => void;
+      const roomLockReleased = new Promise<void>((resolve) => {
+        releaseRoomLock = resolve;
+      });
+      let roomLockAcquired!: () => void;
+      const onRoomLockAcquired = new Promise<void>((resolve) => {
+        roomLockAcquired = resolve;
+      });
+
+      const holderTx = prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM rooms WHERE id = ${targetRoom.id} FOR UPDATE`);
+        roomLockAcquired();
+        await roomLockReleased;
+      });
+      void holderTx.catch(() => {});
+
+      try {
+        const safeTime = new Date(bookingStart.getTime() - 2 * 60 * 60 * 1000); // 2h before start
+        const lateTime = new Date(bookingStart.getTime() - 45 * 60 * 1000); // 45m before start (< 1h)
+        let currentClock = safeTime;
+        let clockReads = 0;
+
+        await onRoomLockAcquired;
+
+        const reschedulePromise = bookingRepository.rescheduleBooking(
+          user1Id,
+          booking.id,
+          {
+            roomId: targetRoom.id,
+            startTime: makeIso(19, 0),
+            endTime: makeIso(20, 0),
+          },
+          () => {
+            clockReads += 1;
+            return currentClock;
+          },
+        );
+        void reschedulePromise.catch(() => {});
+
+        // Deterministic barrier: once booking.id FOR UPDATE NOWAIT fails with 3572, rescheduleBooking
+        // holds the booking row lock and has synchronously entered lockRoomRow(tx, targetRoom.id).
+        await waitForBookingRowLocked(booking.id);
+        expect(clockReads).toBe(0);
+
+        currentClock = lateTime;
+        releaseRoomLock();
+        await holderTx;
+
+        await expect(reschedulePromise).rejects.toMatchObject({
+          code: 'RESCHEDULE_POLICY_VIOLATION',
+          statusCode: 400,
+        });
+        expect(clockReads).toBe(1);
+
+        const unchanged = await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } });
+        expect(unchanged.roomId).toBe(room1Id);
+        expect(unchanged.startTime.toISOString()).toBe(bookingStart.toISOString());
+      } finally {
+        releaseRoomLock();
+        await Promise.allSettled([holderTx]);
+        await prisma.emailOutbox.deleteMany({ where: { bookingId: booking.id } });
+        await prisma.auditEvent.deleteMany({ where: { entityId: booking.id } });
+        await prisma.booking.deleteMany({ where: { id: booking.id } });
+        await prisma.room.deleteMany({ where: { id: targetRoom.id } });
+      }
     });
   });
 

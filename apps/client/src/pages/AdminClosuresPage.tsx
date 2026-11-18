@@ -50,7 +50,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { useToast } from '../hooks/useToast';
 import { adminClosureApi } from '../services/admin-closure.api';
-import { roomApi } from '../services/room.api';
+import { adminRoomApi } from '../services/admin-room.api';
 import { ClosureItem, ConflictingBooking, CreateClosurePayload } from '../types/closure';
 import { PaginationMeta, RoomListItem } from '../types/room';
 import {
@@ -108,21 +108,41 @@ export const AdminClosuresPage: React.FC = () => {
 
   const requestRef = useRef<AbortController | null>(null);
 
-  // Load rooms for filter and modal dropdown
+  // Load all admin rooms (including ARCHIVED) for filter and modal dropdown
   useEffect(() => {
-    let active = true;
-    void roomApi
-      .getRooms({ limit: 100 })
-      .then((res) => {
-        if (active && res.success && res.data?.items) {
-          setRooms(res.data.items);
+    const controller = new AbortController();
+    const loadRooms = async () => {
+      try {
+        const first = await adminRoomApi.getAdminRooms({ page: 1, limit: 100 }, controller.signal);
+        if (controller.signal.aborted || !first?.success || !first.data?.items) return;
+        const collected = [...first.data.items];
+        const rawTotalPages = first.data.pagination?.totalPages ?? 1;
+        if (rawTotalPages > 10) {
+          console.warn(
+            `[AdminClosuresPage] Tổng số trang phòng (${rawTotalPages}) vượt giới hạn tải 10 trang (1000 phòng).`,
+          );
         }
-      })
-      .catch(() => {
+        const totalPages = Math.min(rawTotalPages, 10);
+        for (let nextPage = 2; nextPage <= totalPages; nextPage++) {
+          if (controller.signal.aborted) break;
+          const nextRes = await adminRoomApi.getAdminRooms(
+            { page: nextPage, limit: 100 },
+            controller.signal,
+          );
+          if (nextRes?.success && nextRes.data?.items) {
+            collected.push(...nextRes.data.items);
+          }
+        }
+        if (!controller.signal.aborted) {
+          setRooms(collected);
+        }
+      } catch {
         // Non-critical room list failure
-      });
+      }
+    };
+    void loadRooms();
     return () => {
-      active = false;
+      controller.abort();
     };
   }, []);
 
@@ -365,9 +385,12 @@ export const AdminClosuresPage: React.FC = () => {
                 data-testid="filter-room-select"
               >
                 <option value="">Tất cả phạm vi</option>
+                {/* ARCHIVED rooms remain selectable in the filter so admins can audit historical
+                    closures; the create/edit modal disables ARCHIVED rooms for new closures. */}
                 {rooms.map((r) => (
                   <option key={r.id} value={r.id}>
                     Phòng: {r.name}
+                    {r.status === 'ARCHIVED' ? ' (Ngừng kinh doanh)' : ''}
                   </option>
                 ))}
               </NativeSelect>
@@ -584,8 +607,13 @@ export const AdminClosuresPage: React.FC = () => {
                     <option value={editingClosure.room.id}>{editingClosure.room.name}</option>
                   )}
                   {rooms.map((r) => (
-                    <option key={r.id} value={r.id}>
+                    <option
+                      key={r.id}
+                      value={r.id}
+                      disabled={r.status === 'ARCHIVED' && editingClosure?.roomId !== r.id}
+                    >
                       {r.name}
+                      {r.status === 'ARCHIVED' ? ' (Ngừng kinh doanh)' : ''}
                     </option>
                   ))}
                 </NativeSelect>

@@ -1,11 +1,12 @@
 import { apiClient } from './api';
 
 export type ReportKind = 'bookings' | 'revenue';
+export type ReportPaymentStatus = 'UNPAID' | 'PAID' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
 
 export interface ReportExportParams {
   startDate: string;
   endDate: string;
-  paymentStatus?: 'PAID' | 'UNPAID';
+  paymentStatus?: ReportPaymentStatus;
 }
 
 /** Downloads an ADMIN CSV report (CWB-69) through the authenticated API client. */

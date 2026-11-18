@@ -3,7 +3,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { AdminClosuresPage } from '../pages/AdminClosuresPage';
 import { adminClosureApi } from '../services/admin-closure.api';
-import { roomApi } from '../services/room.api';
+import { adminRoomApi } from '../services/admin-room.api';
 import { ClosureItem } from '../types/closure';
 import { RoomListItem } from '../types/room';
 
@@ -16,9 +16,9 @@ vi.mock('../services/admin-closure.api', () => ({
   },
 }));
 
-vi.mock('../services/room.api', () => ({
-  roomApi: {
-    getRooms: vi.fn(),
+vi.mock('../services/admin-room.api', () => ({
+  adminRoomApi: {
+    getAdminRooms: vi.fn(),
   },
 }));
 
@@ -28,6 +28,16 @@ const mockRoom1: RoomListItem = {
   capacity: 20,
   pricePerHour: '200000',
   status: 'AVAILABLE',
+  coverImage: null,
+  amenities: [],
+};
+
+const mockArchivedRoom: RoomListItem = {
+  id: 'room-archived',
+  name: 'Phòng Đã Lưu Trữ',
+  capacity: 10,
+  pricePerHour: '150000',
+  status: 'ARCHIVED',
   coverImage: null,
   amenities: [],
 };
@@ -75,10 +85,10 @@ const okResponse = <T,>(data: T) => ({
 describe('AdminClosuresPage (CWB-86)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    vi.mocked(roomApi.getRooms).mockResolvedValue(
+    vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValue(
       okResponse({
-        items: [mockRoom1],
-        pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+        items: [mockRoom1, mockArchivedRoom],
+        pagination: { page: 1, limit: 100, total: 2, totalPages: 1 },
       }),
     );
     vi.mocked(adminClosureApi.list).mockResolvedValue(
@@ -303,5 +313,40 @@ describe('AdminClosuresPage (CWB-86)', () => {
     const roomSelect = screen.getByTestId('closure-room-select') as HTMLSelectElement;
     expect(roomSelect.value).toBe('room-999');
     expect(screen.getByRole('option', { name: 'Phòng VIP 999' })).toBeInTheDocument();
+  });
+
+  it('uses adminRoomApi.getAdminRooms so ARCHIVED rooms appear in filter while disabled for new closures (CWB-120)', async () => {
+    const user = userEvent.setup();
+    render(<AdminClosuresPage />);
+
+    await screen.findByTestId('closure-row-closure-1');
+    expect(adminRoomApi.getAdminRooms).toHaveBeenCalledWith(
+      { page: 1, limit: 100 },
+      expect.any(AbortSignal),
+    );
+
+    const filterSelect = screen.getByTestId('filter-room-select');
+    const archivedFilterOption = await screen.findByRole('option', {
+      name: /Phòng Đã Lưu Trữ.*Ngừng kinh doanh/,
+    });
+    expect(archivedFilterOption).toBeInTheDocument();
+    expect(archivedFilterOption).not.toBeDisabled();
+
+    await user.selectOptions(filterSelect, 'room-archived');
+    await waitFor(() => {
+      expect(adminClosureApi.list).toHaveBeenCalledWith(
+        expect.objectContaining({ roomId: 'room-archived' }),
+        expect.anything(),
+      );
+    });
+
+    await user.click(screen.getByTestId('btn-add-closure'));
+    await user.selectOptions(screen.getByTestId('closure-scope-select'), 'ROOM');
+    const modalSelect = screen.getByTestId('closure-room-select');
+    const modalArchivedOption = Array.from(modalSelect.querySelectorAll('option')).find(
+      (opt) => opt.value === 'room-archived',
+    );
+    expect(modalArchivedOption).toBeDefined();
+    expect(modalArchivedOption).toBeDisabled();
   });
 });

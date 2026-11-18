@@ -28,6 +28,7 @@ import { PageHeader } from '@/components/common/PageHeader';
 import { EmptyState, ErrorState } from '@/components/common/EmptyState';
 import { Pagination } from '@/components/common/Pagination';
 import { Button } from '@/components/ui/button';
+import { isValidVnCalendarDate } from '../utils/bookingTime';
 
 const PAGE_LIMIT = 10;
 const VALID_STATUSES = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
@@ -78,7 +79,7 @@ export const AdminBookingsPage: React.FC = () => {
     }
 
     let date: string | undefined = undefined;
-    if (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    if (rawDate && isValidVnCalendarDate(rawDate)) {
       date = rawDate;
     }
 
@@ -133,6 +134,7 @@ export const AdminBookingsPage: React.FC = () => {
   const [draftNeedsAttention, setDraftNeedsAttention] = useState<boolean>(
     Boolean(appliedNeedsAttention),
   );
+  const [dateFilterError, setDateFilterError] = useState<string | null>(null);
 
   // Keep draft in sync when URL changes (e.g. back/forward navigation)
   useEffect(() => {
@@ -141,6 +143,7 @@ export const AdminBookingsPage: React.FC = () => {
     setDraftDate(appliedDate || '');
     setDraftStatus(appliedStatus || '');
     setDraftNeedsAttention(Boolean(appliedNeedsAttention));
+    setDateFilterError(null);
   }, [appliedCode, appliedCustomer, appliedDate, appliedStatus, appliedNeedsAttention]);
 
   // Request & list state
@@ -544,12 +547,18 @@ export const AdminBookingsPage: React.FC = () => {
   }, [fetchAdminBookings, refreshIndex]);
 
   const applyDraftFiltersToParams = (needsAttentionValue: boolean) => {
+    const cleanedDate = draftDate.trim();
+    if (cleanedDate && !isValidVnCalendarDate(cleanedDate)) {
+      setDateFilterError('Ngày bắt đầu không hợp lệ');
+      return;
+    }
+    setDateFilterError(null);
     const nextParams = new URLSearchParams();
     const cleanedCode = draftCode.replace(/\s+/g, '').toUpperCase();
     if (cleanedCode) nextParams.set('bookingCode', cleanedCode);
     const cleanedCustomer = draftCustomer.trim().slice(0, 191);
     if (cleanedCustomer) nextParams.set('customer', cleanedCustomer);
-    if (draftDate) nextParams.set('date', draftDate);
+    if (cleanedDate) nextParams.set('date', cleanedDate);
     if (draftStatus) nextParams.set('status', draftStatus);
     if (needsAttentionValue) nextParams.set('needsAttention', 'true');
     // Reset to page 1 on filter change
@@ -575,6 +584,7 @@ export const AdminBookingsPage: React.FC = () => {
     setDraftDate('');
     setDraftStatus('');
     setDraftNeedsAttention(false);
+    setDateFilterError(null);
     setSearchParams(new URLSearchParams());
   };
 
@@ -644,11 +654,15 @@ export const AdminBookingsPage: React.FC = () => {
         code={draftCode}
         customer={draftCustomer}
         date={draftDate}
+        dateError={dateFilterError}
         status={draftStatus}
         needsAttention={draftNeedsAttention}
         onCodeChange={setDraftCode}
         onCustomerChange={setDraftCustomer}
-        onDateChange={setDraftDate}
+        onDateChange={(value) => {
+          setDraftDate(value);
+          setDateFilterError(null);
+        }}
         onStatusChange={setDraftStatus}
         onNeedsAttentionChange={handleNeedsAttentionChange}
         onSubmit={handleSearchSubmit}

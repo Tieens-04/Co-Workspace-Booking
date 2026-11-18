@@ -77,6 +77,7 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
+      expect(res.body.data.maxAdvanceDays).toBeGreaterThan(0);
       expect(res.body.data.pagination).toEqual({
         page: 1,
         limit: 10,

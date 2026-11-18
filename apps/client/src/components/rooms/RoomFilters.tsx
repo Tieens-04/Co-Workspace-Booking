@@ -10,6 +10,11 @@ import {
   getVietnamTodayString,
   type RoomFilterFieldErrors,
 } from '../../utils/roomFilters';
+import {
+  DEFAULT_MAX_ADVANCE_DAYS,
+  formatVnDate,
+  getBookingHorizonEnd,
+} from '../../utils/bookingTime';
 import { AmenityIcon } from './AmenityIcon';
 
 const generateHalfHourSlots = (startHour: number, endHour: number) =>
@@ -36,6 +41,7 @@ export interface RoomFiltersProps {
   onStartTimeChange?: (value: string) => void;
   onEndTimeChange?: (value: string) => void;
   onClearSlot?: () => void;
+  maxAdvanceDays?: number;
   errors: RoomFilterFieldErrors;
   amenities: Amenity[];
   loadingAmenities: boolean;
@@ -73,6 +79,7 @@ export function RoomFilters({
   onStartTimeChange,
   onEndTimeChange,
   onClearSlot,
+  maxAdvanceDays = DEFAULT_MAX_ADVANCE_DAYS,
   errors,
   amenities,
   loadingAmenities,
@@ -138,6 +145,7 @@ export function RoomFilters({
               id="slot-date-filter"
               type="date"
               min={getVietnamTodayString()}
+              max={formatVnDate(getBookingHorizonEnd(maxAdvanceDays))}
               value={date ?? ''}
               onChange={(e) => onDateChange?.(e.target.value)}
               aria-label="Ngày cần tìm phòng"

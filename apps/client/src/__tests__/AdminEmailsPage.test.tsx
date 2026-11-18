@@ -175,4 +175,58 @@ describe('AdminEmailsPage (CWB-68)', () => {
       ),
     );
   });
+
+  it('CWB-120: renders Vietnamese labels for PAYMENT_RECEIPT, ACCOUNT_DELETED, BOOKING_NOT_PAID and ACCOUNT_LOCKED', async () => {
+    const user = userEvent.setup();
+    vi.mocked(adminEmailOutboxApi.list)
+      .mockResolvedValueOnce(
+        page([
+          item({
+            id: 'mail-receipt-1',
+            kind: 'PAYMENT_RECEIPT',
+            status: 'SKIPPED',
+            lastError: 'BOOKING_NOT_PAID',
+            sentAt: null,
+          }),
+          item({
+            id: 'mail-del-1',
+            kind: 'BOOKING_CONFIRMATION',
+            status: 'SKIPPED',
+            lastError: 'ACCOUNT_DELETED',
+            sentAt: null,
+          }),
+          item({
+            id: 'mail-lock-1',
+            kind: 'EMAIL_VERIFICATION',
+            bookingId: null,
+            bookingCode: null,
+            status: 'SKIPPED',
+            lastError: 'ACCOUNT_LOCKED',
+            sentAt: null,
+          }),
+        ]),
+      )
+      .mockResolvedValueOnce(page([]));
+
+    render(<AdminEmailsPage />);
+
+    const receiptRow = await screen.findByTestId('email-row-mail-receipt-1');
+    expect(receiptRow).toHaveTextContent('Biên lai thanh toán');
+    expect(receiptRow).toHaveTextContent('Đơn chưa thanh toán');
+
+    const deletedRow = screen.getByTestId('email-row-mail-del-1');
+    expect(deletedRow).toHaveTextContent('Tài khoản đã xóa');
+
+    const lockedRow = screen.getByTestId('email-row-mail-lock-1');
+    expect(lockedRow).toHaveTextContent('Xác thực tài khoản');
+    expect(lockedRow).toHaveTextContent('Tài khoản bị khóa');
+
+    await user.selectOptions(screen.getByTestId('email-kind-filter'), 'PAYMENT_RECEIPT');
+    await waitFor(() =>
+      expect(adminEmailOutboxApi.list).toHaveBeenLastCalledWith(
+        { page: 1, limit: 20, kind: 'PAYMENT_RECEIPT' },
+        expect.anything(),
+      ),
+    );
+  });
 });

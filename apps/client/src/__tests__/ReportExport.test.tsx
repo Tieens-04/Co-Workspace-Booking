@@ -85,4 +85,29 @@ describe('ReportExport (CWB-69)', () => {
     );
     expect(saveBlob).not.toHaveBeenCalled();
   });
+
+  it('allows filtering CSV exports by PARTIALLY_REFUNDED and REFUNDED (CWB-120)', async () => {
+    const user = userEvent.setup();
+    vi.mocked(adminReportApi.download).mockResolvedValue(new Blob(['csv']));
+    render(<ReportExport />);
+
+    setDates('2031-03-01', '2031-03-31');
+    await user.selectOptions(screen.getByLabelText('Thanh toán'), 'PARTIALLY_REFUNDED');
+    await user.click(screen.getByRole('button', { name: 'Xuất doanh thu theo ngày' }));
+
+    expect(adminReportApi.download).toHaveBeenCalledWith('revenue', {
+      startDate: '2031-03-01',
+      endDate: '2031-03-31',
+      paymentStatus: 'PARTIALLY_REFUNDED',
+    });
+
+    await user.selectOptions(screen.getByLabelText('Thanh toán'), 'REFUNDED');
+    await user.click(screen.getByRole('button', { name: 'Xuất danh sách đơn' }));
+
+    expect(adminReportApi.download).toHaveBeenCalledWith('bookings', {
+      startDate: '2031-03-01',
+      endDate: '2031-03-31',
+      paymentStatus: 'REFUNDED',
+    });
+  });
 });

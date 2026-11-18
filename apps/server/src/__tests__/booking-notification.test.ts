@@ -75,6 +75,7 @@ describe('Booking notification triggers (outbox)', () => {
         ...mockBooking,
         startTime: new Date('2026-10-14T11:00:00Z'),
         endTime: new Date('2026-10-14T13:00:00Z'),
+        isRescheduled: true,
       }),
     };
     mockAdminBookingRepo = {
@@ -130,11 +131,30 @@ describe('Booking notification triggers (outbox)', () => {
     expect(outbox.kick).toHaveBeenCalledTimes(1);
   });
 
-  it('nudges the outbox worker after a customer reschedule', async () => {
+  it('nudges the outbox worker after a customer reschedule, but skips kick on no-op (CWB-120)', async () => {
     const { customer } = services();
     await customer.rescheduleBooking(userId, 'booking-1', {
       startTime: '2026-10-14T11:00:00.000Z',
       endTime: '2026-10-14T13:00:00.000Z',
+    });
+    expect(outbox.kick).toHaveBeenCalledTimes(1);
+
+    mockBookingRepo.rescheduleBooking.mockResolvedValue({
+      ...mockBooking,
+      isRescheduled: false,
+    });
+    await customer.rescheduleBooking(userId, 'booking-1', {
+      startTime: '2026-10-14T10:00:00.000Z',
+      endTime: '2026-10-14T12:00:00.000Z',
+    });
+    expect(outbox.kick).toHaveBeenCalledTimes(1);
+
+    mockBookingRepo.rescheduleBooking.mockResolvedValue({
+      ...mockBooking,
+    });
+    await customer.rescheduleBooking(userId, 'booking-1', {
+      startTime: '2026-10-14T10:00:00.000Z',
+      endTime: '2026-10-14T12:00:00.000Z',
     });
     expect(outbox.kick).toHaveBeenCalledTimes(1);
   });

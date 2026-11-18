@@ -66,6 +66,8 @@ export interface PaginationMeta {
 export interface GetRoomsResponseData {
   items: RoomListItem[];
   pagination: PaginationMeta;
+  /** CWB-75 / CWB-120: server booking horizon in days. */
+  maxAdvanceDays?: number;
 }
 
 export interface ApiResponse<T> {
