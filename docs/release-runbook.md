@@ -78,6 +78,9 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
    - **Lưu ý migration CWB-91 (`20261114210000_cwb91_booking_room_unavailable_alerts`):**
      Migration bổ sung giá trị `BOOKING_ROOM_UNAVAILABLE` vào enum `email_outbox.kind`, thêm cột `event_key VARCHAR(191) NOT NULL DEFAULT ''`, và thay chỉ mục duy nhất `(kind, booking_id)` thành `(kind, booking_id, event_key)` (giữ nguyên các hàng `email_outbox` cũ với `event_key = ''`). Tương thích ngược hoàn toàn, không yêu cầu backfill hoặc can thiệp thủ công trước khi deploy.
 
+   - **Lưu ý migration CWB-122 (`20261119170000_cwb122_composite_indexes`):**
+     Migration tạo chỉ mục tổ hợp `bookings_user_id_status_start_time_idx (user_id, status, start_time)` trước khi gỡ `bookings_user_id_idx` (để MySQL 8 InnoDB tự động chuyển khóa ngoại `bookings_user_id_fkey` sang chỉ mục mới online, không văng lỗi `1553`), đồng thời bổ sung `rooms_status_name_id_idx (status, name, id)`. Tương thích ngược hoàn toàn, thực thi In-Place DDL mặc định trên MySQL 8 và không yêu cầu backfill hay can thiệp thủ công trước khi deploy.
+
 3. **Triển khai:**
 
    ```bash
