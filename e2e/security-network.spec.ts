@@ -1,4 +1,4 @@
-import { test, expect, HOUR, tomorrowAt } from './fixtures.js';
+import { test, expect, HOUR, tomorrowAt, PASSWORD } from './fixtures.js';
 import { login, api, headers, prepareBooking, submitBooking, noOverflow } from './ui.js';
 import { API_URL } from './env.js';
 
@@ -10,7 +10,10 @@ test('401, admin 403 and customer ownership protect reads and cancellation', asy
   expect((await page.request.get(`${API_URL}/api/v1/bookings`)).status()).toBe(401);
   await page.goto(`/bookings/${booking.id}`);
   await expect(page).toHaveURL(/\/login$/);
-  await login(page, scenario.customer);
+  await page.getByRole('textbox', { name: 'Email', exact: true }).fill(scenario.customer.email);
+  await page.getByLabel(/^Mật khẩu/).fill(PASSWORD);
+  await page.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
+  await expect(page).toHaveURL(new RegExp(`/bookings/${booking.id}$`));
   expect((await api(page, '/admin/bookings')).status()).toBe(403);
   expect((await api(page, `/bookings/${booking.id}`)).status()).toBe(404);
   expect((await api(page, `/bookings/${booking.id}/cancel`, 'PATCH', {})).status()).toBe(404);
