@@ -36,6 +36,7 @@ const auth = (id: string, role: 'CUSTOMER' | 'ADMIN' = 'CUSTOMER'): AuthContextT
   login: vi.fn(),
   applyProfile: vi.fn(),
   refreshProfile: vi.fn().mockResolvedValue(undefined),
+  clearLocalSession: vi.fn(),
   logout: vi.fn(),
 });
 

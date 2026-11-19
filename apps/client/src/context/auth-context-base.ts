@@ -6,6 +6,7 @@ export interface AuthContextType {
   principal: AuthPrincipal | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isRedirectingToLogin?: boolean;
   sessionExpired: boolean;
   clearSessionExpiredNotice: () => void;
   login: (accessToken: string, user: SafeUser) => boolean;
@@ -13,6 +14,8 @@ export interface AuthContextType {
   applyProfile: (user: SafeUser) => void;
   /** Reloads /me profile to sync verification state or profile updates. */
   refreshProfile: () => Promise<void>;
+  /** Clears only local session state without navigating away from the current page. */
+  clearLocalSession: () => void;
   logout: (reason?: 'sessionExpired' | 'userAction') => void;
 }
 

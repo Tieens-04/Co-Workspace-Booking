@@ -1,10 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { ForgotPasswordPage } from '../pages/ForgotPasswordPage';
 import { ResetPasswordPage } from '../pages/ResetPasswordPage';
+import { GuestRoute } from '../components/RouteGuard';
+import { AuthProvider } from '../context/AuthContext';
 import { authApi } from '../services/auth.api';
+import { apiClient } from '../services/api';
+import { TOKEN_STORAGE_KEY } from '../utils/token';
+import { createMockJwt } from './test-utils';
 
 vi.mock('../services/auth.api', () => ({
   authApi: { forgotPassword: vi.fn(), resetPassword: vi.fn(), login: vi.fn(), register: vi.fn() },
@@ -125,4 +130,177 @@ describe('Password reset pages (CWB-64)', () => {
       );
     },
   );
+
+  it('clears local session silently when an authenticated user resets their password so "Đăng nhập" reaches /login without GuestRoute bounce (CWB-119)', async () => {
+    const token = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    const originalAdapter = apiClient.defaults.adapter;
+    apiClient.defaults.adapter = async (config) => ({
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+      data: {
+        success: true,
+        message: 'OK',
+        data: {
+          id: 'cust-1',
+          email: 'cust@example.com',
+          fullName: 'Cust',
+          phoneNumber: null,
+          role: 'CUSTOMER',
+          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+        },
+      },
+    });
+    vi.mocked(authApi.resetPassword).mockResolvedValueOnce({
+      success: true,
+      message: 'OK',
+      data: null,
+    });
+
+    const user = userEvent.setup();
+    try {
+      render(
+        <MemoryRouter initialEntries={[`/reset-password?token=${TOKEN}`]}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/" element={<p>Trang chủ</p>} />
+              <Route
+                path="/login"
+                element={
+                  <GuestRoute>
+                    <p>Trang đăng nhập</p>
+                  </GuestRoute>
+                }
+              />
+              <Route path="/reset-password" element={<ResetPasswordPage />} />
+            </Routes>
+            <LocationProbe />
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      await user.type(screen.getByLabelText('Mật khẩu mới'), 'BrandNew456!');
+      await user.type(screen.getByLabelText('Nhập lại mật khẩu mới'), 'BrandNew456!');
+      await user.click(screen.getByRole('button', { name: 'Đặt lại mật khẩu' }));
+
+      expect(await screen.findByTestId('reset-password-done')).toBeInTheDocument();
+      expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/reset-password$/);
+
+      await user.click(screen.getByRole('link', { name: 'Đăng nhập' }));
+      expect(await screen.findByText('Trang đăng nhập')).toBeInTheDocument();
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/login$/);
+    } finally {
+      localStorage.clear();
+      apiClient.defaults.adapter = originalAdapter;
+    }
+  });
+
+  it('shows "Về trang tài khoản" (/account) on ForgotPasswordPage when authenticated and "Quay lại đăng nhập" (/login) for guests (CWB-119)', async () => {
+    const guestRender = renderAt('/forgot-password');
+    expect(screen.getByRole('link', { name: 'Quay lại đăng nhập' })).toHaveAttribute(
+      'href',
+      '/login',
+    );
+    guestRender.unmount();
+
+    const token = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    const originalAdapter = apiClient.defaults.adapter;
+    let meCalled = false;
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/me') {
+        meCalled = true;
+      }
+      return {
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config,
+        data: {
+          success: true,
+          message: 'OK',
+          data: {
+            id: 'cust-1',
+            email: 'cust@example.com',
+            fullName: 'Cust',
+            phoneNumber: null,
+            role: 'CUSTOMER',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+          },
+        },
+      };
+    };
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/forgot-password']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/account" element={<p>Trang tài khoản</p>} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(meCalled).toBe(true);
+      });
+      expect(screen.getByRole('link', { name: 'Về trang tài khoản' })).toHaveAttribute(
+        'href',
+        '/account',
+      );
+      expect(screen.queryByRole('link', { name: 'Quay lại đăng nhập' })).not.toBeInTheDocument();
+    } finally {
+      localStorage.clear();
+      apiClient.defaults.adapter = originalAdapter;
+    }
+  });
+
+  it('clears revoked JWT silently on /forgot-password when GET /me returns 401 and switches footer link to /login (CWB-119)', async () => {
+    const revokedToken = createMockJwt({ sub: 'cust-revoked', role: 'CUSTOMER' });
+    localStorage.setItem(TOKEN_STORAGE_KEY, revokedToken);
+    const originalAdapter = apiClient.defaults.adapter;
+    apiClient.defaults.adapter = async (config) =>
+      Promise.reject({
+        response: {
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: {},
+          data: { success: false, code: 'UNAUTHORIZED' },
+        },
+        config,
+      });
+
+    try {
+      render(
+        <MemoryRouter initialEntries={['/forgot-password']}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+              <Route path="/login" element={<p>Trang đăng nhập</p>} />
+              <Route path="/account" element={<p>Trang tài khoản</p>} />
+            </Routes>
+            <LocationProbe />
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+      });
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/forgot-password$/);
+      expect(screen.getByRole('link', { name: 'Quay lại đăng nhập' })).toHaveAttribute(
+        'href',
+        '/login',
+      );
+      expect(screen.queryByRole('link', { name: 'Về trang tài khoản' })).not.toBeInTheDocument();
+    } finally {
+      localStorage.clear();
+      apiClient.defaults.adapter = originalAdapter;
+    }
+  });
 });

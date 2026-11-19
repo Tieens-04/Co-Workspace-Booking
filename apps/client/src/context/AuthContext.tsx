@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { setUnauthorizedHandler } from '../services/api';
 import { meApi } from '../services/me.api';
 import { AuthPrincipal, SafeUser } from '../types/auth';
+import { getLoginRedirectFrom, isLoginPathname, isProtectedPathname } from '../utils/authRedirect';
 import {
   decodeJwt,
   getStoredToken,
@@ -18,6 +19,10 @@ const MAX_TIMER_DELAY_MS = 2_147_483_647;
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const locationRef = useRef(location);
+  locationRef.current = location;
+
   const [token, setToken] = useState<string | null>(() => getStoredToken());
   const [principal, setPrincipal] = useState<AuthPrincipal | null>(() => {
     const initialToken = getStoredToken();
@@ -25,25 +30,65 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [sessionExpired, setSessionExpired] = useState<boolean>(false);
+  const [pendingLoginRedirectKey, setPendingLoginRedirectKey] = useState<string | null>(null);
+  const isRedirectingToLogin =
+    pendingLoginRedirectKey !== null &&
+    !isLoginPathname(location.pathname) &&
+    location.key === pendingLoginRedirectKey;
 
   const clearSessionExpiredNotice = useCallback(() => {
     setSessionExpired(false);
   }, []);
 
+  const clearLocalSession = useCallback(() => {
+    removeStoredToken();
+    setToken(null);
+    setPrincipal(null);
+    setSessionExpired(false);
+    setPendingLoginRedirectKey(null);
+  }, []);
+
+  const redirectForExpiredSession = useCallback(() => {
+    const currentLocation = locationRef.current;
+    const from = getLoginRedirectFrom(currentLocation);
+    sanitizeHistoryState();
+    removeStoredToken();
+    setToken(null);
+    setPrincipal(null);
+    setSessionExpired(true);
+    setPendingLoginRedirectKey(
+      isLoginPathname(currentLocation.pathname) ? null : currentLocation.key,
+    );
+    navigate('/login', {
+      replace: true,
+      state: from ? { sessionExpired: true, from } : { sessionExpired: true },
+    });
+  }, [navigate]);
+
   const logout = useCallback(
     (reason: 'sessionExpired' | 'userAction' = 'userAction') => {
+      if (reason === 'sessionExpired') {
+        redirectForExpiredSession();
+        return;
+      }
+      const currentLocation = locationRef.current;
       sanitizeHistoryState();
-      removeStoredToken();
-      setToken(null);
-      setPrincipal(null);
-      setSessionExpired(reason === 'sessionExpired');
-      navigate('/login', {
-        replace: true,
-        state: reason === 'sessionExpired' ? { sessionExpired: true } : undefined,
-      });
+      clearLocalSession();
+      setPendingLoginRedirectKey(
+        isLoginPathname(currentLocation.pathname) ? null : currentLocation.key,
+      );
+      navigate('/login', { replace: true });
     },
-    [navigate],
+    [clearLocalSession, navigate, redirectForExpiredSession],
   );
+
+  const invalidatePassiveSession = useCallback(() => {
+    if (isProtectedPathname(locationRef.current.pathname)) {
+      redirectForExpiredSession();
+    } else {
+      clearLocalSession();
+    }
+  }, [clearLocalSession, redirectForExpiredSession]);
 
   const login = useCallback((accessToken: string, user: SafeUser) => {
     if (!setStoredToken(accessToken)) {
@@ -62,6 +107,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       emailVerifiedAt: user.emailVerifiedAt,
     });
     setSessionExpired(false);
+    setPendingLoginRedirectKey(null);
     return true;
   }, []);
 
@@ -87,13 +133,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // Connect unauthorized handler from Axios interceptor
   useEffect(() => {
-    setUnauthorizedHandler((reason) => {
-      logout(reason);
+    setUnauthorizedHandler((_reason, context) => {
+      if (context.isMeRequest) {
+        invalidatePassiveSession();
+        return;
+      }
+      redirectForExpiredSession();
     });
     return () => {
       setUnauthorizedHandler(null);
     };
-  }, [logout]);
+  }, [invalidatePassiveSession, redirectForExpiredSession]);
 
   // Handle cross-tab synchronization
   useEffect(() => {
@@ -105,7 +155,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (!event.newValue) {
           // Token removed in another tab
           if (token) {
-            logout('userAction');
+            if (isProtectedPathname(locationRef.current.pathname)) {
+              logout('userAction');
+            } else {
+              clearLocalSession();
+            }
           }
         } else {
           // Token updated in another tab
@@ -115,7 +169,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             setPrincipal(validPrincipal);
             setSessionExpired(false);
           } else if (token) {
-            logout('sessionExpired');
+            invalidatePassiveSession();
           } else {
             removeStoredToken();
             setToken(null);
@@ -129,7 +183,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       window.removeEventListener('storage', handleStorage);
     };
-  }, [logout, token]);
+  }, [logout, clearLocalSession, invalidatePassiveSession, token]);
 
   // Auto-logout timer when token expires
   useEffect(() => {
@@ -146,13 +200,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       const payload = decodeJwt(token);
       if (!payload) {
-        logout('sessionExpired');
+        invalidatePassiveSession();
         return;
       }
 
       const remainingMs = payload.exp * 1000 - Date.now();
       if (remainingMs <= 0) {
-        logout('sessionExpired');
+        invalidatePassiveSession();
         return;
       }
 
@@ -167,7 +221,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         window.clearTimeout(timerId);
       }
     };
-  }, [token, logout]);
+  }, [token, invalidatePassiveSession]);
 
   const applyProfile = useCallback((user: SafeUser) => {
     // Only merge display fields into the matching session; id/role always come from the token.
@@ -195,7 +249,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   // A restored token only carries id/role; load name/email/verification from the API for this session.
   const principalId = principal?.id;
-  const needsProfile = Boolean(token && principal && (!principal.fullName || principal.emailVerifiedAt === undefined));
+  const needsProfile = Boolean(
+    token && principal && (!principal.fullName || principal.emailVerifiedAt === undefined),
+  );
   useEffect(() => {
     if (!needsProfile || !principalId) return;
     const controller = new AbortController();
@@ -216,22 +272,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       principal,
       isAuthenticated: Boolean(token && principal),
       isLoading,
+      isRedirectingToLogin,
       sessionExpired,
       clearSessionExpiredNotice,
       login,
       applyProfile,
       refreshProfile,
+      clearLocalSession,
       logout,
     }),
     [
       token,
       principal,
       isLoading,
+      isRedirectingToLogin,
       sessionExpired,
       clearSessionExpiredNotice,
       login,
       applyProfile,
       refreshProfile,
+      clearLocalSession,
       logout,
     ],
   );

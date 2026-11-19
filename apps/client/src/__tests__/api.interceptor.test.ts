@@ -29,18 +29,13 @@ describe('apiClient interceptors', () => {
     expect(capturedAuth).toBe('Bearer test-token-123');
   });
 
-  it('skips Bearer token for /auth/login and /auth/register', async () => {
+  it('skips Bearer token for public auth endpoints while keeping it on resend-verification', async () => {
     setStoredToken('existing-token');
-    let loginAuth: string | null = null;
-    let registerAuth: string | null = null;
+    const capturedAuthByUrl: Record<string, string | null> = {};
 
     apiClient.defaults.adapter = async (config) => {
       const headers = config.headers as AxiosHeaders;
-      if (config.url?.includes('/auth/login')) {
-        loginAuth = (headers?.get?.('Authorization') as string) || null;
-      } else if (config.url?.includes('/auth/register')) {
-        registerAuth = (headers?.get?.('Authorization') as string) || null;
-      }
+      capturedAuthByUrl[config.url ?? ''] = (headers?.get?.('Authorization') as string) || null;
       return {
         data: { success: true },
         status: 200,
@@ -52,12 +47,25 @@ describe('apiClient interceptors', () => {
 
     await apiClient.post('/auth/login', { email: 'a@b.com', password: '123' });
     await apiClient.post('/auth/register', { email: 'a@b.com', password: '123' });
+    await apiClient.post('/auth/forgot-password', { email: 'a@b.com' });
+    await apiClient.post('/auth/reset-password', { token: 't', newPassword: '123' });
+    await apiClient.post('/auth/verify-email', { token: 't' });
+    await apiClient.post('https://app.example.com/proxy/api/v1/auth/login', {
+      email: 'a@b.com',
+      password: '123',
+    });
+    await apiClient.post('/auth/resend-verification', {});
 
-    expect(loginAuth).toBeNull();
-    expect(registerAuth).toBeNull();
+    expect(capturedAuthByUrl['/auth/login']).toBeNull();
+    expect(capturedAuthByUrl['/auth/register']).toBeNull();
+    expect(capturedAuthByUrl['/auth/forgot-password']).toBeNull();
+    expect(capturedAuthByUrl['/auth/reset-password']).toBeNull();
+    expect(capturedAuthByUrl['/auth/verify-email']).toBeNull();
+    expect(capturedAuthByUrl['https://app.example.com/proxy/api/v1/auth/login']).toBeNull();
+    expect(capturedAuthByUrl['/auth/resend-verification']).toBe('Bearer existing-token');
   });
 
-  it('handles 401 on protected endpoint: clears token and triggers unauthorized callback', async () => {
+  it('handles 401 on protected endpoint: clears token and triggers unauthorized callback with isMeRequest=false', async () => {
     const currentToken = 'active-session-token';
     setStoredToken(currentToken);
 
@@ -79,7 +87,68 @@ describe('apiClient interceptors', () => {
     await expect(apiClient.get('/admin/users')).rejects.toBeDefined();
 
     expect(getStoredToken()).toBeNull();
-    expect(unauthorizedCallback).toHaveBeenCalledWith('sessionExpired');
+    expect(unauthorizedCallback).toHaveBeenCalledWith('sessionExpired', { isMeRequest: false });
+  });
+
+  it('marks GET /me 401 with isMeRequest=true and non-GET /me/* endpoints with isMeRequest=false', async () => {
+    const unauthorizedCallback = vi.fn();
+    setUnauthorizedHandler(unauthorizedCallback);
+
+    apiClient.defaults.adapter = async (config) => {
+      return Promise.reject({
+        response: {
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: {},
+          data: { success: false, code: 'UNAUTHORIZED' },
+        },
+        config,
+      });
+    };
+
+    setStoredToken('token-1');
+    await expect(apiClient.get('/me')).rejects.toBeDefined();
+    expect(unauthorizedCallback).toHaveBeenNthCalledWith(1, 'sessionExpired', {
+      isMeRequest: true,
+    });
+
+    setStoredToken('token-2');
+    await expect(apiClient.get('/me/')).rejects.toBeDefined();
+    expect(unauthorizedCallback).toHaveBeenNthCalledWith(2, 'sessionExpired', {
+      isMeRequest: true,
+    });
+
+    setStoredToken('token-3');
+    await expect(apiClient.post('/me/deletion', { currentPassword: '123' })).rejects.toBeDefined();
+    expect(unauthorizedCallback).toHaveBeenNthCalledWith(3, 'sessionExpired', {
+      isMeRequest: false,
+    });
+  });
+
+  it('does NOT clear token or trigger callback on 401 from /auth/verify-email or /auth/reset-password', async () => {
+    setStoredToken('some-token');
+    const unauthorizedCallback = vi.fn();
+    setUnauthorizedHandler(unauthorizedCallback);
+
+    apiClient.defaults.adapter = async (config) => {
+      return Promise.reject({
+        response: {
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: {},
+          data: { success: false, code: 'INVALID_TOKEN' },
+        },
+        config,
+      });
+    };
+
+    await expect(apiClient.post('/auth/verify-email', { token: 'bad' })).rejects.toBeDefined();
+    await expect(
+      apiClient.post('/auth/reset-password', { token: 'bad', newPassword: '123' }),
+    ).rejects.toBeDefined();
+
+    expect(unauthorizedCallback).not.toHaveBeenCalled();
+    expect(getStoredToken()).toBe('some-token');
   });
 
   it('does NOT clear token or trigger callback on 401 from /auth/login', async () => {

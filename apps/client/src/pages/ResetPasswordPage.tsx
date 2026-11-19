@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useContext, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,12 +6,14 @@ import { Card } from '@/components/ui/card';
 import { Field } from '@/components/common/Field';
 import { AuthNotice } from '../components/auth/AuthNotice';
 import { PasswordInput } from '../components/auth/PasswordInput';
+import { AuthContext } from '../context/auth-context-base';
 import { authApi } from '../services/auth.api';
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /** Sets a new password from the emailed one-time link (`/reset-password?token=...`). */
 export const ResetPasswordPage: React.FC = () => {
+  const auth = useContext(AuthContext);
   const [searchParams, setSearchParams] = useSearchParams();
   // Keep the token in memory only and drop it from the address bar/history right away.
   const [token] = useState(() => searchParams.get('token') ?? '');
@@ -42,6 +44,8 @@ export const ResetPasswordPage: React.FC = () => {
     setIsSubmitting(true);
     try {
       await authApi.resetPassword(token, newPassword);
+      // Resetting password bumps server tokenVersion; drop any local revoked session so Login stays accessible.
+      auth?.clearLocalSession();
       setDone(true);
     } catch (err) {
       const message = (err as { response?: { data?: { message?: string } } }).response?.data

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { BookingForm, BookingFormProps } from '../components/BookingForm';
 import { BookingConfirmationPage } from '../pages/BookingConfirmationPage';
 import { AuthProvider } from '../context/AuthContext';
@@ -56,6 +56,17 @@ const mockAvailabilityResponse = (
   },
 });
 
+const MockLoginRoute = () => {
+  const location = useLocation();
+  const state = location.state as { from?: string } | null;
+  return (
+    <div>
+      <div>Mock Login Page</div>
+      <div data-testid="login-from-state">{state?.from ?? 'NONE'}</div>
+    </div>
+  );
+};
+
 describe('BookingForm', () => {
   const defaultProps: BookingFormProps = {
     roomId: 'room-uuid-1',
@@ -97,7 +108,7 @@ describe('BookingForm', () => {
             <Route path="/rooms/:id" element={<BookingForm {...defaultProps} {...props} />} />
             <Route path="/booking-confirmation" element={<BookingConfirmationPage />} />
             <Route path="/booking-confirmation/:id" element={<BookingConfirmationPage />} />
-            <Route path="/login" element={<div>Mock Login Page</div>} />
+            <Route path="/login" element={<MockLoginRoute />} />
           </Routes>
         </AuthProvider>
       </MemoryRouter>,
@@ -116,6 +127,22 @@ describe('BookingForm', () => {
       expect(loginLink).toBeInTheDocument();
       expect(loginLink).toHaveAttribute('href', '/login');
       expect(screen.queryByLabelText(/Thời gian bắt đầu/i)).not.toBeInTheDocument();
+    });
+
+    it('preserves pathname and search when guest clicks login link from room detail (CWB-119)', async () => {
+      localStorage.clear();
+      const user = userEvent.setup();
+      renderComponent(
+        { isAuthenticated: false, userRole: null },
+        '/rooms/room-uuid-1?date=2026-10-25',
+      );
+
+      await user.click(screen.getByTestId('booking-login-link'));
+
+      expect(await screen.findByText('Mock Login Page')).toBeInTheDocument();
+      expect(screen.getByTestId('login-from-state')).toHaveTextContent(
+        '/rooms/room-uuid-1?date=2026-10-25',
+      );
     });
 
     it('renders admin notice when user is an ADMIN', () => {

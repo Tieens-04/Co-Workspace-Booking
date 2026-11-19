@@ -1,11 +1,33 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
-import { GuestRoute, AdminRoute, CustomerRoute } from '../components/RouteGuard';
+import {
+  GuestRoute,
+  AdminRoute,
+  CustomerRoute,
+  AuthenticatedRoute,
+} from '../components/RouteGuard';
+import App from '../App';
+import { AuthLayout } from '../layouts/AuthLayout';
+import { ForgotPasswordPage } from '../pages/ForgotPasswordPage';
+import { ResetPasswordPage } from '../pages/ResetPasswordPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
+import { apiClient } from '../services/api';
+import { roomApi } from '../services/room.api';
 import { TOKEN_STORAGE_KEY } from '../utils/token';
 import { createMockJwt } from './test-utils';
+
+const LoginLocationProbe = () => {
+  const location = useLocation();
+  const state = location.state as { from?: string } | null;
+  return (
+    <div>
+      <div>Login Screen</div>
+      <div data-testid="login-from-state">{state?.from ?? 'NONE'}</div>
+    </div>
+  );
+};
 
 describe('RouteGuard and Navigation', () => {
   beforeEach(() => {
@@ -22,7 +44,7 @@ describe('RouteGuard and Navigation', () => {
               path="/login"
               element={
                 <GuestRoute>
-                  <div>Login Screen</div>
+                  <LoginLocationProbe />
                 </GuestRoute>
               }
             />
@@ -56,6 +78,22 @@ describe('RouteGuard and Navigation', () => {
                 <CustomerRoute>
                   <div>Customer Secret Screen</div>
                 </CustomerRoute>
+              }
+            />
+            <Route
+              path="/bookings"
+              element={
+                <CustomerRoute>
+                  <div>Booking History Screen</div>
+                </CustomerRoute>
+              }
+            />
+            <Route
+              path="/account"
+              element={
+                <AuthenticatedRoute>
+                  <div>Account Screen</div>
+                </AuthenticatedRoute>
               }
             />
             <Route path="*" element={<NotFoundPage />} />
@@ -252,5 +290,179 @@ describe('RouteGuard and Navigation', () => {
     expect(alert).toHaveTextContent('403 - Không có quyền truy cập');
     expect(screen.getByRole('link', { name: /Về trang chủ/i })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: /Khám phá phòng/i })).toHaveAttribute('href', '/rooms');
+  });
+
+  describe('Deep-link state.from preservation (CWB-119)', () => {
+    it('preserves pathname and search in state.from when CustomerRoute redirects to /login', () => {
+      renderWithRoutes('/bookings?view=UPCOMING&page=2');
+
+      expect(screen.getByText('Login Screen')).toBeInTheDocument();
+      expect(screen.getByTestId('login-from-state')).toHaveTextContent(
+        '/bookings?view=UPCOMING&page=2',
+      );
+    });
+
+    it('preserves pathname and search and sanitizes history state when AdminRoute redirects to /login', () => {
+      window.history.replaceState({ idx: 2, key: 'adm-k', usr: { bookingCode: 'CS-1' } }, '');
+      renderWithRoutes('/admin/bookings?status=CONFIRMED&page=2');
+
+      expect(screen.getByText('Login Screen')).toBeInTheDocument();
+      expect(screen.getByTestId('login-from-state')).toHaveTextContent(
+        '/admin/bookings?status=CONFIRMED&page=2',
+      );
+      expect(window.history.state).toEqual({
+        idx: 2,
+        key: 'adm-k',
+        usr: null,
+      });
+    });
+
+    it('preserves pathname and search when AuthenticatedRoute redirects to /login and allows CUSTOMER or ADMIN', () => {
+      const { unmount } = renderWithRoutes('/account?section=security');
+
+      expect(screen.getByText('Login Screen')).toBeInTheDocument();
+      expect(screen.getByTestId('login-from-state')).toHaveTextContent('/account?section=security');
+      unmount();
+
+      localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'c-1', role: 'CUSTOMER' }));
+      const customerRender = renderWithRoutes('/account');
+      expect(screen.getByText('Account Screen')).toBeInTheDocument();
+      customerRender.unmount();
+
+      localStorage.setItem(TOKEN_STORAGE_KEY, createMockJwt({ sub: 'a-1', role: 'ADMIN' }));
+      renderWithRoutes('/account');
+      expect(screen.getByText('Account Screen')).toBeInTheDocument();
+    });
+  });
+
+  describe('AuthLayout route accessibility for signed-in users (CWB-119)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    const renderAuthShellRoutes = (initialEntry: string) => {
+      vi.spyOn(roomApi, 'getRooms').mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: { items: [], pagination: { page: 1, limit: 1, total: 0, totalPages: 0 } },
+      });
+
+      return render(
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/" element={<div>Home Screen</div>} />
+              <Route path="/admin" element={<div>Admin Secret Screen</div>} />
+              <Route element={<AuthLayout />}>
+                <Route
+                  element={
+                    <GuestRoute>
+                      <Outlet />
+                    </GuestRoute>
+                  }
+                >
+                  <Route path="/login" element={<div>Login Screen</div>} />
+                  <Route path="/register" element={<div>Register Screen</div>} />
+                </Route>
+                <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                <Route path="/reset-password" element={<ResetPasswordPage />} />
+              </Route>
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+    };
+
+    it.each(['CUSTOMER', 'ADMIN'] as const)(
+      'allows signed-in %s to open /forgot-password and /reset-password inside AuthLayout while still redirecting /login and /register',
+      (role) => {
+        const token = createMockJwt({ sub: `u-${role}`, role });
+        const resetToken = 'A'.repeat(20) + '_' + 'b'.repeat(22);
+
+        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+        const forgotRender = renderAuthShellRoutes('/forgot-password');
+        expect(screen.getByRole('heading', { name: 'Quên mật khẩu' })).toBeInTheDocument();
+        expect(screen.getByTestId('auth-visual')).toBeInTheDocument();
+        forgotRender.unmount();
+
+        const resetRender = renderAuthShellRoutes(`/reset-password?token=${resetToken}`);
+        expect(screen.getByRole('heading', { name: 'Đặt lại mật khẩu' })).toBeInTheDocument();
+        expect(screen.getByTestId('auth-visual')).toBeInTheDocument();
+        resetRender.unmount();
+
+        const loginRender = renderAuthShellRoutes('/login');
+        expect(
+          screen.getByText(role === 'ADMIN' ? 'Admin Secret Screen' : 'Home Screen'),
+        ).toBeInTheDocument();
+        loginRender.unmount();
+
+        const registerRender = renderAuthShellRoutes('/register');
+        expect(
+          screen.getByText(role === 'ADMIN' ? 'Admin Secret Screen' : 'Home Screen'),
+        ).toBeInTheDocument();
+        registerRender.unmount();
+      },
+    );
+
+    it('renders App routes /forgot-password and /reset-password inside AuthLayout for signed-in users without GuestRoute redirect', async () => {
+      const resetToken = 'A'.repeat(20) + '_' + 'b'.repeat(22);
+      const token = createMockJwt({ sub: 'cust-app', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      const originalAdapter = apiClient.defaults.adapter;
+      apiClient.defaults.adapter = async (config) => {
+        if (config.url === '/me') {
+          return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+            data: {
+              success: true,
+              message: 'OK',
+              data: {
+                id: 'cust-app',
+                email: 'cust@example.com',
+                fullName: 'Cust',
+                phoneNumber: null,
+                role: 'CUSTOMER',
+                emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+              },
+            },
+          };
+        }
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          data: {
+            success: true,
+            message: 'OK',
+            data: { items: [], pagination: { page: 1, limit: 1, total: 0, totalPages: 0 } },
+          },
+        };
+      };
+
+      try {
+        window.history.pushState({}, '', '/forgot-password');
+        const forgotApp = render(<App />);
+        expect(await screen.findByRole('heading', { name: 'Quên mật khẩu' })).toBeInTheDocument();
+        expect(screen.getByTestId('auth-visual')).toBeInTheDocument();
+        expect(window.location.pathname).toBe('/forgot-password');
+        forgotApp.unmount();
+
+        window.history.pushState({}, '', `/reset-password?token=${resetToken}`);
+        const resetApp = render(<App />);
+        expect(
+          await screen.findByRole('heading', { name: 'Đặt lại mật khẩu' }),
+        ).toBeInTheDocument();
+        expect(screen.getByTestId('auth-visual')).toBeInTheDocument();
+        expect(window.location.pathname).toBe('/reset-password');
+        resetApp.unmount();
+      } finally {
+        window.history.pushState({}, '', '/');
+        apiClient.defaults.adapter = originalAdapter;
+      }
+    });
   });
 });

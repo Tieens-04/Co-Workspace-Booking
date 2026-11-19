@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { VerifyEmailPage } from '../pages/VerifyEmailPage';
 import { EmailVerificationNotice } from '../components/auth/EmailVerificationNotice';
 import { authApi } from '../services/auth.api';
+import { apiClient } from '../services/api';
+import { AuthProvider } from '../context/AuthContext';
 import { AuthContext } from '../context/auth-context-base';
+import { TOKEN_STORAGE_KEY } from '../utils/token';
+import { createMockJwt } from './test-utils';
 
 vi.mock('../services/auth.api', () => ({
   authApi: {
@@ -20,6 +24,7 @@ const mockAuthContextValue = {
   principal: null,
   login: vi.fn(),
   logout: vi.fn(),
+  clearLocalSession: vi.fn(),
   applyProfile: vi.fn(),
   refreshProfile: vi.fn().mockResolvedValue(undefined),
   isLoading: false,
@@ -124,6 +129,69 @@ describe('VerifyEmailPage', () => {
     expect(
       await screen.findByText('Liên kết xác thực không hợp lệ hoặc đã hết hạn.'),
     ).toBeInTheDocument();
+  });
+
+  it('keeps user on /verify-email and preserves token when stored JWT is revoked and /me returns 401 (CWB-119)', async () => {
+    localStorage.setItem(
+      TOKEN_STORAGE_KEY,
+      createMockJwt({ sub: 'revoked-user', role: 'CUSTOMER' }),
+    );
+    const originalAdapter = apiClient.defaults.adapter;
+    apiClient.defaults.adapter = async (config) =>
+      Promise.reject({
+        response: {
+          status: 401,
+          statusText: 'Unauthorized',
+          headers: {},
+          data: { success: false, code: 'UNAUTHORIZED' },
+        },
+        config,
+      });
+
+    vi.mocked(authApi.verifyEmail).mockResolvedValueOnce({
+      success: true,
+      message: 'Xác thực email thành công.',
+      data: null,
+    });
+
+    const LocationProbe = () => {
+      const location = useLocation();
+      return <output data-testid="verify-location">{location.pathname + location.search}</output>;
+    };
+
+    try {
+      render(
+        <MemoryRouter initialEntries={[`/verify-email?token=${validToken}`]}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/verify-email" element={<VerifyEmailPage />} />
+              <Route path="/login" element={<div>Login Page</div>} />
+            </Routes>
+            <LocationProbe />
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      await waitFor(() => {
+        expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+      });
+
+      expect(screen.getByTestId('verify-location')).toHaveTextContent(/^\/verify-email$/);
+      expect(screen.getByTestId('verify-email-confirm')).toBeInTheDocument();
+
+      const user = userEvent.setup();
+      await user.click(screen.getByTestId('verify-email-confirm-btn'));
+
+      expect(authApi.verifyEmail).toHaveBeenCalledWith(validToken);
+      expect(await screen.findByTestId('verify-email-success')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: 'Đăng nhập ngay' })).toHaveAttribute(
+        'href',
+        '/login',
+      );
+    } finally {
+      localStorage.clear();
+      apiClient.defaults.adapter = originalAdapter;
+    }
   });
 });
 

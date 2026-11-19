@@ -7,6 +7,7 @@ import { useRoomAvailability } from '../hooks/useRoomAvailability';
 import { AuthContext } from '../context/auth-context-base';
 import { useToast } from '../hooks/useToast';
 import { useIdempotencyKey } from '../hooks/useIdempotencyKey';
+import { formatReturnTo } from '../utils/authRedirect';
 import { TimeGrid } from './TimeGrid';
 import {
   getVietnamTodayString,
@@ -286,7 +287,11 @@ export const BookingForm: React.FC<BookingFormProps> = ({
           Vui lòng đăng nhập tài khoản khách hàng để đặt phòng này.
         </p>
         <Button asChild size="lg" className="w-full">
-          <Link to="/login" state={{ from: location.pathname }} data-testid="booking-login-link">
+          <Link
+            to="/login"
+            state={{ from: formatReturnTo(location) }}
+            data-testid="booking-login-link"
+          >
             <LogIn aria-hidden="true" />
             Đăng nhập để đặt phòng
           </Link>

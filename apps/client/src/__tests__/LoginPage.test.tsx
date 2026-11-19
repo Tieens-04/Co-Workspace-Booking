@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AxiosError, AxiosHeaders } from 'axios';
 import { LoginPage } from '../pages/LoginPage';
+import { GuestRoute } from '../components/RouteGuard';
 import { AuthProvider } from '../context/AuthContext';
 import { authApi } from '../services/auth.api';
 import { TOKEN_STORAGE_KEY } from '../utils/token';
@@ -15,9 +16,14 @@ vi.mock('../services/auth.api', () => ({
   },
 }));
 
+const LocationProbe = () => {
+  const location = useLocation();
+  return <div data-testid="location-probe">{location.pathname + location.search}</div>;
+};
+
 describe('LoginPage', () => {
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     localStorage.clear();
   });
 
@@ -28,13 +34,33 @@ describe('LoginPage', () => {
       <MemoryRouter initialEntries={initialEntries}>
         <AuthProvider>
           <Routes>
-            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/login"
+              element={
+                <GuestRoute>
+                  <LoginPage />
+                </GuestRoute>
+              }
+            />
             <Route path="/" element={<div>Mock Home Page</div>} />
             <Route path="/admin" element={<div>Mock Admin Page</div>} />
+            <Route path="/admin/bookings" element={<div>Mock Admin Bookings Page</div>} />
+            <Route path="/admin/users" element={<div>Mock Admin Users Page</div>} />
+            <Route path="/rooms" element={<div>Mock Rooms Page</div>} />
             <Route path="/rooms/:id" element={<div>Mock Room Detail Page</div>} />
             <Route path="/bookings" element={<div>Mock Booking History Page</div>} />
             <Route path="/bookings/:id" element={<div>Mock Booking Detail Page</div>} />
+            <Route
+              path="/booking-confirmation"
+              element={<div>Mock Booking Confirmation Page</div>}
+            />
+            <Route
+              path="/booking-confirmation/:id"
+              element={<div>Mock Booking Confirmation Detail Page</div>}
+            />
+            <Route path="/account" element={<div>Mock Account Page</div>} />
           </Routes>
+          <LocationProbe />
         </AuthProvider>
       </MemoryRouter>,
     );
@@ -347,7 +373,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
-          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -383,7 +409,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
-          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -420,7 +446,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
-          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -456,7 +482,7 @@ describe('LoginPage', () => {
             fullName: 'System Administrator',
             phoneNumber: null,
             role: 'ADMIN',
-          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -492,7 +518,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
-          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -528,7 +554,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
-          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -564,7 +590,7 @@ describe('LoginPage', () => {
             fullName: 'Customer User',
             phoneNumber: null,
             role: 'CUSTOMER',
-          emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
           },
         },
       });
@@ -583,6 +609,219 @@ describe('LoginPage', () => {
 
       expect(await screen.findByText('Mock Home Page')).toBeInTheDocument();
       expect(screen.queryByText('Mock Booking Detail Page')).not.toBeInTheDocument();
+    });
+
+    it('redirects CUSTOMER to /account?section=security and /booking-confirmation/:uuid with query string (CWB-119)', async () => {
+      const validUuid = '11111111-1111-4111-8111-111111111111';
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      const loginResponse = {
+        success: true as const,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer' as const,
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER' as const,
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+          },
+        },
+      };
+
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      const first = renderComponent([
+        { pathname: '/login', state: { from: '/account?section=security' } },
+      ]);
+      const user = userEvent.setup();
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'customer@example.com' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'ValidPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Account Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/account?section=security');
+      first.unmount();
+
+      localStorage.clear();
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      renderComponent([
+        { pathname: '/login', state: { from: `/booking-confirmation/${validUuid}` } },
+      ]);
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'customer@example.com' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'ValidPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Booking Confirmation Detail Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        `/booking-confirmation/${validUuid}`,
+      );
+    });
+
+    it('rejects /booking-confirmation/not-a-uuid and //evil.com for CUSTOMER, falling back to / (CWB-119)', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-1', role: 'CUSTOMER' });
+      const loginResponse = {
+        success: true as const,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: customerToken,
+          tokenType: 'Bearer' as const,
+          expiresIn: 3600,
+          user: {
+            id: 'cust-1',
+            email: 'customer@example.com',
+            fullName: 'Customer User',
+            phoneNumber: null,
+            role: 'CUSTOMER' as const,
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+          },
+        },
+      };
+
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      const first = renderComponent([
+        { pathname: '/login', state: { from: '/booking-confirmation/not-a-uuid' } },
+      ]);
+      const user = userEvent.setup();
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'customer@example.com' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'ValidPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Home Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(/^\/$/);
+      first.unmount();
+
+      localStorage.clear();
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      renderComponent([{ pathname: '/login', state: { from: '//evil.com' } }]);
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'customer@example.com' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'ValidPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Home Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(/^\/$/);
+    });
+
+    it('redirects ADMIN to /admin/bookings?status=CONFIRMED&page=2 and /account?tab=password (CWB-119)', async () => {
+      const adminToken = createMockJwt({ sub: 'admin-1', role: 'ADMIN' });
+      const loginResponse = {
+        success: true as const,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: adminToken,
+          tokenType: 'Bearer' as const,
+          expiresIn: 3600,
+          user: {
+            id: 'admin-1',
+            email: 'admin@cospace.vn',
+            fullName: 'System Administrator',
+            phoneNumber: null,
+            role: 'ADMIN' as const,
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+          },
+        },
+      };
+
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      const first = renderComponent([
+        { pathname: '/login', state: { from: '/admin/bookings?status=CONFIRMED&page=2' } },
+      ]);
+      const user = userEvent.setup();
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'admin@cospace.vn' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'AdminPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Admin Bookings Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/admin/bookings?status=CONFIRMED&page=2',
+      );
+      first.unmount();
+
+      localStorage.clear();
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      renderComponent([{ pathname: '/login', state: { from: '/account?tab=password' } }]);
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'admin@cospace.vn' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'AdminPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Account Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent('/account?tab=password');
+    });
+
+    it('falls back ADMIN deep-link to /admin when state.from is /bookings or /admin/../login (CWB-119)', async () => {
+      const adminToken = createMockJwt({ sub: 'admin-1', role: 'ADMIN' });
+      const loginResponse = {
+        success: true as const,
+        message: 'Đăng nhập thành công',
+        data: {
+          accessToken: adminToken,
+          tokenType: 'Bearer' as const,
+          expiresIn: 3600,
+          user: {
+            id: 'admin-1',
+            email: 'admin@cospace.vn',
+            fullName: 'System Administrator',
+            phoneNumber: null,
+            role: 'ADMIN' as const,
+            emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+          },
+        },
+      };
+
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      const first = renderComponent([{ pathname: '/login', state: { from: '/bookings' } }]);
+      const user = userEvent.setup();
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'admin@cospace.vn' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'AdminPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Admin Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(/^\/admin$/);
+      first.unmount();
+
+      localStorage.clear();
+      vi.mocked(authApi.login).mockResolvedValueOnce(loginResponse);
+      renderComponent([{ pathname: '/login', state: { from: '/admin/../login' } }]);
+      fireEvent.change(screen.getByLabelText(/^Email/i), {
+        target: { value: 'admin@cospace.vn' },
+      });
+      fireEvent.change(screen.getByLabelText(/^Mật khẩu/i), {
+        target: { value: 'AdminPassword123' },
+      });
+      await user.click(screen.getByRole('button', { name: /^Đăng nhập$/i }));
+
+      expect(await screen.findByText('Mock Admin Page')).toBeInTheDocument();
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(/^\/admin$/);
     });
   });
 });
