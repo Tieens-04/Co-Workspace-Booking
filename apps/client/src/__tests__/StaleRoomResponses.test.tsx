@@ -68,6 +68,7 @@ const authValue = (id: string): AuthContextType => ({
   login: vi.fn(),
   applyProfile: vi.fn(),
   refreshProfile: vi.fn().mockResolvedValue(undefined),
+  clearLocalSession: vi.fn(),
   logout: vi.fn(),
 });
 

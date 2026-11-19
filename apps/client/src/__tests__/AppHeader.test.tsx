@@ -19,6 +19,7 @@ describe('AppHeader', () => {
       login: vi.fn(),
       applyProfile: vi.fn(),
       refreshProfile: vi.fn().mockResolvedValue(undefined),
+      clearLocalSession: vi.fn(),
       logout: vi.fn(),
     });
 
@@ -50,6 +51,7 @@ describe('AppHeader', () => {
       login: vi.fn(),
       applyProfile: vi.fn(),
       refreshProfile: vi.fn().mockResolvedValue(undefined),
+      clearLocalSession: vi.fn(),
       logout: logoutMock,
     });
 
@@ -85,6 +87,7 @@ describe('AppHeader', () => {
       login: vi.fn(),
       applyProfile: vi.fn(),
       refreshProfile: vi.fn().mockResolvedValue(undefined),
+      clearLocalSession: vi.fn(),
       logout: logoutMock,
     });
 
