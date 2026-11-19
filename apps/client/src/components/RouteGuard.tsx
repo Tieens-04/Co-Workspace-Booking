@@ -4,6 +4,7 @@ import { ArrowLeft, LoaderCircle, ShieldAlert } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { BrandMark } from './BrandMark';
 import { useAuth } from '../hooks/useAuth';
+import { formatReturnTo, isLoginPathname, resolvePostLoginRedirect } from '../utils/authRedirect';
 import { sanitizeHistoryState } from '../utils/history';
 
 const RouteLoading: React.FC = () => (
@@ -19,32 +20,33 @@ const RouteLoading: React.FC = () => (
 
 export const GuestRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { isAuthenticated, principal, isLoading } = useAuth();
-
-  if (isLoading) {
-    return <RouteLoading />;
-  }
-
-  if (isAuthenticated && principal) {
-    if (principal.role === 'ADMIN') {
-      return <Navigate to="/admin" replace />;
-    }
-    return <Navigate to="/" replace />;
-  }
-
-  return <>{children}</>;
-};
-
-export const CustomerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, principal, isLoading } = useAuth();
   const location = useLocation();
 
   if (isLoading) {
     return <RouteLoading />;
   }
 
+  if (isAuthenticated && principal) {
+    const rawFrom = isLoginPathname(location.pathname)
+      ? (location.state as { from?: unknown } | null)?.from
+      : undefined;
+    return <Navigate to={resolvePostLoginRedirect(principal.role, rawFrom)} replace />;
+  }
+
+  return <>{children}</>;
+};
+
+export const CustomerRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const { isAuthenticated, principal, isLoading, isRedirectingToLogin } = useAuth();
+  const location = useLocation();
+
+  if (isLoading || isRedirectingToLogin) {
+    return <RouteLoading />;
+  }
+
   if (!isAuthenticated || !principal) {
     sanitizeHistoryState();
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/login" state={{ from: formatReturnTo(location) }} replace />;
   }
 
   if (principal.role !== 'CUSTOMER') {
@@ -56,15 +58,16 @@ export const CustomerRoute: React.FC<{ children: React.ReactNode }> = ({ childre
 };
 
 export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, principal, isLoading } = useAuth();
+  const { isAuthenticated, principal, isLoading, isRedirectingToLogin } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
+  if (isLoading || isRedirectingToLogin) {
     return <RouteLoading />;
   }
 
   if (!isAuthenticated || !principal) {
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    sanitizeHistoryState();
+    return <Navigate to="/login" state={{ from: formatReturnTo(location) }} replace />;
   }
 
   if (principal.role !== 'ADMIN') {
@@ -117,16 +120,16 @@ export const AdminRoute: React.FC<{ children: React.ReactNode }> = ({ children }
 
 /** Any signed-in role (CUSTOMER or ADMIN), e.g. the personal account page. */
 export const AuthenticatedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isAuthenticated, principal, isLoading } = useAuth();
+  const { isAuthenticated, principal, isLoading, isRedirectingToLogin } = useAuth();
   const location = useLocation();
 
-  if (isLoading) {
+  if (isLoading || isRedirectingToLogin) {
     return <RouteLoading />;
   }
 
   if (!isAuthenticated || !principal) {
     sanitizeHistoryState();
-    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/login" state={{ from: formatReturnTo(location) }} replace />;
   }
 
   return <>{children}</>;

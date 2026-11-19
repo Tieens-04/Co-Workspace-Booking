@@ -1,15 +1,17 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, useLocation } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { AuthProvider } from '../context/AuthContext';
+import { AdminRoute, AuthenticatedRoute, CustomerRoute } from '../components/RouteGuard';
 import { useAuth } from '../hooks/useAuth';
 import { TOKEN_STORAGE_KEY } from '../utils/token';
 import { createMockJwt } from './test-utils';
 import { apiClient } from '../services/api';
 
 const TestAuthConsumer = () => {
-  const { isAuthenticated, principal, token, sessionExpired, login, logout } = useAuth();
+  const { isAuthenticated, principal, token, sessionExpired, login, logout, clearLocalSession } =
+    useAuth();
 
   return (
     <div>
@@ -35,6 +37,7 @@ const TestAuthConsumer = () => {
       </button>
 
       <button onClick={() => logout('userAction')}>Trigger Logout</button>
+      <button onClick={() => clearLocalSession()}>Trigger Clear Local Session</button>
       <button onClick={() => void apiClient.get('/protected').catch(() => undefined)}>
         Trigger Protected Request
       </button>
@@ -44,10 +47,19 @@ const TestAuthConsumer = () => {
 
 const LocationProbe = () => {
   const location = useLocation();
-  return <div data-testid="current-path">{location.pathname}</div>;
+  const state = location.state as { from?: string; sessionExpired?: boolean } | null;
+  return (
+    <div>
+      <div data-testid="current-path">{location.pathname + location.search}</div>
+      <div data-testid="location-from">{state?.from ?? 'NONE'}</div>
+      <div data-testid="location-session-expired">{state?.sessionExpired ? 'TRUE' : 'FALSE'}</div>
+    </div>
+  );
 };
 
-const renderAuthContext = (initialEntry = '/') =>
+const renderAuthContext = (
+  initialEntry: string | { pathname: string; search?: string; state?: unknown } = '/',
+) =>
   render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <AuthProvider>
@@ -131,11 +143,11 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
   });
 
-  it('synchronizes logout across tabs via storage event', () => {
+  it('synchronizes logout across tabs via storage event on protected routes without keeping from', () => {
     const validToken = createMockJwt({ sub: 'tab-user', role: 'CUSTOMER' });
     localStorage.setItem(TOKEN_STORAGE_KEY, validToken);
 
-    renderAuthContext();
+    renderAuthContext('/bookings?view=UPCOMING');
 
     expect(screen.getByTestId('auth-status')).toHaveTextContent('AUTHENTICATED');
 
@@ -153,6 +165,30 @@ describe('AuthContext', () => {
 
     expect(screen.getByTestId('auth-status')).toHaveTextContent('UNAUTHENTICATED');
     expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+    expect(screen.getByTestId('location-from')).toHaveTextContent('NONE');
+    expect(screen.getByTestId('location-session-expired')).toHaveTextContent('FALSE');
+  });
+
+  it('clears local session silently on cross-tab logout when user is on a public route (CWB-119)', () => {
+    const validToken = createMockJwt({ sub: 'tab-user', role: 'CUSTOMER' });
+    localStorage.setItem(TOKEN_STORAGE_KEY, validToken);
+
+    renderAuthContext('/reset-password');
+
+    act(() => {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+      window.dispatchEvent(
+        new StorageEvent('storage', {
+          key: TOKEN_STORAGE_KEY,
+          oldValue: validToken,
+          newValue: null,
+        }),
+      );
+    });
+
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('UNAUTHENTICATED');
+    expect(screen.getByTestId('session-expired')).toHaveTextContent('ACTIVE');
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/reset-password');
   });
 
   it('ignores a stale cross-tab logout event after a newer token has been stored', () => {
@@ -206,12 +242,32 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('current-path')).toHaveTextContent('/register');
   });
 
-  it('redirects to login with an expired session after a protected API returns 401', async () => {
+  it('redirects to login with sessionExpired and state.from after a non-/me protected API returns 401 on a public route', async () => {
     const token = createMockJwt({ sub: 'api-user', role: 'CUSTOMER' });
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
     const originalAdapter = apiClient.defaults.adapter;
-    apiClient.defaults.adapter = async (config) =>
-      Promise.reject({
+    apiClient.defaults.adapter = async (config) => {
+      if (config.url === '/me') {
+        return {
+          status: 200,
+          statusText: 'OK',
+          headers: {},
+          config,
+          data: {
+            success: true,
+            message: 'OK',
+            data: {
+              id: 'api-user',
+              email: 'api@example.com',
+              fullName: 'API User',
+              phoneNumber: null,
+              role: 'CUSTOMER',
+              emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+            },
+          },
+        };
+      }
+      return Promise.reject({
         response: {
           status: 401,
           statusText: 'Unauthorized',
@@ -220,9 +276,10 @@ describe('AuthContext', () => {
         },
         config,
       });
+    };
 
     try {
-      renderAuthContext();
+      renderAuthContext('/rooms/room-1?date=2026-11-20');
       const user = userEvent.setup();
       await user.click(screen.getByText('Trigger Protected Request'));
 
@@ -230,13 +287,88 @@ describe('AuthContext', () => {
         expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
       });
       expect(screen.getByTestId('session-expired')).toHaveTextContent('EXPIRED');
+      expect(screen.getByTestId('location-session-expired')).toHaveTextContent('TRUE');
+      expect(screen.getByTestId('location-from')).toHaveTextContent(
+        '/rooms/room-1?date=2026-11-20',
+      );
       expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
     } finally {
       apiClient.defaults.adapter = originalAdapter;
     }
   });
 
-  it('automatically logs out when token expires via timer', () => {
+  it.each([
+    '/',
+    '/rooms/room-1?capacity=4',
+    '/verify-email',
+    '/forgot-password',
+    '/reset-password',
+  ])(
+    'silently clears local session without redirecting when GET /me returns 401 on public route %s (CWB-119)',
+    async (publicPath) => {
+      const token = createMockJwt({ sub: 'revoked-user', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      const originalAdapter = apiClient.defaults.adapter;
+      apiClient.defaults.adapter = async (config) =>
+        Promise.reject({
+          response: {
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            data: { success: false, code: 'UNAUTHORIZED' },
+          },
+          config,
+        });
+
+      try {
+        renderAuthContext(publicPath);
+
+        await waitFor(() => {
+          expect(screen.getByTestId('auth-status')).toHaveTextContent('UNAUTHENTICATED');
+        });
+        expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+        expect(screen.getByTestId('session-expired')).toHaveTextContent('ACTIVE');
+        expect(screen.getByTestId('current-path')).toHaveTextContent(publicPath);
+      } finally {
+        apiClient.defaults.adapter = originalAdapter;
+      }
+    },
+  );
+
+  it.each(['/bookings?view=UPCOMING', '/account', '/admin/bookings?page=2'])(
+    'redirects to /login with sessionExpired and state.from when GET /me returns 401 on protected route %s (CWB-119)',
+    async (protectedPath) => {
+      const token = createMockJwt({ sub: 'revoked-user', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      const originalAdapter = apiClient.defaults.adapter;
+      apiClient.defaults.adapter = async (config) =>
+        Promise.reject({
+          response: {
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            data: { success: false, code: 'UNAUTHORIZED' },
+          },
+          config,
+        });
+
+      try {
+        renderAuthContext(protectedPath);
+
+        await waitFor(() => {
+          expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+        });
+        expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+        expect(screen.getByTestId('session-expired')).toHaveTextContent('EXPIRED');
+        expect(screen.getByTestId('location-session-expired')).toHaveTextContent('TRUE');
+        expect(screen.getByTestId('location-from')).toHaveTextContent(protectedPath);
+      } finally {
+        apiClient.defaults.adapter = originalAdapter;
+      }
+    },
+  );
+
+  it('automatically logs out and preserves state.from when token expires via timer on a protected route', () => {
     vi.useFakeTimers();
 
     // Expires in 5 seconds
@@ -244,7 +376,7 @@ describe('AuthContext', () => {
     const token = createMockJwt({ sub: 'timer-user', role: 'CUSTOMER', exp: expSeconds });
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
 
-    renderAuthContext();
+    renderAuthContext('/bookings?view=UPCOMING');
 
     expect(screen.getByTestId('auth-status')).toHaveTextContent('AUTHENTICATED');
 
@@ -257,6 +389,26 @@ describe('AuthContext', () => {
     expect(screen.getByTestId('session-expired')).toHaveTextContent('EXPIRED');
     expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
     expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+    expect(screen.getByTestId('location-from')).toHaveTextContent('/bookings?view=UPCOMING');
+  });
+
+  it('silently clears local session when token expires via timer on a public route (CWB-119)', () => {
+    vi.useFakeTimers();
+
+    const expSeconds = Math.floor(Date.now() / 1000) + 5;
+    const token = createMockJwt({ sub: 'timer-user', role: 'CUSTOMER', exp: expSeconds });
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+
+    renderAuthContext('/reset-password');
+
+    act(() => {
+      vi.advanceTimersByTime(6000);
+    });
+
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('UNAUTHENTICATED');
+    expect(screen.getByTestId('session-expired')).toHaveTextContent('ACTIVE');
+    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/reset-password');
   });
 
   it('keeps a valid long-lived token active without overflowing the browser timer', () => {
@@ -271,7 +423,7 @@ describe('AuthContext', () => {
     });
     localStorage.setItem(TOKEN_STORAGE_KEY, token);
 
-    renderAuthContext();
+    renderAuthContext('/bookings');
 
     expect(timeoutSpy).toHaveBeenCalledWith(expect.any(Function), 2_147_483_647);
 
@@ -292,5 +444,211 @@ describe('AuthContext', () => {
     });
     expect(screen.getByTestId('auth-status')).toHaveTextContent('UNAUTHENTICATED');
     expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+  });
+
+  it('clears state.from on explicit userAction logout and keeps path on clearLocalSession (CWB-119)', async () => {
+    const validToken = createMockJwt({ sub: 'admin-1', role: 'ADMIN' });
+    localStorage.setItem(TOKEN_STORAGE_KEY, validToken);
+
+    const { unmount } = renderAuthContext('/admin/bookings?page=2');
+    const user = userEvent.setup();
+
+    await user.click(screen.getByText('Trigger Clear Local Session'));
+    expect(screen.getByTestId('auth-status')).toHaveTextContent('UNAUTHENTICATED');
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/admin/bookings?page=2');
+    expect(localStorage.getItem(TOKEN_STORAGE_KEY)).toBeNull();
+    unmount();
+
+    localStorage.setItem(TOKEN_STORAGE_KEY, validToken);
+    renderAuthContext('/admin/bookings?page=2');
+    await user.click(screen.getByText('Trigger Logout'));
+    expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+    expect(screen.getByTestId('location-from')).toHaveTextContent('NONE');
+    expect(screen.getByTestId('location-session-expired')).toHaveTextContent('FALSE');
+  });
+
+  describe('Guarded Routes Synchronization (CWB-119 R02 Regression)', () => {
+    const renderGuardedAuth = (initialEntry: string) =>
+      render(
+        <MemoryRouter initialEntries={[initialEntry]}>
+          <AuthProvider>
+            <Routes>
+              <Route path="/" element={<div>Home Screen</div>} />
+              <Route path="/login" element={<LocationProbe />} />
+              <Route
+                path="/bookings"
+                element={
+                  <CustomerRoute>
+                    <TestAuthConsumer />
+                  </CustomerRoute>
+                }
+              />
+              <Route
+                path="/account"
+                element={
+                  <AuthenticatedRoute>
+                    <TestAuthConsumer />
+                  </AuthenticatedRoute>
+                }
+              />
+              <Route
+                path="/admin/bookings"
+                element={
+                  <AdminRoute>
+                    <TestAuthConsumer />
+                  </AdminRoute>
+                }
+              />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+    it('clears state.from on userAction logout and cross-tab storage removal inside CustomerRoute and AdminRoute', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-guard', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, customerToken);
+
+      const user = userEvent.setup();
+      const first = renderGuardedAuth('/bookings?view=UPCOMING');
+      await user.click(screen.getByText('Trigger Logout'));
+
+      await waitFor(() => {
+        expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+      });
+      expect(screen.getByTestId('location-from')).toHaveTextContent('NONE');
+      expect(screen.getByTestId('location-session-expired')).toHaveTextContent('FALSE');
+      first.unmount();
+
+      const adminToken = createMockJwt({ sub: 'admin-guard', role: 'ADMIN' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, adminToken);
+      renderGuardedAuth('/admin/bookings?page=2');
+
+      act(() => {
+        localStorage.removeItem(TOKEN_STORAGE_KEY);
+        window.dispatchEvent(
+          new StorageEvent('storage', {
+            key: TOKEN_STORAGE_KEY,
+            oldValue: adminToken,
+            newValue: null,
+          }),
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+      });
+      expect(screen.getByTestId('location-from')).toHaveTextContent('NONE');
+      expect(screen.getByTestId('location-session-expired')).toHaveTextContent('FALSE');
+    });
+
+    it('preserves both sessionExpired=true and state.from when GET /me 401 or exp timer fires inside CustomerRoute and AuthenticatedRoute', async () => {
+      const customerToken = createMockJwt({ sub: 'cust-401', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, customerToken);
+      const originalAdapter = apiClient.defaults.adapter;
+      apiClient.defaults.adapter = async (config) =>
+        Promise.reject({
+          response: {
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            data: { success: false, code: 'UNAUTHORIZED' },
+          },
+          config,
+        });
+
+      try {
+        const first = renderGuardedAuth('/bookings?view=UPCOMING');
+        await waitFor(() => {
+          expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+        });
+        expect(screen.getByTestId('location-session-expired')).toHaveTextContent('TRUE');
+        expect(screen.getByTestId('location-from')).toHaveTextContent('/bookings?view=UPCOMING');
+        first.unmount();
+      } finally {
+        apiClient.defaults.adapter = originalAdapter;
+      }
+
+      vi.useFakeTimers();
+      const expSeconds = Math.floor(Date.now() / 1000) + 5;
+      const expiringToken = createMockJwt({
+        sub: 'cust-timer',
+        role: 'CUSTOMER',
+        exp: expSeconds,
+      });
+      localStorage.setItem(TOKEN_STORAGE_KEY, expiringToken);
+
+      renderGuardedAuth('/account?section=security');
+
+      act(() => {
+        vi.advanceTimersByTime(6000);
+      });
+
+      expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+      expect(screen.getByTestId('location-session-expired')).toHaveTextContent('TRUE');
+      expect(screen.getByTestId('location-from')).toHaveTextContent('/account?section=security');
+    });
+
+    it('preserves existing state.from when already on /login and never leaks /verify-email?token into state.from on 401', async () => {
+      const token = createMockJwt({ sub: 'cust-edge', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+      const originalAdapter = apiClient.defaults.adapter;
+      apiClient.defaults.adapter = async (config) => {
+        if (config.url === '/me') {
+          return {
+            status: 200,
+            statusText: 'OK',
+            headers: {},
+            config,
+            data: {
+              success: true,
+              message: 'OK',
+              data: {
+                id: 'cust-edge',
+                email: 'edge@example.com',
+                fullName: 'Edge User',
+                phoneNumber: null,
+                role: 'CUSTOMER',
+                emailVerifiedAt: '2026-10-25T00:00:00.000Z',
+              },
+            },
+          };
+        }
+        return Promise.reject({
+          response: {
+            status: 401,
+            statusText: 'Unauthorized',
+            headers: {},
+            data: { success: false, code: 'UNAUTHORIZED' },
+          },
+          config,
+        });
+      };
+
+      const user = userEvent.setup();
+      try {
+        const loginMount = renderAuthContext({
+          pathname: '/login',
+          state: { from: '/bookings?view=UPCOMING' },
+        });
+        await user.click(screen.getByText('Trigger Protected Request'));
+        await waitFor(() => {
+          expect(screen.getByTestId('location-session-expired')).toHaveTextContent('TRUE');
+        });
+        expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+        expect(screen.getByTestId('location-from')).toHaveTextContent('/bookings?view=UPCOMING');
+        loginMount.unmount();
+
+        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+        renderAuthContext('/verify-email?token=secret-token-value');
+        await user.click(screen.getByText('Trigger Protected Request'));
+        await waitFor(() => {
+          expect(screen.getByTestId('current-path')).toHaveTextContent('/login');
+        });
+        expect(screen.getByTestId('location-session-expired')).toHaveTextContent('TRUE');
+        expect(screen.getByTestId('location-from')).toHaveTextContent('NONE');
+      } finally {
+        apiClient.defaults.adapter = originalAdapter;
+      }
+    });
   });
 });

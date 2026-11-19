@@ -7,6 +7,7 @@ import { useAuth } from '../hooks/useAuth';
 import { authApi } from '../services/auth.api';
 import { ApiErrorResponse } from '../types/auth';
 import { loginSchema } from '../utils/validation';
+import { resolvePostLoginRedirect } from '../utils/authRedirect';
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -82,20 +83,7 @@ export const LoginPage: React.FC = () => {
       }
 
       // Navigate according to role
-      if (user.role === 'ADMIN') {
-        navigate('/admin', { replace: true });
-      } else {
-        const from = location.state?.from;
-        const isSafeRoomPath = typeof from === 'string' && /^\/rooms\/[a-zA-Z0-9_-]+$/.test(from);
-        const isSafeBookingHistoryPath = from === '/bookings';
-        const isSafeBookingDetailPath =
-          typeof from === 'string' &&
-          /^\/bookings\/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(
-            from,
-          );
-        const isSafePath = isSafeRoomPath || isSafeBookingHistoryPath || isSafeBookingDetailPath;
-        navigate(isSafePath ? from : '/', { replace: true });
-      }
+      navigate(resolvePostLoginRedirect(user.role, location.state?.from), { replace: true });
     } catch (err: unknown) {
       setIsSubmitting(false);
 
