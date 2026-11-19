@@ -137,6 +137,7 @@ model Room {
   statusHistory RoomStatusHistory[]
   closures      Closure[]
 
+  @@index([status, name, id])
   @@map("rooms")
 }
 
@@ -233,7 +234,7 @@ model Booking {
   @@unique([idempotencyScope, idempotencyKey], map: "bookings_idempotency_scope_key_key")
   // Composite index cực kỳ quan trọng cho availability query (StartA < EndB AND EndA > StartB)
   @@index([roomId, startTime, endTime, status])
-  @@index([userId])
+  @@index([userId, status, startTime])
   @@index([startTime, id])
   @@index([status, attendanceTrackingEnabled, checkedInAt, endTime], map: "bookings_attendance_no_show_idx")
   @@map("bookings")
