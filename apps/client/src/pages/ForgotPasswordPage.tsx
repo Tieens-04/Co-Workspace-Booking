@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { LoaderCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -6,12 +6,14 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Field } from '@/components/common/Field';
 import { AuthNotice } from '../components/auth/AuthNotice';
+import { AuthContext } from '../context/auth-context-base';
 import { authApi } from '../services/auth.api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Requests a reset link. The confirmation never reveals whether the email is registered. */
 export const ForgotPasswordPage: React.FC = () => {
+  const isAuthenticated = Boolean(useContext(AuthContext)?.isAuthenticated);
   const [email, setEmail] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -78,13 +80,24 @@ export const ForgotPasswordPage: React.FC = () => {
       </Card>
 
       <p className="text-center text-sm text-muted-foreground">
-        Nhớ ra mật khẩu?{' '}
-        <Link
-          to="/login"
-          className="font-medium text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
-        >
-          Quay lại đăng nhập
-        </Link>
+        {isAuthenticated ? (
+          <Link
+            to="/account"
+            className="font-medium text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
+          >
+            Về trang tài khoản
+          </Link>
+        ) : (
+          <>
+            Nhớ ra mật khẩu?{' '}
+            <Link
+              to="/login"
+              className="font-medium text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
+            >
+              Quay lại đăng nhập
+            </Link>
+          </>
+        )}
       </p>
     </div>
   );

@@ -123,15 +123,21 @@ export default function App() {
 
                     <Route
                       element={
-                        <GuestRoute>
-                          <RouteSuspense>
-                            <AuthLayout />
-                          </RouteSuspense>
-                        </GuestRoute>
+                        <RouteSuspense>
+                          <AuthLayout />
+                        </RouteSuspense>
                       }
                     >
-                      <Route path="login" element={<LoginPage />} />
-                      <Route path="register" element={<RegisterPage />} />
+                      <Route
+                        element={
+                          <GuestRoute>
+                            <Outlet />
+                          </GuestRoute>
+                        }
+                      >
+                        <Route path="login" element={<LoginPage />} />
+                        <Route path="register" element={<RegisterPage />} />
+                      </Route>
                       <Route path="forgot-password" element={<ForgotPasswordPage />} />
                       <Route path="reset-password" element={<ResetPasswordPage />} />
                     </Route>
