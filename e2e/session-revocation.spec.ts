@@ -53,7 +53,7 @@ test('password change keeps this browser signed in and kicks the second session 
     await other.getByRole('textbox', { name: 'Email', exact: true }).fill(scenario.customer.email);
     await other.getByLabel(/^Mật khẩu/).fill(NEW_PASSWORD);
     await other.getByRole('button', { name: 'Đăng nhập', exact: true }).click();
-    await expect(other).toHaveURL(/\/$/);
+    await expect(other).toHaveURL(/\/bookings$/);
 
     await primary.goto('/account');
     await primary.getByTestId('account-logout-all-btn').click();
