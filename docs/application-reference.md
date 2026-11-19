@@ -993,9 +993,9 @@ npm run test --workspace=apps/client -- src/__tests__/AdminUsersPage.test.tsx
   - `GET /api/v1/admin/closures/:id`: lấy chi tiết khung đóng cửa theo UUID; không tồn tại → `404 CLOSURE_NOT_FOUND`.
   - `POST /api/v1/admin/closures`: body `{ roomId?: string | null, startTime, endTime, reason, acknowledgeConflictingBookings?: boolean }`. Kiểm tra `endTime > startTime`, `reason` 1–500 ký tự (sau trim), phòng tồn tại và chưa bị `ARCHIVED`.
   - `PATCH /api/v1/admin/closures/:id`: cập nhật một phần (`roomId`, `startTime`, `endTime`, `reason`, `acknowledgeConflictingBookings`); từ chối body rỗng `{}` với `400 VALIDATION_ERROR`. Khóa dòng `closures` và các dòng `rooms` liên quan bằng `SELECT ... FOR UPDATE`. Nếu dữ liệu thực tế không đổi thì không ghi audit event thừa.
-  - `DELETE /api/v1/admin/closures/:id`: xóa khung đóng cửa và ghi `AuditEvent` `CLOSURE_DELETED` trong cùng transaction.
+  - `DELETE /api/v1/admin/closures/:id`: khóa dòng `closures` bằng `SELECT ... FOR UPDATE`, xóa khung đóng cửa (`deleteMany`) và ghi `AuditEvent` `CLOSURE_DELETED` trong cùng transaction; nếu khung đóng cửa không tồn tại hoặc bị xóa đồng thời thì trả `404 CLOSURE_NOT_FOUND`.
 - **Cảnh báo xung đột & Bảo toàn booking**:
-  - Khi tạo/sửa `Closure`, hệ thống khóa dòng phòng mục tiêu (hoặc tất cả phòng chưa lưu trữ nếu `roomId = null`) bằng `SELECT ... FOR UPDATE` rồi kiểm tra các booking `CONFIRMED` giao với `[startTime, endTime)`.
+  - Khi tạo/sửa `Closure`, hệ thống khóa dòng phòng mục tiêu (hoặc tất cả phòng chưa lưu trữ theo thứ tự `PRIMARY` bằng `FORCE INDEX (PRIMARY) ... ORDER BY id ASC FOR UPDATE` nếu `roomId = null` để bảo toàn thứ tự khóa `PRIMARY -> secondary`, tránh deadlock `1213` với luồng cập nhật phòng) rồi kiểm tra các booking `CONFIRMED` giao với `[startTime, endTime)`.
   - Nếu có booking trùng và `acknowledgeConflictingBookings !== true`, trả về `409 CLOSURE_HAS_CONFLICTING_BOOKINGS` kèm `{ conflictingBookingCount, bookings }`.
   - Khi `acknowledgeConflictingBookings === true`, lưu `Closure` thành công, giữ nguyên trạng thái `CONFIRMED` của các booking hiện có và ghi nhận cờ xác nhận vào `AuditEvent` (`CLOSURE_CREATED` / `CLOSURE_UPDATED`).
 - **Giao diện**:

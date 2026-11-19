@@ -42,6 +42,10 @@ type LockedClosureRow = {
   reason: string;
 };
 
+function closureNotFoundError(): AppError {
+  return new AppError('CLOSURE_NOT_FOUND', 'Không tìm thấy khung đóng cửa', 404);
+}
+
 function toClosureDto(record: PrismaClosureWithRelations): ClosureDto {
   return {
     id: record.id,
@@ -160,8 +164,11 @@ export class ClosureRepository {
     previousRoomId?: string | null,
   ): Promise<void> {
     if (!targetRoomId || previousRoomId === null) {
+      // Pin PRIMARY scan so facility-wide closure locking always acquires locks in
+      // PRIMARY (id ASC) -> secondary order even with rooms_status_name_id_idx present,
+      // preventing ERROR 1213 cross-deadlocks with PATCH /admin/rooms/:id (lockRoomRow).
       const rooms = await tx.$queryRaw<Array<{ id: string; status: RoomStatus }>>(
-        Prisma.sql`SELECT id, status FROM rooms WHERE status != 'ARCHIVED' ORDER BY id ASC FOR UPDATE`,
+        Prisma.sql`SELECT id, status FROM rooms FORCE INDEX (PRIMARY) WHERE status != 'ARCHIVED' ORDER BY id ASC FOR UPDATE`,
       );
       if (targetRoomId && !rooms.some((r) => r.id === targetRoomId)) {
         throw new AppError('ROOM_NOT_FOUND', 'Không tìm thấy phòng', 404);
@@ -279,7 +286,7 @@ export class ClosureRepository {
         Prisma.sql`SELECT id, room_id, start_time, end_time, reason FROM closures WHERE id = ${id} FOR UPDATE`,
       );
       if (!lockedRows || lockedRows.length === 0) {
-        throw new AppError('CLOSURE_NOT_FOUND', 'Không tìm thấy khung đóng cửa', 404);
+        throw closureNotFoundError();
       }
 
       const locked = lockedRows[0];
@@ -398,17 +405,31 @@ export class ClosureRepository {
 
   async delete(id: string, actor: AuditActor): Promise<ClosureDto> {
     return prisma.$transaction(async (tx) => {
+      // Lock the closure row first so concurrent DELETE/PATCH requests serialize cleanly
+      // and never read a stale MVCC snapshot or fail with P2025 on duplicate delete.
+      const locked = await tx.$queryRaw<Array<{ id: string }>>(
+        Prisma.sql`SELECT id FROM closures WHERE id = ${id} FOR UPDATE`,
+      );
+      if (!locked || locked.length === 0) {
+        throw closureNotFoundError();
+      }
+
+      // Defensive belt-and-braces checks per CWB-122 contract even though the X-lock above
+      // guarantees the row cannot disappear before this transaction commits.
       const existing = await tx.closure.findUnique({
         where: { id },
         include: closureInclude,
       });
       if (!existing) {
-        throw new AppError('CLOSURE_NOT_FOUND', 'Không tìm thấy khung đóng cửa', 404);
+        throw closureNotFoundError();
       }
 
-      await tx.closure.delete({
+      const deleted = await tx.closure.deleteMany({
         where: { id },
       });
+      if (deleted.count === 0) {
+        throw closureNotFoundError();
+      }
 
       await recordAuditEvent(tx, {
         actor,

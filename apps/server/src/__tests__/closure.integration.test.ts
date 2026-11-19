@@ -23,8 +23,71 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
   const day4 = vnFutureDate(23);
   const holidayDate = vnFutureDate(35);
   const compactDate = (d: string) => d.replace(/-/g, '');
-  const adminToken = accounts.token(Role.ADMIN, `admin_${randomUUID().slice(0, 8)}`);
+  const adminUserId = `admin_${randomUUID().slice(0, 8)}`;
+  const adminToken = accounts.token(Role.ADMIN, adminUserId);
   let customerToken: string;
+
+  const DAY_MS = 24 * 60 * 60 * 1000;
+  function futureUtcSlot(
+    daysAhead: number,
+    startHourUtc: number,
+    endHourUtc: number,
+  ): { startTime: string; endTime: string; dateCompact: string } {
+    const day = new Date(Date.now() + daysAhead * DAY_MS);
+    const start = new Date(day);
+    start.setUTCHours(startHourUtc, 0, 0, 0);
+    const end = new Date(day);
+    end.setUTCHours(endHourUtc, 0, 0, 0);
+    return {
+      startTime: start.toISOString(),
+      endTime: end.toISOString(),
+      dateCompact: start.toISOString().slice(0, 10).replace(/-/g, ''),
+    };
+  }
+
+  async function waitForRowLocked(
+    probe: () => Promise<unknown>,
+    label: string,
+    timeoutMs = 3000,
+  ): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      try {
+        await probe();
+      } catch (err) {
+        const msg = String(err);
+        if (msg.includes('3572') || msg.toLowerCase().includes('nowait')) {
+          return;
+        }
+        throw err;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    throw new Error(`Timed out waiting for row lock: ${label}`);
+  }
+
+  async function waitForBlockedMysqlQueries(
+    predicate: (infoLower: string, rawInfo: string) => boolean,
+    minCount: number,
+    label: string,
+    timeoutMs = 4000,
+  ): Promise<string[]> {
+    type ProcessListRow = { INFO: string | null };
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const rows = await prisma.$queryRaw<ProcessListRow[]>(
+        Prisma.sql`SELECT INFO FROM information_schema.PROCESSLIST WHERE DB = DATABASE() AND ID != CONNECTION_ID() AND COMMAND != 'Sleep' AND INFO IS NOT NULL`,
+      );
+      const matched = rows
+        .map((r) => r.INFO ?? '')
+        .filter((raw) => predicate(raw.toLowerCase(), raw));
+      if (matched.length >= minCount) {
+        return matched;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 15));
+    }
+    throw new Error(`Timed out waiting for ${minCount} blocked MySQL query(ies): ${label}`);
+  }
 
   let testUserId: string;
   let testRoomAId: string;
@@ -1004,46 +1067,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       }
     });
 
-    const DAY_MS = 24 * 60 * 60 * 1000;
-    function futureUtcSlot(
-      daysAhead: number,
-      startHourUtc: number,
-      endHourUtc: number,
-    ): { startTime: string; endTime: string; dateCompact: string } {
-      const day = new Date(Date.now() + daysAhead * DAY_MS);
-      const start = new Date(day);
-      start.setUTCHours(startHourUtc, 0, 0, 0);
-      const end = new Date(day);
-      end.setUTCHours(endHourUtc, 0, 0, 0);
-      return {
-        startTime: start.toISOString(),
-        endTime: end.toISOString(),
-        dateCompact: start.toISOString().slice(0, 10).replace(/-/g, ''),
-      };
-    }
-
     it('CWB-109: detects a concurrent booking committed while PATCH /api/v1/admin/closures/:id waits on the room lock under REPEATABLE READ', async () => {
-      async function waitForRowLocked(
-        probe: () => Promise<unknown>,
-        label: string,
-        timeoutMs = 3000,
-      ): Promise<void> {
-        const deadline = Date.now() + timeoutMs;
-        while (Date.now() < deadline) {
-          try {
-            await probe();
-          } catch (err) {
-            const msg = String(err);
-            if (msg.includes('3572') || msg.toLowerCase().includes('nowait')) {
-              return;
-            }
-            throw err;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 15));
-        }
-        throw new Error(`Timed out waiting for row lock: ${label}`);
-      }
-
       const initialSlot = futureUtcSlot(10, 8, 10);
       const contestedSlot = futureUtcSlot(10, 2, 4);
       const dummySlot = futureUtcSlot(10, 12, 14);
@@ -1391,6 +1415,371 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
           await prisma.closure.deleteMany({ where: { id: { in: createdIds } } });
         }
       }
+    });
+  });
+
+  describe('11. Concurrent Closure Deletion & Composite Indexes (CWB-122)', () => {
+    it('returns 200 for the winning DELETE and 404 CLOSURE_NOT_FOUND (never 500) on concurrent double-delete', async () => {
+      const slot = futureUtcSlot(46, 2, 4);
+      const createdRes = await request(app)
+        .post('/api/v1/admin/closures')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roomId: testRoomBId,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          reason: `${testPrefix} Concurrent delete target`,
+        });
+      expect(createdRes.status).toBe(201);
+      const closureId = createdRes.body.data.id as string;
+
+      let releaseBlocker!: () => void;
+      const blockerGate = new Promise<void>((resolve) => {
+        releaseBlocker = resolve;
+      });
+      let markBlockerArmed!: () => void;
+      const blockerArmed = new Promise<void>((resolve) => {
+        markBlockerArmed = resolve;
+      });
+      const pending: Array<Promise<unknown>> = [];
+
+      try {
+        const blockerTx = prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM closures WHERE id = ${closureId} FOR UPDATE`,
+            );
+            markBlockerArmed();
+            await blockerGate;
+          },
+          { timeout: 10000 },
+        );
+        void blockerTx.catch(() => {});
+        pending.push(blockerTx);
+        await Promise.race([blockerArmed, blockerTx]);
+
+        const del1Promise = request(app)
+          .delete(`/api/v1/admin/closures/${closureId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .then((res) => res);
+        const del2Promise = request(app)
+          .delete(`/api/v1/admin/closures/${closureId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .then((res) => res);
+        void del1Promise.catch(() => {});
+        void del2Promise.catch(() => {});
+        pending.push(del1Promise, del2Promise);
+
+        await waitForBlockedMysqlQueries(
+          (info) =>
+            info.includes('closures') && (info.includes('for update') || info.startsWith('delete')),
+          2,
+          '2 concurrent DELETEs waiting on closures lock',
+        );
+
+        releaseBlocker();
+        const [, del1, del2] = await Promise.all([blockerTx, del1Promise, del2Promise]);
+
+        const sorted = [del1, del2].sort((a, b) => a.status - b.status);
+        expect(sorted.map((r) => r.status)).toEqual([200, 404]);
+
+        const [winner, loser] = sorted;
+        expect(winner.body.success).toBe(true);
+        expect(winner.body.data).toMatchObject({
+          id: closureId,
+          roomId: testRoomBId,
+          room: { id: testRoomBId, name: `${testPrefix}_RoomB` },
+          reason: `${testPrefix} Concurrent delete target`,
+          createdById: adminUserId,
+          createdBy: { id: adminUserId },
+        });
+        expect(loser.body.success).toBe(false);
+        expect(loser.body.code).toBe('CLOSURE_NOT_FOUND');
+
+        const remaining = await prisma.closure.findUnique({ where: { id: closureId } });
+        expect(remaining).toBeNull();
+
+        const deleteAudits = await prisma.auditEvent.count({
+          where: {
+            entityType: 'CLOSURE',
+            entityId: closureId,
+            action: 'CLOSURE_DELETED',
+          },
+        });
+        expect(deleteAudits).toBe(1);
+      } finally {
+        releaseBlocker();
+        await Promise.allSettled(pending);
+        await prisma.closure.deleteMany({ where: { id: closureId } });
+      }
+    });
+
+    it('serializes concurrent PATCH and DELETE so CLOSURE_DELETED audit snapshot reflects committed PATCH changes', async () => {
+      const initialSlot = futureUtcSlot(47, 2, 4);
+      const shiftedSlot = futureUtcSlot(47, 5, 7);
+      const initialReason = `${testPrefix} Initial reason`;
+      const updatedReason = `${testPrefix} Updated before delete`;
+
+      const createdRes = await request(app)
+        .post('/api/v1/admin/closures')
+        .set('Authorization', `Bearer ${adminToken}`)
+        .send({
+          roomId: testRoomBId,
+          startTime: initialSlot.startTime,
+          endTime: initialSlot.endTime,
+          reason: initialReason,
+        });
+      expect(createdRes.status).toBe(201);
+      const closureId = createdRes.body.data.id as string;
+
+      let releaseRoomBlocker!: () => void;
+      const roomGate = new Promise<void>((resolve) => {
+        releaseRoomBlocker = resolve;
+      });
+      let markRoomArmed!: () => void;
+      const roomArmed = new Promise<void>((resolve) => {
+        markRoomArmed = resolve;
+      });
+      const pending: Array<Promise<unknown>> = [];
+
+      try {
+        const roomBlockerTx = prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM rooms WHERE id = ${testRoomBId} FOR UPDATE`,
+            );
+            markRoomArmed();
+            await roomGate;
+          },
+          { timeout: 10000 },
+        );
+        void roomBlockerTx.catch(() => {});
+        pending.push(roomBlockerTx);
+        await Promise.race([roomArmed, roomBlockerTx]);
+
+        const patchPromise = request(app)
+          .patch(`/api/v1/admin/closures/${closureId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            startTime: shiftedSlot.startTime,
+            endTime: shiftedSlot.endTime,
+            reason: updatedReason,
+          })
+          .then((res) => res);
+        void patchPromise.catch(() => {});
+        pending.push(patchPromise);
+
+        await waitForRowLocked(
+          () =>
+            prisma.$queryRaw(
+              Prisma.sql`SELECT id FROM closures WHERE id = ${closureId} FOR UPDATE NOWAIT`,
+            ),
+          'closure locked by PATCH',
+        );
+        await waitForBlockedMysqlQueries(
+          (info) => info.includes('rooms') && info.includes('for update'),
+          1,
+          'PATCH blocked on rooms FOR UPDATE',
+        );
+
+        const deletePromise = request(app)
+          .delete(`/api/v1/admin/closures/${closureId}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .then((res) => res);
+        void deletePromise.catch(() => {});
+        pending.push(deletePromise);
+
+        await waitForBlockedMysqlQueries(
+          (info) =>
+            info.includes('closures') && (info.includes('for update') || info.startsWith('delete')),
+          1,
+          'DELETE blocked on closures lock held by PATCH',
+        );
+
+        releaseRoomBlocker();
+        const [, patchRes, deleteRes] = await Promise.all([
+          roomBlockerTx,
+          patchPromise,
+          deletePromise,
+        ]);
+
+        expect(patchRes.status).toBe(200);
+        expect(deleteRes.status).toBe(200);
+        expect(deleteRes.body.data.reason).toBe(updatedReason);
+
+        const deleteAudit = await prisma.auditEvent.findFirst({
+          where: {
+            entityType: 'CLOSURE',
+            entityId: closureId,
+            action: 'CLOSURE_DELETED',
+          },
+        });
+        expect(deleteAudit).not.toBeNull();
+        expect((deleteAudit?.before as { reason?: string } | null)?.reason).toBe(updatedReason);
+      } finally {
+        releaseRoomBlocker();
+        await Promise.allSettled(pending);
+        await prisma.closure.deleteMany({ where: { id: closureId } });
+      }
+    });
+
+    it('returns 404 CLOSURE_NOT_FOUND without deadlock on concurrent DELETE of a non-existent UUID', async () => {
+      const missingId = randomUUID();
+      const [res1, res2] = await Promise.all([
+        request(app)
+          .delete(`/api/v1/admin/closures/${missingId}`)
+          .set('Authorization', `Bearer ${adminToken}`),
+        request(app)
+          .delete(`/api/v1/admin/closures/${missingId}`)
+          .set('Authorization', `Bearer ${adminToken}`),
+      ]);
+
+      expect(res1.status).toBe(404);
+      expect(res1.body.code).toBe('CLOSURE_NOT_FOUND');
+      expect(res2.status).toBe(404);
+      expect(res2.body.code).toBe('CLOSURE_NOT_FOUND');
+    });
+
+    it('verifies CWB-122 composite indexes on bookings and rooms and intact bookings_user_id_fkey', async () => {
+      type ShowIndexRow = {
+        Key_name: string;
+        Seq_in_index: number | bigint;
+        Column_name: string;
+      };
+      type RefConstraintRow = {
+        CONSTRAINT_NAME: string;
+        DELETE_RULE: string;
+        UPDATE_RULE: string;
+      };
+      type KeyColumnUsageRow = {
+        CONSTRAINT_NAME: string;
+        COLUMN_NAME: string;
+        REFERENCED_TABLE_NAME: string | null;
+        REFERENCED_COLUMN_NAME: string | null;
+      };
+
+      const bookingIndexes = await prisma.$queryRawUnsafe<ShowIndexRow[]>(
+        'SHOW INDEX FROM bookings',
+      );
+      const compositeBookingCols = bookingIndexes
+        .filter((row) => row.Key_name === 'bookings_user_id_status_start_time_idx')
+        .sort((a, b) => Number(a.Seq_in_index) - Number(b.Seq_in_index))
+        .map((row) => row.Column_name);
+      expect(compositeBookingCols).toEqual(['user_id', 'status', 'start_time']);
+      expect(bookingIndexes.some((row) => row.Key_name === 'bookings_user_id_idx')).toBe(false);
+
+      const roomIndexes = await prisma.$queryRawUnsafe<ShowIndexRow[]>('SHOW INDEX FROM rooms');
+      const compositeRoomCols = roomIndexes
+        .filter((row) => row.Key_name === 'rooms_status_name_id_idx')
+        .sort((a, b) => Number(a.Seq_in_index) - Number(b.Seq_in_index))
+        .map((row) => row.Column_name);
+      expect(compositeRoomCols).toEqual(['status', 'name', 'id']);
+
+      const fkRows = await prisma.$queryRawUnsafe<RefConstraintRow[]>(
+        "SELECT CONSTRAINT_NAME, DELETE_RULE, UPDATE_RULE FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'bookings' AND CONSTRAINT_NAME = 'bookings_user_id_fkey'",
+      );
+      expect(fkRows).toHaveLength(1);
+      expect(fkRows[0]).toMatchObject({
+        CONSTRAINT_NAME: 'bookings_user_id_fkey',
+        DELETE_RULE: 'RESTRICT',
+        UPDATE_RULE: 'CASCADE',
+      });
+
+      const keyColRows = await prisma.$queryRawUnsafe<KeyColumnUsageRow[]>(
+        "SELECT CONSTRAINT_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE WHERE CONSTRAINT_SCHEMA = DATABASE() AND TABLE_NAME = 'bookings' AND CONSTRAINT_NAME = 'bookings_user_id_fkey'",
+      );
+      expect(keyColRows).toHaveLength(1);
+      expect(keyColRows[0]).toMatchObject({
+        CONSTRAINT_NAME: 'bookings_user_id_fkey',
+        COLUMN_NAME: 'user_id',
+        REFERENCED_TABLE_NAME: 'users',
+        REFERENCED_COLUMN_NAME: 'id',
+      });
+    });
+
+    it('pins facility-wide closure room locking to PRIMARY index without secondary index candidate or filesort (F1)', async () => {
+      const slot = futureUtcSlot(48, 2, 4);
+      let createdClosureId: string | undefined;
+
+      let releaseRoomBlocker!: () => void;
+      const roomGate = new Promise<void>((resolve) => {
+        releaseRoomBlocker = resolve;
+      });
+      let markRoomArmed!: () => void;
+      const roomArmed = new Promise<void>((resolve) => {
+        markRoomArmed = resolve;
+      });
+      const pending: Array<Promise<unknown>> = [];
+
+      let liveRoomsLockSql = '';
+      try {
+        const roomBlockerTx = prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw(
+              Prisma.sql`SELECT id FROM rooms WHERE id = ${testRoomAId} FOR UPDATE`,
+            );
+            markRoomArmed();
+            await roomGate;
+          },
+          { timeout: 10000 },
+        );
+        void roomBlockerTx.catch(() => {});
+        pending.push(roomBlockerTx);
+        await Promise.race([roomArmed, roomBlockerTx]);
+
+        const createPromise = request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: null,
+            startTime: slot.startTime,
+            endTime: slot.endTime,
+            reason: `${testPrefix} Facility lock order check`,
+            acknowledgeConflictingBookings: true,
+          })
+          .then((res) => res);
+        void createPromise.catch(() => {});
+        pending.push(createPromise);
+
+        [liveRoomsLockSql] = await waitForBlockedMysqlQueries(
+          (info) => info.includes('from rooms') && info.includes('for update'),
+          1,
+          'facility-wide closure lockTargetRooms query',
+        );
+
+        releaseRoomBlocker();
+        const [, createRes] = await Promise.all([roomBlockerTx, createPromise]);
+        expect(createRes.status).toBe(201);
+        createdClosureId = createRes.body.data.id as string;
+      } finally {
+        releaseRoomBlocker();
+        await Promise.allSettled(pending);
+        if (createdClosureId) {
+          await prisma.closure.deleteMany({ where: { id: createdClosureId } });
+        }
+      }
+
+      expect(liveRoomsLockSql).toMatch(/^SELECT id, status FROM rooms\b/i);
+      expect(liveRoomsLockSql).toContain('FORCE INDEX (PRIMARY)');
+      expect(liveRoomsLockSql).toContain('ORDER BY id ASC FOR UPDATE');
+
+      const explainRows = await prisma.$queryRawUnsafe<Array<Record<string, unknown>>>(
+        `EXPLAIN FORMAT=JSON ${liveRoomsLockSql}`,
+      );
+      const plan = JSON.parse(String(Object.values(explainRows[0])[0])) as {
+        query_block: {
+          ordering_operation: {
+            using_filesort: boolean;
+            table: {
+              key: string;
+              possible_keys?: string[];
+            };
+          };
+        };
+      };
+      expect(plan.query_block.ordering_operation.using_filesort).toBe(false);
+      expect(plan.query_block.ordering_operation.table.key).toBe('PRIMARY');
+      expect(plan.query_block.ordering_operation.table.possible_keys).toBeUndefined();
     });
   });
 });
