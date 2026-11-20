@@ -43,6 +43,24 @@ module.exports = defineConfig({ schema: './schema.prisma', migrations: { path: '
   assert.equal(loaded.config.migrations.seed, 'node seed.cjs');
 });
 
+test('Prisma configuration loads patched effect without TemplateLiteral ReDoS (GHSA-7589-6fvf-x4pw)', () => {
+  const { version } = prismaRequire('effect/package.json');
+  const [major, minor, patch] = version.split('.').map(Number);
+  assert.ok(
+    major > 3 || (major === 3 && (minor > 22 || (minor === 22 && patch >= 1))),
+    `effect ${version} must be >= 3.22.1`,
+  );
+
+  const { Schema } = prismaRequire('effect');
+  const schema = Schema.TemplateLiteral(Schema.String, ':', Schema.String, ':', Schema.String, 'X');
+  const startedAt = performance.now();
+  const decoded = Schema.decodeUnknownEither(schema)(':'.repeat(5000));
+  const elapsedMs = performance.now() - startedAt;
+
+  assert.equal(decoded._tag, 'Left');
+  assert.ok(elapsedMs < 500, `expected linear TemplateLiteral scan (<500ms), got ${elapsedMs}ms`);
+});
+
 test('ESLint config matching uses the patched glob matcher', async () => {
   // Resolve through ESLint itself so the overridden transitive copy is exercised.
   const eslintRequire = createRequire(require.resolve('eslint/package.json'));
