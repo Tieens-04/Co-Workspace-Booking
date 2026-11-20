@@ -230,9 +230,9 @@ npm run test:smoke:email --workspace=apps/server
 
 Yêu cầu đã cài dependencies, Docker CLI có Docker Compose và Docker daemon đang chạy; lần đầu cần tải image MySQL/Mailpit. Test dựng MySQL và Mailpit riêng biệt, chỉ dùng tài khoản/dữ liệu giả, gửi tới SMTP local và kiểm tra email booking/hủy booking. Không cần tài khoản Gmail và không gửi email qua SMTP thật. Test tự dọn tài nguyên đã tạo khi kết thúc, báo thất bại nếu Docker/Compose không sẵn sàng và không nằm trong bộ unit test thông thường.
 
-### Kiểm tra upload ảnh qua Nginx (CWB-43)
+### Kiểm tra upload ảnh và cấu hình Nginx (CWB-43, CWB-118)
 
-Ảnh phòng hỗ trợ JPEG, PNG, WebP, tối đa **10 ảnh/lần**, mỗi ảnh tối đa **5 MiB** (5 × 1024 × 1024 byte). Nginx giới hạn toàn request API ở **55 MiB**, đủ cho 50 MiB ảnh cộng phần đóng gói multipart. Backend tiếp tục kiểm tra từng ảnh, số lượng, MIME và chữ ký ảnh; giới hạn proxy không thay thế các kiểm tra này. Khi đổi policy ảnh, cần điều chỉnh giới hạn proxy tương ứng.
+Ảnh phòng hỗ trợ JPEG, PNG, WebP, tối đa **10 ảnh/lần**, mỗi ảnh tối đa **5 MiB** (5 × 1024 × 1024 byte). Nginx giới hạn chung `location /api/` ở **1 MiB** và tách riêng route upload `POST /api/v1/admin/rooms/:id/images` ở **55 MiB** (đủ cho 50 MiB ảnh cộng phần đóng gói multipart), đồng thời giữ đủ 3 security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) trên cả static assets và đặt `Cache-Control: no-cache` cho `index.html`. Backend tiếp tục kiểm tra từng ảnh, số lượng, MIME và chữ ký ảnh; giới hạn proxy không thay thế các kiểm tra này. Khi đổi policy ảnh, cần điều chỉnh giới hạn proxy tương ứng.
 
 ```bash
 npm run test:smoke:upload --workspace=apps/server
@@ -240,7 +240,7 @@ npm run test:smoke:upload --workspace=apps/server
 
 Yêu cầu Docker CLI, Docker daemon đang chạy và cổng host `5000` đang trống (dừng backend dev trước). Lần đầu Docker cần tải `nginx:1.27-alpine`; cho phép Docker truy cập backend test trên host qua `server:host-gateway`. Smoke test dùng cấu hình Nginx production nguyên bản, cổng proxy tự cấp, Express và JWT thật; repository và Cloudinary được mock nên không cần MySQL, tài khoản Cloudinary hoặc dữ liệu thật. Test tự dọn container/server khi kết thúc và báo thất bại nếu Docker không sẵn sàng; không chạy cùng bộ unit test thông thường.
 
-Smoke test kiểm tra ảnh 1/3/5 MiB, batch 10 × 5 MiB, giới hạn từng file/số lượng/định dạng, quyền truy cập và request trên 55 MiB bị proxy chặn trước Express. Để kiểm chứng test bắt được lỗi cấu hình cũ, đặt biến môi trường `SMOKE_NGINX_CONFIG` thành đường dẫn tuyệt đối tới bản sao `nginx.conf` đã bỏ dòng `client_max_body_size 55m;`, rồi chạy lại cùng lệnh: các upload hợp lệ trên giới hạn mặc định phải thất bại. Bỏ biến này để kiểm tra cấu hình production. Không sửa cấu hình production chỉ để chạy đối chứng.
+Smoke test kiểm tra security headers & caching trên `.js`/`.css` (`200` & `404`), `Cache-Control: no-cache` trên `/`, `/index.html` & SPA fallback, chặn `413` ở `> 1 MiB` cho các route `/api/` khác, ảnh 1/3/5 MiB, batch 10 × 5 MiB, giới hạn từng file/số lượng/định dạng, quyền truy cập, anti-spoofing header chuyển tiếp và request trên 55 MiB bị proxy chặn trước Express. Để kiểm chứng test bắt được lỗi cấu hình cũ, đặt biến môi trường `SMOKE_NGINX_CONFIG` thành đường dẫn tuyệt đối tới bản sao `nginx.conf` đã bỏ `client_max_body_size 55m;` trên route upload, rồi chạy lại cùng lệnh: các upload hợp lệ trên giới hạn `1 MiB` phải thất bại. Bỏ biến này để kiểm tra cấu hình production. Không sửa cấu hình production chỉ để chạy đối chứng.
 
 ## Nâng cấp check-in (CWB-39)
 
