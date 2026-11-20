@@ -96,7 +96,12 @@ export class AdminReportService {
     const byDay = new Map<string, typeof rows>();
     for (const row of rows) {
       const day = vnDate(row.startTime);
-      byDay.set(day, [...(byDay.get(day) ?? []), row]);
+      let list = byDay.get(day);
+      if (!list) {
+        list = [];
+        byDay.set(day, list);
+      }
+      list.push(row);
     }
     const line = (label: string, items: typeof rows) => {
       const summary = summarizeBookingRevenue(items);
@@ -122,7 +127,7 @@ export class AdminReportService {
         'Chưa thu',
         'Doanh thu tiềm năng',
       ],
-      ...[...byDay.entries()].map(([day, items]) => line(day, items)),
+      ...Array.from(byDay, ([day, items]) => line(day, items)),
       line('Tổng', rows),
     ]);
   }
