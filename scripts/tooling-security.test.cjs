@@ -245,3 +245,184 @@ test('dependency audit evaluator fails closed on prod vulns, errors, and non-all
   });
   assert.equal(evaluateFullAuditReport(secondPicomatchAdvisory).ok, false);
 });
+
+function assertClientNginxConfig(nginxConf) {
+  // Strip Nginx comments (# at start of line or after whitespace/;/{/}) before parsing blocks.
+  const stripped = nginxConf.replace(/(^|[ \t;{}])#[^\r\n]*/gm, '$1');
+  const locations = Array.from(
+    stripped.matchAll(/\blocation\s+([^{}]+?)\s*\{([^{}]*)\}/g),
+    ([full, matcher, body]) => ({ full, matcher: matcher.trim(), body }),
+  );
+
+  assert.equal(
+    (stripped.match(/\{/g) || []).length,
+    locations.length + 1,
+    'expected one server block and flat location blocks without nested braces',
+  );
+  assert.equal(
+    (stripped.match(/\}/g) || []).length,
+    locations.length + 1,
+    'all braces in nginx.conf must be balanced',
+  );
+
+  const serverTop = locations.reduce((acc, loc) => acc.replace(loc.full, ''), stripped);
+  assert.doesNotMatch(serverTop, /\blocation\b/, 'all location directives must be parsed');
+  assert.doesNotMatch(
+    serverTop,
+    /\bclient_max_body_size\s+(?!1m;)/,
+    'server-level client_max_body_size must not exceed 1m',
+  );
+
+  const requiredSecurityHeaders = [
+    'add_header X-Frame-Options "SAMEORIGIN" always;',
+    'add_header X-Content-Type-Options "nosniff" always;',
+    'add_header Referrer-Policy "strict-origin-when-cross-origin" always;',
+  ];
+
+  for (const header of requiredSecurityHeaders) {
+    assert.ok(serverTop.includes(header), `server block must declare ${header}`);
+  }
+
+  // Nginx drops server-level add_header inheritance in any location declaring add_header.
+  for (const location of locations) {
+    if (/\badd_header\b/.test(location.body)) {
+      for (const header of requiredSecurityHeaders) {
+        assert.ok(
+          location.body.includes(header),
+          `location "${location.matcher}" declares add_header and must repeat ${header}`,
+        );
+      }
+    }
+  }
+
+  const staticAssets = locations.find(
+    (loc) => loc.matcher.startsWith('~*') && /css\|js/.test(loc.matcher),
+  );
+  assert.ok(staticAssets, 'static assets regex location must exist');
+  assert.ok(
+    staticAssets.body.includes('add_header Cache-Control "public, max-age=31536000, immutable";'),
+    'static assets must set immutable Cache-Control without always so 404 responses are not cached for 1 year',
+  );
+
+  const indexHtml = locations.find((loc) => loc.matcher === '= /index.html');
+  assert.ok(indexHtml, 'location = /index.html must exist');
+  assert.ok(
+    indexHtml.body.includes('add_header Cache-Control "no-cache" always;'),
+    'location = /index.html must set Cache-Control: no-cache always',
+  );
+
+  const spaRoot = locations.find((loc) => loc.matcher === '/');
+  assert.ok(spaRoot, 'location / SPA fallback must exist');
+  assert.ok(spaRoot.body.includes('try_files $uri $uri/ /index.html;'));
+  assert.doesNotMatch(spaRoot.body, /\badd_header\b/);
+
+  assert.equal(
+    locations.find((loc) => /^\^~\s+\/api(?:\/|$)/.test(loc.matcher)),
+    undefined,
+    'no /api* prefix location may use ^~ or it will shadow the 55m upload regex location',
+  );
+
+  const apiLocation = locations.find((loc) => loc.matcher === '/api/');
+  assert.ok(apiLocation, 'location /api/ must exist');
+  assert.match(apiLocation.body, /\bclient_max_body_size\s+1m;/);
+  assert.doesNotMatch(apiLocation.body, /\bclient_max_body_size\s+55m;/);
+
+  const uploadLocation = locations.find(
+    (loc) => loc.matcher === '~ ^/api/v1/admin/rooms/[^/]+/images$',
+  );
+  assert.ok(uploadLocation, 'dedicated room image upload regex location must exist');
+  assert.match(uploadLocation.body, /\bclient_max_body_size\s+55m;/);
+  assert.match(uploadLocation.body, /\bproxy_pass\s+http:\/\/server:5000;/);
+  for (const header of [
+    'proxy_set_header X-Real-IP $remote_addr;',
+    'proxy_set_header X-Forwarded-For $remote_addr;',
+    'proxy_set_header X-Forwarded-Host $host;',
+    'proxy_set_header X-Forwarded-Proto $scheme;',
+    'proxy_set_header Forwarded "";',
+  ]) {
+    assert.ok(uploadLocation.body.includes(header), `upload location must declare ${header}`);
+  }
+}
+
+test('client nginx.conf preserves security headers across add_header locations, scopes 55m to room image upload, and sets no-cache on index.html (CWB-118)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const nginxConf = await readFile(path.join(repoRoot, 'apps/client/nginx.conf'), 'utf8');
+  assertClientNginxConfig(nginxConf);
+});
+
+test('nginx.conf static guard fails closed on single-line locations, inline comments, nested blocks, ^~ /api/* shadowing, and server-wide 55m (CWB-118)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const validConf = await readFile(path.join(repoRoot, 'apps/client/nginx.conf'), 'utf8');
+
+  const injectBeforeClosingServer = (snippet) =>
+    validConf.replace(/\r?\n\}\s*$/, `\n${snippet}\n}\n`);
+
+  assert.throws(
+    () =>
+      assertClientNginxConfig(
+        injectBeforeClosingServer(
+          '    location = /robots.txt { add_header Cache-Control "public, max-age=3600"; }',
+        ),
+      ),
+    /must repeat/,
+  );
+
+  assert.throws(
+    () =>
+      assertClientNginxConfig(
+        injectBeforeClosingServer(
+          '    location /manifest.webmanifest { # PWA manifest\n        add_header Cache-Control "public, max-age=86400";\n    }',
+        ),
+      ),
+    /must repeat/,
+  );
+
+  assert.throws(
+    () =>
+      assertClientNginxConfig(
+        validConf.replace(
+          'add_header Cache-Control "no-cache" always;',
+          'add_header Cache-Control "no-cache" always;\n        if ($arg_debug) { add_header X-Debug "1"; }',
+        ),
+      ),
+    /nested braces/,
+  );
+
+  assert.throws(
+    () =>
+      assertClientNginxConfig(
+        validConf.replace(
+          'proxy_set_header Forwarded "";',
+          'proxy_set_header Host $host; # proxy_set_header Forwarded "";',
+        ),
+      ),
+    /Forwarded/,
+  );
+
+  assert.doesNotThrow(() =>
+    assertClientNginxConfig(
+      validConf.replace(
+        'try_files $uri $uri/ /index.html;',
+        'try_files $uri $uri/ /index.html; # do not add_header here',
+      ),
+    ),
+  );
+
+  assert.throws(
+    () =>
+      assertClientNginxConfig(
+        injectBeforeClosingServer(
+          '    location ^~ /api/v1/ {\n        proxy_pass http://server:5000;\n    }',
+        ),
+      ),
+    /shadow/,
+  );
+
+  assert.throws(
+    () =>
+      assertClientNginxConfig(
+        validConf.replace('server {', 'server {\n    client_max_body_size 55m;'),
+      ),
+    /client_max_body_size/,
+  );
+});
