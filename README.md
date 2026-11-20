@@ -43,7 +43,7 @@ Các dependency trực tiếp khai báo minimum version đã vá; root lockfile 
 
 `vite`, `vitest` và `typescript-eslint` phụ thuộc gián tiếp vào `picomatch` 4.0.7 đang có advisory [ReDoS trên single-branch repeated extglob (GHSA-fc5q-39xc-vjpf / CVE-2026-112366)](https://github.com/advisories/GHSA-fc5q-39xc-vjpf) chưa có bản vá phát hành trên npm (`first_patched_version: null`, chỉ nằm ở devDependencies). `scripts/audit-dependencies.cjs` giữ nguyên kiểm tra `npm audit --omit=dev` bằng 0 và chỉ cho qua đúng mã `GHSA-fc5q-39xc-vjpf` trên `picomatch` trong full audit (fail-closed với mọi lỗi mạng hoặc advisory khác). Gỡ mục tạm này ngay khi `picomatch` phát hành bản vá trên npm và cập nhật lockfile/override.
 
-Prisma 6.19.3 dùng `deepmerge-ts` 7 bị [stack exhaustion với cấu trúc đệ quy (GHSA-ggr8-5vv4-36mx)](https://github.com/advisories/GHSA-ggr8-5vv4-36mx). Root `overrides` chỉ thay dependency này trong `@prisma/config` bằng bản vá 8.0.0, giữ nguyên Prisma 6 và hợp đồng database. `test:tooling` kiểm tra đầu vào đệ quy và việc Prisma thực sự nạp cấu hình với merger đã vá. Chỉ bỏ override sau khi Prisma đã tự phụ thuộc bản an toàn và các kiểm tra này vẫn pass.
+Prisma 6.19.3 dùng `deepmerge-ts` 7 bị [stack exhaustion với cấu trúc đệ quy (GHSA-ggr8-5vv4-36mx)](https://github.com/advisories/GHSA-ggr8-5vv4-36mx) và `effect` 3.21.0 bị [ReDoS trong `Schema.TemplateLiteral` (GHSA-7589-6fvf-x4pw)](https://github.com/advisories/GHSA-7589-6fvf-x4pw). Root `overrides` chỉ thay hai dependency này trong `@prisma/config` bằng bản vá `deepmerge-ts` 8.0.0 và `effect` 3.22.5, giữ nguyên Prisma 6 và hợp đồng database. `test:tooling` kiểm tra đầu vào đệ quy, quét tuyến tính `Schema.TemplateLiteral` và việc Prisma thực sự nạp cấu hình với các gói đã vá. Chỉ bỏ override sau khi Prisma đã tự phụ thuộc bản an toàn và các kiểm tra này vẫn pass.
 
 ESLint 9 và `typescript-eslint` phụ thuộc `minimatch` 3.x/10.x bị [DoS do khuếch đại globparts (GHSA-g3hv-75wg-m249)](https://github.com/advisories/GHSA-g3hv-75wg-m249). Root `overrides` ép `minimatch` lên bản vá 11.0.3 (chỉ là devDependency, không vào runtime). `test:tooling` kiểm tra ESLint nạp đúng bản đã vá và vẫn khớp glob cấu hình. Chỉ bỏ override khi ESLint tự phụ thuộc bản an toàn.
 
@@ -230,9 +230,9 @@ npm run test:smoke:email --workspace=apps/server
 
 Yêu cầu đã cài dependencies, Docker CLI có Docker Compose và Docker daemon đang chạy; lần đầu cần tải image MySQL/Mailpit. Test dựng MySQL và Mailpit riêng biệt, chỉ dùng tài khoản/dữ liệu giả, gửi tới SMTP local và kiểm tra email booking/hủy booking. Không cần tài khoản Gmail và không gửi email qua SMTP thật. Test tự dọn tài nguyên đã tạo khi kết thúc, báo thất bại nếu Docker/Compose không sẵn sàng và không nằm trong bộ unit test thông thường.
 
-### Kiểm tra upload ảnh qua Nginx (CWB-43)
+### Kiểm tra upload ảnh và cấu hình Nginx (CWB-43, CWB-118)
 
-Ảnh phòng hỗ trợ JPEG, PNG, WebP, tối đa **10 ảnh/lần**, mỗi ảnh tối đa **5 MiB** (5 × 1024 × 1024 byte). Nginx giới hạn toàn request API ở **55 MiB**, đủ cho 50 MiB ảnh cộng phần đóng gói multipart. Backend tiếp tục kiểm tra từng ảnh, số lượng, MIME và chữ ký ảnh; giới hạn proxy không thay thế các kiểm tra này. Khi đổi policy ảnh, cần điều chỉnh giới hạn proxy tương ứng.
+Ảnh phòng hỗ trợ JPEG, PNG, WebP, tối đa **10 ảnh/lần**, mỗi ảnh tối đa **5 MiB** (5 × 1024 × 1024 byte). Nginx giới hạn chung `location /api/` ở **1 MiB** và tách riêng route upload `POST /api/v1/admin/rooms/:id/images` ở **55 MiB** (đủ cho 50 MiB ảnh cộng phần đóng gói multipart), đồng thời giữ đủ 3 security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) trên cả static assets và đặt `Cache-Control: no-cache` cho `index.html`. Backend tiếp tục kiểm tra từng ảnh, số lượng, MIME và chữ ký ảnh; giới hạn proxy không thay thế các kiểm tra này. Khi đổi policy ảnh, cần điều chỉnh giới hạn proxy tương ứng.
 
 ```bash
 npm run test:smoke:upload --workspace=apps/server
@@ -240,7 +240,7 @@ npm run test:smoke:upload --workspace=apps/server
 
 Yêu cầu Docker CLI, Docker daemon đang chạy và cổng host `5000` đang trống (dừng backend dev trước). Lần đầu Docker cần tải `nginx:1.27-alpine`; cho phép Docker truy cập backend test trên host qua `server:host-gateway`. Smoke test dùng cấu hình Nginx production nguyên bản, cổng proxy tự cấp, Express và JWT thật; repository và Cloudinary được mock nên không cần MySQL, tài khoản Cloudinary hoặc dữ liệu thật. Test tự dọn container/server khi kết thúc và báo thất bại nếu Docker không sẵn sàng; không chạy cùng bộ unit test thông thường.
 
-Smoke test kiểm tra ảnh 1/3/5 MiB, batch 10 × 5 MiB, giới hạn từng file/số lượng/định dạng, quyền truy cập và request trên 55 MiB bị proxy chặn trước Express. Để kiểm chứng test bắt được lỗi cấu hình cũ, đặt biến môi trường `SMOKE_NGINX_CONFIG` thành đường dẫn tuyệt đối tới bản sao `nginx.conf` đã bỏ dòng `client_max_body_size 55m;`, rồi chạy lại cùng lệnh: các upload hợp lệ trên giới hạn mặc định phải thất bại. Bỏ biến này để kiểm tra cấu hình production. Không sửa cấu hình production chỉ để chạy đối chứng.
+Smoke test kiểm tra security headers & caching trên `.js`/`.css` (`200` & `404`), `Cache-Control: no-cache` trên `/`, `/index.html` & SPA fallback, chặn `413` ở `> 1 MiB` cho các route `/api/` khác, ảnh 1/3/5 MiB, batch 10 × 5 MiB, giới hạn từng file/số lượng/định dạng, quyền truy cập, anti-spoofing header chuyển tiếp và request trên 55 MiB bị proxy chặn trước Express. Để kiểm chứng test bắt được lỗi cấu hình cũ, đặt biến môi trường `SMOKE_NGINX_CONFIG` thành đường dẫn tuyệt đối tới bản sao `nginx.conf` đã bỏ `client_max_body_size 55m;` trên route upload, rồi chạy lại cùng lệnh: các upload hợp lệ trên giới hạn `1 MiB` phải thất bại. Bỏ biến này để kiểm tra cấu hình production. Không sửa cấu hình production chỉ để chạy đối chứng.
 
 ## Nâng cấp check-in (CWB-39)
 

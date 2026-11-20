@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import type { Server } from 'node:http';
+import type { IncomingHttpHeaders, Server } from 'node:http';
 import { resolve } from 'node:path';
 import express from 'express';
 import request from 'supertest';
@@ -20,6 +20,11 @@ const MiB = 1024 * 1024;
 const roomId = '33333333-3333-4333-8333-333333333333';
 const uploadPath = `/api/v1/admin/rooms/${roomId}/images`;
 const containerName = `cospace-upload-smoke-${randomUUID()}`;
+const expectedSecurityHeaders = {
+  'x-frame-options': 'SAMEORIGIN',
+  'x-content-type-options': 'nosniff',
+  'referrer-policy': 'strict-origin-when-cross-origin',
+};
 const fixture: RoomDetailRecord = {
   id: roomId,
   name: 'Upload smoke room',
@@ -35,6 +40,7 @@ let backend: Server | undefined;
 let containerStarted = false;
 let proxyUrl = '';
 let upstreamRequests = 0;
+let lastUpstreamHeaders: IncomingHttpHeaders | undefined;
 
 function docker(args: string[], timeout = 30000): string {
   return execFileSync('docker', args, {
@@ -100,8 +106,9 @@ describe('room image upload through production Nginx', () => {
       vi.spyOn(cloudinaryMediaService, 'destroyManyImages').mockResolvedValue();
 
       const countedApp = express();
-      countedApp.use((_req, _res, next) => {
+      countedApp.use((req, _res, next) => {
         upstreamRequests += 1;
+        lastUpstreamHeaders = { ...req.headers };
         next();
       });
       countedApp.use(app);
@@ -135,6 +142,13 @@ describe('room image upload through production Nginx', () => {
         60000,
       );
       docker(['exec', containerName, 'nginx', '-t']);
+      docker([
+        'exec',
+        containerName,
+        'sh',
+        '-c',
+        "mkdir -p /usr/share/nginx/html/assets && printf 'console.log(1);\\n' > /usr/share/nginx/html/assets/smoke.js && printf 'body{margin:0}\\n' > /usr/share/nginx/html/assets/smoke.css",
+      ]);
       const port = docker(['port', containerName, '80/tcp']).match(/:(\d+)$/)?.[1];
       if (!port) throw new Error('Docker did not expose the Nginx smoke port.');
       proxyUrl = `http://127.0.0.1:${port}`;
@@ -162,9 +176,67 @@ describe('room image upload through production Nginx', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     upstreamRequests = 0;
+    lastUpstreamHeaders = undefined;
   });
 
   afterAll(cleanup);
+
+  it.each(['/assets/smoke.js', '/assets/smoke.css'])(
+    'preserves security headers and immutable caching on static asset %s',
+    async (assetPath) => {
+      const response = await request(proxyUrl).get(assetPath);
+      expect(response.status).toBe(200);
+      expect(response.headers).toMatchObject(expectedSecurityHeaders);
+      expect(response.headers['cache-control']).toContain('public, max-age=31536000, immutable');
+      expect(upstreamRequests).toBe(0);
+    },
+  );
+
+  it('keeps security headers without immutable caching on missing static assets (404)', async () => {
+    const response = await request(proxyUrl).get('/assets/missing-smoke.js');
+    expect(response.status).toBe(404);
+    expect(response.headers).toMatchObject(expectedSecurityHeaders);
+    expect(response.headers['cache-control'] ?? '').not.toContain('immutable');
+    expect(upstreamRequests).toBe(0);
+  });
+
+  it.each(['/', '/index.html', '/rooms/smoke-deep-link'])(
+    'serves %s with Cache-Control: no-cache and security headers',
+    async (spaPath) => {
+      const response = await request(proxyUrl).get(spaPath);
+      expect(response.status).toBe(200);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.headers['cache-control']).toBe('no-cache');
+      expect(response.headers).toMatchObject(expectedSecurityHeaders);
+      expect(upstreamRequests).toBe(0);
+    },
+  );
+
+  it.each(['/api/v1/auth/login', `${uploadPath}/extra`])(
+    'rejects payloads above 1 MiB on non-upload API route %s at Nginx before Express',
+    async (apiPath) => {
+      const response = await request(proxyUrl)
+        .post(apiPath)
+        .set('Content-Type', 'application/json')
+        .send(Buffer.alloc(1 * MiB + 1024, 'a'));
+      expect(response.status).toBe(413);
+      expect(response.headers['content-type']).toContain('text/html');
+      expect(response.headers).toMatchObject(expectedSecurityHeaders);
+      expect(upstreamRequests).toBe(0);
+    },
+  );
+
+  it('replaces client-supplied forwarding headers on the dedicated upload location', async () => {
+    const response = await upload()
+      .set('X-Forwarded-For', '203.0.113.99')
+      .set('Forwarded', 'for=203.0.113.99')
+      .attach('images', jpeg(64), 'photo.jpg');
+    expect(response.status).toBe(201);
+    expect(upstreamRequests).toBe(1);
+    expect(lastUpstreamHeaders?.['x-forwarded-for']).toBeTruthy();
+    expect(lastUpstreamHeaders?.['x-forwarded-for']).not.toContain('203.0.113.99');
+    expect(lastUpstreamHeaders?.forwarded).toBeUndefined();
+  });
 
   it.each([1, 3, 5])('accepts a %i MiB image', async (size) => {
     const response = await upload().attach('images', jpeg(size * MiB), 'photo.jpg');

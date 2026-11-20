@@ -503,6 +503,11 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
   });
 
   describe('CWB-84: Keyword Search, Sort Options, and Time Slot Availability', () => {
+    const getFutureSlotDate = () =>
+      new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+      }).format(new Date(Date.now() + 2 * 24 * 60 * 60 * 1000));
+
     it('debounces search input and requests rooms with q, syncing URL', async () => {
       renderComponent();
       await screen.findByText('Focus Room Creative');
@@ -560,6 +565,7 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
     });
 
     it('selects valid date and time slot, calls API with slot params and displays chip', async () => {
+      const futureSlotDate = getFutureSlotDate();
       renderComponent();
       await screen.findByText('Focus Room Creative');
 
@@ -567,14 +573,14 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
       const startSelect = screen.getByLabelText(/Giờ bắt đầu/i);
       const endSelect = screen.getByLabelText(/Giờ kết thúc/i);
 
-      fireEvent.change(dateInput, { target: { value: '2026-11-20' } });
+      fireEvent.change(dateInput, { target: { value: futureSlotDate } });
       fireEvent.change(startSelect, { target: { value: '09:00' } });
       fireEvent.change(endSelect, { target: { value: '11:00' } });
 
       await waitFor(() => {
         expect(roomApi.getRooms).toHaveBeenCalledWith(
           expect.objectContaining({
-            date: '2026-11-20',
+            date: futureSlotDate,
             startTime: '09:00',
             endTime: '11:00',
           }),
@@ -582,27 +588,31 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
         );
       });
 
-      expect(screen.getByTestId('location-search')).toHaveTextContent('date=2026-11-20');
+      expect(screen.getByTestId('location-search')).toHaveTextContent(`date=${futureSlotDate}`);
       expect(screen.getByTestId('location-search')).toHaveTextContent('startTime=09%3A00');
       expect(screen.getByTestId('location-search')).toHaveTextContent('endTime=11%3A00');
-      expect(screen.getByText('Khung giờ: 2026-11-20 (09:00 - 11:00)')).toBeInTheDocument();
+      expect(screen.getByText(`Khung giờ: ${futureSlotDate} (09:00 - 11:00)`)).toBeInTheDocument();
     });
 
     it('removes active chip for slot and resets slot filter', async () => {
-      renderComponent('/rooms?date=2026-11-20&startTime=09:00&endTime=11:00');
+      const futureSlotDate = getFutureSlotDate();
+      renderComponent(`/rooms?date=${futureSlotDate}&startTime=09:00&endTime=11:00`);
       await screen.findByText('Focus Room Creative');
 
       const chip = await screen.findByRole('button', {
-        name: /Bỏ lọc: Khung giờ: 2026-11-20 \(09:00 - 11:00\)/i,
+        name: new RegExp(`Bỏ lọc: Khung giờ: ${futureSlotDate} \\(09:00 - 11:00\\)`, 'i'),
       });
       fireEvent.click(chip);
 
       await waitFor(() => {
-        expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2026-11-20');
+        expect(screen.getByTestId('location-search')).not.toHaveTextContent(
+          `date=${futureSlotDate}`,
+        );
       });
     });
 
     it('shows validation error when end time is before or equal to start time', async () => {
+      const futureSlotDate = getFutureSlotDate();
       renderComponent();
       await screen.findByText('Focus Room Creative');
 
@@ -610,25 +620,28 @@ describe('Room Discovery - RoomsPage (/rooms)', () => {
       const startSelect = screen.getByLabelText(/Giờ bắt đầu/i);
       const endSelect = screen.getByLabelText(/Giờ kết thúc/i);
 
-      fireEvent.change(dateInput, { target: { value: '2026-11-20' } });
+      fireEvent.change(dateInput, { target: { value: futureSlotDate } });
       fireEvent.change(startSelect, { target: { value: '11:00' } });
       fireEvent.change(endSelect, { target: { value: '09:00' } });
 
       expect(
         await screen.findByText('Thời gian kết thúc phải sau thời gian bắt đầu'),
       ).toBeInTheDocument();
-      expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2026-11-20');
+      expect(screen.getByTestId('location-search')).not.toHaveTextContent(`date=${futureSlotDate}`);
     });
 
     it('clears slot filter via "Xóa khung giờ" button in filter panel', async () => {
-      renderComponent('/rooms?date=2026-11-20&startTime=09:00&endTime=11:00');
+      const futureSlotDate = getFutureSlotDate();
+      renderComponent(`/rooms?date=${futureSlotDate}&startTime=09:00&endTime=11:00`);
       await screen.findByText('Focus Room Creative');
 
       const clearSlotBtn = screen.getByRole('button', { name: /Xóa khung giờ/i });
       fireEvent.click(clearSlotBtn);
 
       await waitFor(() => {
-        expect(screen.getByTestId('location-search')).not.toHaveTextContent('date=2026-11-20');
+        expect(screen.getByTestId('location-search')).not.toHaveTextContent(
+          `date=${futureSlotDate}`,
+        );
       });
     });
 
