@@ -33,10 +33,7 @@ export const guestPhoneSchema = z
  * - null or empty/whitespace string transforms to null.
  * - non-empty string is checked against VIETNAMESE_PHONE_REGEX and returned in normalized form.
  */
-export const transformOptionalPhone = (
-  val: string | null,
-  ctx: z.RefinementCtx,
-): string | null => {
+export const transformOptionalPhone = (val: string | null, ctx: z.RefinementCtx): string | null => {
   if (val === null) return null;
   const trimmed = val.trim();
   if (trimmed === '') return null;

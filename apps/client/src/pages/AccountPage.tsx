@@ -149,7 +149,11 @@ export const AccountPage: React.FC = () => {
       const apiErr = err as ApiError;
       const issues = apiErr.response?.data?.details;
       const phoneIssue = Array.isArray(issues)
-        ? issues.find((i) => i.field === 'phoneNumber' || (Array.isArray(i.path) && i.path.includes('phoneNumber')))
+        ? issues.find(
+            (i) =>
+              i.field === 'phoneNumber' ||
+              (Array.isArray(i.path) && i.path.includes('phoneNumber')),
+          )
         : null;
       if (phoneIssue) {
         setPhoneError(phoneIssue.message || 'Số điện thoại không đúng định dạng');
@@ -280,270 +284,273 @@ export const AccountPage: React.FC = () => {
 
       {!isLoading && !loadError && profile && (
         <>
-          {profile.emailVerifiedAt === null && (
-            <EmailVerificationNotice className="mt-8" />
-          )}
+          {profile.emailVerifiedAt === null && <EmailVerificationNotice className="mt-8" />}
           <div className="mt-8 grid gap-6 lg:grid-cols-2">
-          <Card className="p-5 sm:p-6">
-            <form noValidate onSubmit={handleProfileSubmit} data-testid="account-profile-form">
-              <h2 className="text-lg font-semibold">Hồ sơ</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Email đăng nhập: <strong className="text-foreground">{profile.email}</strong> · Vai
-                trò {profile.role}
-              </p>
-              <div className="mt-5 grid gap-4">
-                <Field id="account-full-name" label="Họ và tên">
-                  <Input
-                    value={fullName}
-                    maxLength={191}
-                    autoComplete="name"
-                    onChange={(e) => setFullName(e.target.value)}
-                  />
-                </Field>
-                <Field id="account-phone" label="Số điện thoại" hint="Để trống nếu muốn xóa." error={phoneError || undefined}>
-                  <Input
-                    value={phoneNumber}
-                    maxLength={191}
-                    type="tel"
-                    inputMode="tel"
-                    autoComplete="tel"
-                    onChange={(e) => {
-                      setPhoneNumber(e.target.value);
-                      if (phoneError) setPhoneError(null);
-                    }}
-                  />
-                </Field>
-                {profileError && (
-                  <Alert variant="destructive" data-testid="account-profile-error">
-                    <CircleAlert aria-hidden="true" />
-                    <AlertDescription>{profileError}</AlertDescription>
-                  </Alert>
-                )}
-                {profileSaved && (
-                  <p
-                    role="status"
-                    className="flex items-center gap-2 text-sm text-status-confirmed"
+            <Card className="p-5 sm:p-6">
+              <form noValidate onSubmit={handleProfileSubmit} data-testid="account-profile-form">
+                <h2 className="text-lg font-semibold">Hồ sơ</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Email đăng nhập: <strong className="text-foreground">{profile.email}</strong> ·
+                  Vai trò {profile.role}
+                </p>
+                <div className="mt-5 grid gap-4">
+                  <Field id="account-full-name" label="Họ và tên">
+                    <Input
+                      value={fullName}
+                      maxLength={191}
+                      autoComplete="name"
+                      onChange={(e) => setFullName(e.target.value)}
+                    />
+                  </Field>
+                  <Field
+                    id="account-phone"
+                    label="Số điện thoại"
+                    hint="Để trống nếu muốn xóa."
+                    error={phoneError || undefined}
                   >
-                    <CircleCheck aria-hidden="true" className="size-4" />
-                    Đã lưu thay đổi.
-                  </p>
-                )}
-                <Button type="submit" disabled={isSavingProfile} className="justify-self-start">
-                  {isSavingProfile && <Loader2 aria-hidden="true" className="animate-spin" />}
-                  {isSavingProfile ? 'Đang lưu…' : 'Lưu thông tin'}
-                </Button>
-              </div>
-            </form>
-          </Card>
+                    <Input
+                      value={phoneNumber}
+                      maxLength={191}
+                      type="tel"
+                      inputMode="tel"
+                      autoComplete="tel"
+                      onChange={(e) => {
+                        setPhoneNumber(e.target.value);
+                        if (phoneError) setPhoneError(null);
+                      }}
+                    />
+                  </Field>
+                  {profileError && (
+                    <Alert variant="destructive" data-testid="account-profile-error">
+                      <CircleAlert aria-hidden="true" />
+                      <AlertDescription>{profileError}</AlertDescription>
+                    </Alert>
+                  )}
+                  {profileSaved && (
+                    <p
+                      role="status"
+                      className="flex items-center gap-2 text-sm text-status-confirmed"
+                    >
+                      <CircleCheck aria-hidden="true" className="size-4" />
+                      Đã lưu thay đổi.
+                    </p>
+                  )}
+                  <Button type="submit" disabled={isSavingProfile} className="justify-self-start">
+                    {isSavingProfile && <Loader2 aria-hidden="true" className="animate-spin" />}
+                    {isSavingProfile ? 'Đang lưu…' : 'Lưu thông tin'}
+                  </Button>
+                </div>
+              </form>
+            </Card>
 
-          <Card className="p-5 sm:p-6">
-            <form noValidate onSubmit={handlePasswordSubmit} data-testid="account-password-form">
-              <h2 className="text-lg font-semibold">Đổi mật khẩu</h2>
+            <Card className="p-5 sm:p-6">
+              <form noValidate onSubmit={handlePasswordSubmit} data-testid="account-password-form">
+                <h2 className="text-lg font-semibold">Đổi mật khẩu</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Phiên hiện tại tiếp tục với mật khẩu mới. Mọi thiết bị khác sẽ bị đăng xuất.
+                </p>
+                <div className="mt-5 grid gap-4">
+                  <Field id="account-current-password" label="Mật khẩu hiện tại">
+                    <PasswordInput
+                      value={currentPassword}
+                      autoComplete="current-password"
+                      visible={showPasswords}
+                      onToggleVisible={() => setShowPasswords((v) => !v)}
+                      showLabel="Hiện mật khẩu"
+                      hideLabel="Ẩn mật khẩu"
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                    />
+                  </Field>
+                  <Field id="account-new-password" label="Mật khẩu mới" hint="Ít nhất 8 ký tự.">
+                    <PasswordInput
+                      value={newPassword}
+                      autoComplete="new-password"
+                      visible={showPasswords}
+                      onToggleVisible={() => setShowPasswords((v) => !v)}
+                      showLabel="Hiện mật khẩu"
+                      hideLabel="Ẩn mật khẩu"
+                      onChange={(e) => setNewPassword(e.target.value)}
+                    />
+                  </Field>
+                  <Field id="account-confirm-password" label="Nhập lại mật khẩu mới">
+                    <PasswordInput
+                      value={confirmPassword}
+                      autoComplete="new-password"
+                      visible={showPasswords}
+                      onToggleVisible={() => setShowPasswords((v) => !v)}
+                      showLabel="Hiện mật khẩu"
+                      hideLabel="Ẩn mật khẩu"
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                    />
+                  </Field>
+                  {passwordError && (
+                    <Alert variant="destructive" data-testid="account-password-error">
+                      <CircleAlert aria-hidden="true" />
+                      <AlertDescription>{passwordError}</AlertDescription>
+                    </Alert>
+                  )}
+                  {passwordSaved && (
+                    <p
+                      role="status"
+                      className="flex items-center gap-2 text-sm text-status-confirmed"
+                    >
+                      <CircleCheck aria-hidden="true" className="size-4" />
+                      Mật khẩu đã được đổi.
+                    </p>
+                  )}
+                  <Button type="submit" disabled={isSavingPassword} className="justify-self-start">
+                    {isSavingPassword && <Loader2 aria-hidden="true" className="animate-spin" />}
+                    {isSavingPassword ? 'Đang đổi…' : 'Đổi mật khẩu'}
+                  </Button>
+                </div>
+              </form>
+            </Card>
+
+            <Card className="p-5 sm:p-6 lg:col-span-2" data-testid="account-sessions">
+              <h2 className="text-lg font-semibold">Phiên đăng nhập</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                Phiên hiện tại tiếp tục với mật khẩu mới. Mọi thiết bị khác sẽ bị đăng xuất.
-              </p>
-              <div className="mt-5 grid gap-4">
-                <Field id="account-current-password" label="Mật khẩu hiện tại">
-                  <PasswordInput
-                    value={currentPassword}
-                    autoComplete="current-password"
-                    visible={showPasswords}
-                    onToggleVisible={() => setShowPasswords((v) => !v)}
-                    showLabel="Hiện mật khẩu"
-                    hideLabel="Ẩn mật khẩu"
-                    onChange={(e) => setCurrentPassword(e.target.value)}
-                  />
-                </Field>
-                <Field id="account-new-password" label="Mật khẩu mới" hint="Ít nhất 8 ký tự.">
-                  <PasswordInput
-                    value={newPassword}
-                    autoComplete="new-password"
-                    visible={showPasswords}
-                    onToggleVisible={() => setShowPasswords((v) => !v)}
-                    showLabel="Hiện mật khẩu"
-                    hideLabel="Ẩn mật khẩu"
-                    onChange={(e) => setNewPassword(e.target.value)}
-                  />
-                </Field>
-                <Field id="account-confirm-password" label="Nhập lại mật khẩu mới">
-                  <PasswordInput
-                    value={confirmPassword}
-                    autoComplete="new-password"
-                    visible={showPasswords}
-                    onToggleVisible={() => setShowPasswords((v) => !v)}
-                    showLabel="Hiện mật khẩu"
-                    hideLabel="Ẩn mật khẩu"
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                  />
-                </Field>
-                {passwordError && (
-                  <Alert variant="destructive" data-testid="account-password-error">
-                    <CircleAlert aria-hidden="true" />
-                    <AlertDescription>{passwordError}</AlertDescription>
-                  </Alert>
-                )}
-                {passwordSaved && (
-                  <p
-                    role="status"
-                    className="flex items-center gap-2 text-sm text-status-confirmed"
-                  >
-                    <CircleCheck aria-hidden="true" className="size-4" />
-                    Mật khẩu đã được đổi.
-                  </p>
-                )}
-                <Button type="submit" disabled={isSavingPassword} className="justify-self-start">
-                  {isSavingPassword && <Loader2 aria-hidden="true" className="animate-spin" />}
-                  {isSavingPassword ? 'Đang đổi…' : 'Đổi mật khẩu'}
-                </Button>
-              </div>
-            </form>
-          </Card>
-
-          <Card className="p-5 sm:p-6 lg:col-span-2" data-testid="account-sessions">
-            <h2 className="text-lg font-semibold">Phiên đăng nhập</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Đăng xuất tài khoản khỏi mọi thiết bị và trình duyệt, kể cả thiết bị này. Bạn sẽ cần
-              đăng nhập lại.
-            </p>
-            <Button
-              type="button"
-              variant="outline"
-              className="mt-4"
-              onClick={() => handleLogoutAllOpenChange(true)}
-              data-testid="account-logout-all-btn"
-            >
-              <LogOut aria-hidden="true" />
-              Đăng xuất mọi thiết bị
-            </Button>
-            <AlertDialog open={isLogoutAllOpen} onOpenChange={handleLogoutAllOpenChange}>
-              <AlertDialogContent data-testid="account-logout-all-dialog">
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Đăng xuất khỏi mọi thiết bị?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    Mọi phiên đăng nhập của tài khoản này, kể cả phiên hiện tại, sẽ kết thúc ngay.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                {logoutAllError && (
-                  <Alert variant="destructive" data-testid="account-logout-all-error">
-                    <CircleAlert aria-hidden="true" />
-                    <AlertDescription>{logoutAllError}</AlertDescription>
-                  </Alert>
-                )}
-                <AlertDialogFooter>
-                  <AlertDialogCancel variant="ghost" disabled={isLoggingOutAll}>
-                    Hủy
-                  </AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    disabled={isLoggingOutAll}
-                    aria-busy={isLoggingOutAll || undefined}
-                    onClick={(e) => {
-                      // Stay open until the request settles; errors render inside the dialog.
-                      e.preventDefault();
-                      void handleLogoutAll();
-                    }}
-                    data-testid="account-logout-all-confirm"
-                  >
-                    {isLoggingOutAll && <Loader2 aria-hidden="true" className="animate-spin" />}
-                    {isLoggingOutAll ? 'Đang đăng xuất…' : 'Đăng xuất mọi thiết bị'}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          </Card>
-
-          {profile.role === 'CUSTOMER' && (
-            <Card
-              className="border-destructive/40 p-5 sm:p-6 lg:col-span-2"
-              data-testid="account-delete-section"
-            >
-              <h2 className="text-lg font-semibold text-destructive">Xóa tài khoản</h2>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Email, họ tên và số điện thoại sẽ bị xóa vĩnh viễn và bạn không thể đăng nhập lại.
-                Lịch sử đặt phòng được giữ ở dạng ẩn danh cho mục đích kế toán. Bạn cần hủy mọi
-                lịch đặt phòng chưa kết thúc trước khi xóa.
+                Đăng xuất tài khoản khỏi mọi thiết bị và trình duyệt, kể cả thiết bị này. Bạn sẽ cần
+                đăng nhập lại.
               </p>
               <Button
                 type="button"
-                variant="destructive"
+                variant="outline"
                 className="mt-4"
-                onClick={() => handleDeleteOpenChange(true)}
-                data-testid="account-delete-btn"
+                onClick={() => handleLogoutAllOpenChange(true)}
+                data-testid="account-logout-all-btn"
               >
-                <Trash2 aria-hidden="true" />
-                Xóa tài khoản
+                <LogOut aria-hidden="true" />
+                Đăng xuất mọi thiết bị
               </Button>
-              <AlertDialog open={isDeleteOpen} onOpenChange={handleDeleteOpenChange}>
-                <AlertDialogContent data-testid="account-delete-dialog" {...deleteDialogFocus}>
-                  <form
-                    noValidate
-                    className="grid gap-4"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      void handleDeleteAccount();
-                    }}
-                  >
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Xóa vĩnh viễn tài khoản?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Thao tác này không thể hoàn tác. Mọi phiên đăng nhập sẽ kết thúc và dữ liệu
-                        cá nhân của bạn bị ẩn danh hóa.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <Field id="account-delete-password" label="Mật khẩu hiện tại">
-                      <PasswordInput
-                        value={deletePassword}
-                        autoComplete="current-password"
-                        visible={showDeletePassword}
-                        onToggleVisible={() => setShowDeletePassword((v) => !v)}
-                        showLabel="Hiện mật khẩu"
-                        hideLabel="Ẩn mật khẩu"
-                        disabled={isDeleting}
-                        onChange={(e) => setDeletePassword(e.target.value)}
-                      />
-                    </Field>
-                    {deleteError && (
-                      <Alert variant="destructive" data-testid="account-delete-error">
-                        <CircleAlert aria-hidden="true" />
-                        <AlertDescription>
-                          {deleteError}
-                          {blockingBookings.length > 0 && (
-                            <ul
-                              className="mt-2 list-disc space-y-1 pl-5"
-                              data-testid="account-delete-blocking"
-                            >
-                              {blockingBookings.map((booking) => (
-                                <li key={booking.id}>
-                                  <strong>{booking.bookingCode}</strong> · {booking.roomName} ·{' '}
-                                  {formatVietnamDateTime(booking.startTime)}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    <AlertDialogFooter>
-                      <AlertDialogCancel variant="ghost" disabled={isDeleting}>
-                        Hủy
-                      </AlertDialogCancel>
-                      <Button
-                        type="submit"
-                        variant="destructive"
-                        disabled={isDeleting}
-                        aria-busy={isDeleting || undefined}
-                        data-testid="account-delete-confirm"
-                      >
-                        {isDeleting && <Loader2 aria-hidden="true" className="animate-spin" />}
-                        {isDeleting ? 'Đang xóa…' : 'Xóa vĩnh viễn'}
-                      </Button>
-                    </AlertDialogFooter>
-                  </form>
+              <AlertDialog open={isLogoutAllOpen} onOpenChange={handleLogoutAllOpenChange}>
+                <AlertDialogContent data-testid="account-logout-all-dialog">
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Đăng xuất khỏi mọi thiết bị?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Mọi phiên đăng nhập của tài khoản này, kể cả phiên hiện tại, sẽ kết thúc ngay.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  {logoutAllError && (
+                    <Alert variant="destructive" data-testid="account-logout-all-error">
+                      <CircleAlert aria-hidden="true" />
+                      <AlertDescription>{logoutAllError}</AlertDescription>
+                    </Alert>
+                  )}
+                  <AlertDialogFooter>
+                    <AlertDialogCancel variant="ghost" disabled={isLoggingOutAll}>
+                      Hủy
+                    </AlertDialogCancel>
+                    <AlertDialogAction
+                      variant="destructive"
+                      disabled={isLoggingOutAll}
+                      aria-busy={isLoggingOutAll || undefined}
+                      onClick={(e) => {
+                        // Stay open until the request settles; errors render inside the dialog.
+                        e.preventDefault();
+                        void handleLogoutAll();
+                      }}
+                      data-testid="account-logout-all-confirm"
+                    >
+                      {isLoggingOutAll && <Loader2 aria-hidden="true" className="animate-spin" />}
+                      {isLoggingOutAll ? 'Đang đăng xuất…' : 'Đăng xuất mọi thiết bị'}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
             </Card>
-          )}
-        </div>
+
+            {profile.role === 'CUSTOMER' && (
+              <Card
+                className="border-destructive/40 p-5 sm:p-6 lg:col-span-2"
+                data-testid="account-delete-section"
+              >
+                <h2 className="text-lg font-semibold text-destructive">Xóa tài khoản</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Email, họ tên và số điện thoại sẽ bị xóa vĩnh viễn và bạn không thể đăng nhập lại.
+                  Lịch sử đặt phòng được giữ ở dạng ẩn danh cho mục đích kế toán. Bạn cần hủy mọi
+                  lịch đặt phòng chưa kết thúc trước khi xóa.
+                </p>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="mt-4"
+                  onClick={() => handleDeleteOpenChange(true)}
+                  data-testid="account-delete-btn"
+                >
+                  <Trash2 aria-hidden="true" />
+                  Xóa tài khoản
+                </Button>
+                <AlertDialog open={isDeleteOpen} onOpenChange={handleDeleteOpenChange}>
+                  <AlertDialogContent data-testid="account-delete-dialog" {...deleteDialogFocus}>
+                    <form
+                      noValidate
+                      className="grid gap-4"
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        void handleDeleteAccount();
+                      }}
+                    >
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Xóa vĩnh viễn tài khoản?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Thao tác này không thể hoàn tác. Mọi phiên đăng nhập sẽ kết thúc và dữ
+                          liệu cá nhân của bạn bị ẩn danh hóa.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <Field id="account-delete-password" label="Mật khẩu hiện tại">
+                        <PasswordInput
+                          value={deletePassword}
+                          autoComplete="current-password"
+                          visible={showDeletePassword}
+                          onToggleVisible={() => setShowDeletePassword((v) => !v)}
+                          showLabel="Hiện mật khẩu"
+                          hideLabel="Ẩn mật khẩu"
+                          disabled={isDeleting}
+                          onChange={(e) => setDeletePassword(e.target.value)}
+                        />
+                      </Field>
+                      {deleteError && (
+                        <Alert variant="destructive" data-testid="account-delete-error">
+                          <CircleAlert aria-hidden="true" />
+                          <AlertDescription>
+                            {deleteError}
+                            {blockingBookings.length > 0 && (
+                              <ul
+                                className="mt-2 list-disc space-y-1 pl-5"
+                                data-testid="account-delete-blocking"
+                              >
+                                {blockingBookings.map((booking) => (
+                                  <li key={booking.id}>
+                                    <strong>{booking.bookingCode}</strong> · {booking.roomName} ·{' '}
+                                    {formatVietnamDateTime(booking.startTime)}
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      <AlertDialogFooter>
+                        <AlertDialogCancel variant="ghost" disabled={isDeleting}>
+                          Hủy
+                        </AlertDialogCancel>
+                        <Button
+                          type="submit"
+                          variant="destructive"
+                          disabled={isDeleting}
+                          aria-busy={isDeleting || undefined}
+                          data-testid="account-delete-confirm"
+                        >
+                          {isDeleting && <Loader2 aria-hidden="true" className="animate-spin" />}
+                          {isDeleting ? 'Đang xóa…' : 'Xóa vĩnh viễn'}
+                        </Button>
+                      </AlertDialogFooter>
+                    </form>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </Card>
+            )}
+          </div>
         </>
       )}
     </div>

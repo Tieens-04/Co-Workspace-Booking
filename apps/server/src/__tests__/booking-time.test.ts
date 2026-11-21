@@ -49,30 +49,37 @@ describe('Booking Time & Pricing Utilities', () => {
       ['22:00', '23:00'],
       ['00:00', '01:00'],
     ])('rejects outside operating hours %s–%s in Vietnam', (start, end) => {
-      expect(() => validateBookingTime(
-        new Date(`2026-09-22T${start}:00+07:00`),
-        new Date(`2026-09-22T${end}:00+07:00`),
-        fixedNow,
-      )).toThrowError(expect.objectContaining({ code: 'OUTSIDE_OPERATING_HOURS', statusCode: 400 }));
-    });
-
-    it('rejects overnight bookings', () => {
-      expect(() => validateBookingTime(
-        new Date('2026-09-22T23:00:00+07:00'),
-        new Date('2026-09-23T01:00:00+07:00'),
-        fixedNow,
-      )).toThrowError(expect.objectContaining({ code: 'OUTSIDE_OPERATING_HOURS', statusCode: 400 }));
-    });
-
-    it.each([['07:00', '08:00'], ['21:00', '22:00']])(
-      'accepts operating hour boundary %s–%s in Vietnam', (start, end) => {
-        expect(() => validateBookingTime(
+      expect(() =>
+        validateBookingTime(
           new Date(`2026-09-22T${start}:00+07:00`),
           new Date(`2026-09-22T${end}:00+07:00`),
           fixedNow,
-        )).not.toThrow();
-      },
-    );
+        ),
+      ).toThrowError(expect.objectContaining({ code: 'OUTSIDE_OPERATING_HOURS', statusCode: 400 }));
+    });
+
+    it('rejects overnight bookings', () => {
+      expect(() =>
+        validateBookingTime(
+          new Date('2026-09-22T23:00:00+07:00'),
+          new Date('2026-09-23T01:00:00+07:00'),
+          fixedNow,
+        ),
+      ).toThrowError(expect.objectContaining({ code: 'OUTSIDE_OPERATING_HOURS', statusCode: 400 }));
+    });
+
+    it.each([
+      ['07:00', '08:00'],
+      ['21:00', '22:00'],
+    ])('accepts operating hour boundary %s–%s in Vietnam', (start, end) => {
+      expect(() =>
+        validateBookingTime(
+          new Date(`2026-09-22T${start}:00+07:00`),
+          new Date(`2026-09-22T${end}:00+07:00`),
+          fixedNow,
+        ),
+      ).not.toThrow();
+    });
 
     it('accepts valid 1-hour booking starting at least 30 minutes after now', () => {
       const start = new Date('2026-09-21T02:00:00.000Z'); // 09:00 VN (+60m from now)

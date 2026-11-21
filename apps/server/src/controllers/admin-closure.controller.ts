@@ -3,7 +3,11 @@ import { adminClosureService, AdminClosureService } from '../services/admin-clos
 import { auditActorOf } from '../utils/audit-actor.util.js';
 import { sendSuccess } from '../utils/response.util.js';
 import { AppError } from '../utils/error.util.js';
-import { ClosureFilterParams, CreateClosureInput, UpdateClosureInput } from '../types/closure.type.js';
+import {
+  ClosureFilterParams,
+  CreateClosureInput,
+  UpdateClosureInput,
+} from '../types/closure.type.js';
 
 export class AdminClosureController {
   constructor(private readonly service: AdminClosureService = adminClosureService) {}

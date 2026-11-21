@@ -176,7 +176,8 @@ export const RegisterPage: React.FC = () => {
               id="reg-phone"
               label={
                 <>
-                  Số điện thoại <span className="font-normal text-muted-foreground">(Tùy chọn)</span>
+                  Số điện thoại{' '}
+                  <span className="font-normal text-muted-foreground">(Tùy chọn)</span>
                 </>
               }
               error={fieldErrors.phoneNumber}

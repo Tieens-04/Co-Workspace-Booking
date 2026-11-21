@@ -37,7 +37,10 @@ export const authApi = {
   },
 
   async resendVerification(): Promise<ApiSuccessResponse<null>> {
-    const response = await apiClient.post<ApiSuccessResponse<null>>('/auth/resend-verification', {});
+    const response = await apiClient.post<ApiSuccessResponse<null>>(
+      '/auth/resend-verification',
+      {},
+    );
     return response.data;
   },
 

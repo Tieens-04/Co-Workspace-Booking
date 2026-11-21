@@ -10,9 +10,7 @@ import {
 } from '../validators/admin-dashboard.validator.js';
 
 export class AdminDashboardController {
-  constructor(
-    private readonly service: AdminDashboardService = adminDashboardService,
-  ) {}
+  constructor(private readonly service: AdminDashboardService = adminDashboardService) {}
 
   getKpi = async (req: Request, res: Response, next: NextFunction) => {
     try {

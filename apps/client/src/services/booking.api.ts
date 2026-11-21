@@ -45,13 +45,9 @@ export const bookingApi = {
     payload: RescheduleBookingPayload,
     signal?: AbortSignal,
   ): Promise<RescheduleBookingResponse> => {
-    const response = await apiClient.patch<RescheduleBookingResponse>(
-      `/bookings/${id}`,
-      payload,
-      {
-        signal,
-      },
-    );
+    const response = await apiClient.patch<RescheduleBookingResponse>(`/bookings/${id}`, payload, {
+      signal,
+    });
     return response.data;
   },
 

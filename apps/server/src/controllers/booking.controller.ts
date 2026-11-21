@@ -2,7 +2,11 @@ import { Request, Response, NextFunction } from 'express';
 import { bookingService, BookingService } from '../services/booking.service.js';
 import { sendSuccess } from '../utils/response.util.js';
 import { parseIdempotencyKey } from '../utils/idempotency.util.js';
-import { CreateBookingInput, GetBookingsQueryInput, RescheduleBookingBodyInput } from '../validators/booking.validator.js';
+import {
+  CreateBookingInput,
+  GetBookingsQueryInput,
+  RescheduleBookingBodyInput,
+} from '../validators/booking.validator.js';
 
 export class BookingController {
   constructor(private readonly service: BookingService = bookingService) {}

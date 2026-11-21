@@ -61,7 +61,9 @@ it('CWB-87 email verification migration backfills legacy users and leaves new us
       // 4. Assert legacy users have non-null email_verified_at and intact identity fields
       const legacyRows = await tx.$queryRawUnsafe<
         Array<{ id: string; email: string; full_name: string; email_verified_at: Date | null }>
-      >('SELECT id, email, full_name, email_verified_at FROM `cwb87_users_migration_test` ORDER BY id');
+      >(
+        'SELECT id, email, full_name, email_verified_at FROM `cwb87_users_migration_test` ORDER BY id',
+      );
 
       expect(legacyRows).toHaveLength(2);
       for (const row of legacyRows) {
@@ -78,7 +80,9 @@ it('CWB-87 email verification migration backfills legacy users and leaves new us
 
       const newRow = await tx.$queryRawUnsafe<
         Array<{ id: string; email: string; email_verified_at: Date | null }>
-      >("SELECT id, email, email_verified_at FROM `cwb87_users_migration_test` WHERE id = 'new-user'");
+      >(
+        "SELECT id, email, email_verified_at FROM `cwb87_users_migration_test` WHERE id = 'new-user'",
+      );
 
       expect(newRow).toHaveLength(1);
       expect(newRow[0].email_verified_at).toBeNull();

@@ -54,7 +54,9 @@ export function AuthTabs({ className }: AuthTabsProps) {
         data-testid="auth-tab-register"
         className={cn(
           'relative flex h-10 items-center justify-center rounded-lg px-4 text-center transition-colors duration-150 outline-none select-none focus-visible:ring-2 focus-visible:ring-ring',
-          isRegister ? 'font-semibold text-foreground' : 'text-muted-foreground hover:text-foreground',
+          isRegister
+            ? 'font-semibold text-foreground'
+            : 'text-muted-foreground hover:text-foreground',
         )}
       >
         {isRegister && (

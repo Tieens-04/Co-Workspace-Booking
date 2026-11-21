@@ -1532,9 +1532,7 @@ describe('AdminPage - Room Management & Form', () => {
       vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
         mockRoomsResponse([mockRoomsList[0]]),
       );
-      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
-        mockRoomsResponse([]),
-      );
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(mockRoomsResponse([]));
 
       render(
         <MemoryRouter>
@@ -1567,9 +1565,7 @@ describe('AdminPage - Room Management & Form', () => {
       vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
         mockRoomsResponse([mockRoomsList[0]]),
       );
-      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(
-        mockRoomsResponse([]),
-      );
+      vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValueOnce(mockRoomsResponse([]));
 
       render(
         <MemoryRouter>
