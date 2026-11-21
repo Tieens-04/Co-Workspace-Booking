@@ -77,6 +77,7 @@ jobs:
           npm exec --workspace=apps/server -- prisma validate
       - name: Validate test database and deploy migrations
         run: npm run db:deploy:test --workspace=apps/server
+      - run: npm run format:check
       - run: npm run lint
       - run: npm run typecheck
       - name: Frontend unit tests
@@ -181,3 +182,37 @@ jobs:
           test "$(docker run --rm -e DB_HOST=db -e DB_PORT=3306 -e DB_USER=u -e 'DB_PASSWORD=a@b:c#d/e?f%25' -e DB_NAME=d --entrypoint node cospace-server:cwb-50 -e 'process.stdout.write(process.env.DATABASE_URL ?? "")')" = "mysql://u:a%40b%3Ac%23d%2Fe%3Ff%2525@db:3306/d"
       - name: Verify frontend build artifact
         run: docker run --rm --entrypoint sh cospace-client:cwb-50 -c 'test -s /usr/share/nginx/html/index.html'
+
+  docker-smoke:
+    needs: quality
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install pinned npm and verify toolchain
+        run: |
+          npm install --global npm@11.11.0
+          node --version
+          npm --version
+          test "$(node --version)" = "v$(cat .nvmrc)"
+          test "npm@$(npm --version)" = "$(node -p 'require("./package.json").packageManager')"
+      - run: npm ci
+      - name: Generate Prisma client
+        run: npm run db:generate --workspace=apps/server
+      - name: Nginx and room image upload smoke tests
+        run: npm run test:smoke:upload --workspace=apps/server -- --reporter=default --reporter=junit --outputFile=../../reports/smoke-upload.xml
+      - name: Production Compose and Mailpit email smoke tests
+        run: npm run test:smoke:email --workspace=apps/server -- --reporter=default --reporter=junit --outputFile=../../reports/smoke-email.xml
+      - name: Upload smoke test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-test-results
+          path: reports/smoke-*.xml
+          retention-days: 14
+          if-no-files-found: warn
