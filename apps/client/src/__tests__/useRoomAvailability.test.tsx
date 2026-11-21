@@ -46,9 +46,7 @@ describe('useRoomAvailability hook', () => {
       mockAvailabilityResponse('2026-10-25'),
     );
 
-    const { result } = renderHook(() =>
-      useRoomAvailability('room-1', ['2026-10-25'], true),
-    );
+    const { result } = renderHook(() => useRoomAvailability('room-1', ['2026-10-25'], true));
 
     expect(result.current.loading).toBe(true);
 
@@ -57,7 +55,11 @@ describe('useRoomAvailability hook', () => {
     });
 
     expect(roomApi.getAvailability).toHaveBeenCalledTimes(1);
-    expect(roomApi.getAvailability).toHaveBeenCalledWith('room-1', '2026-10-25', expect.any(AbortSignal));
+    expect(roomApi.getAvailability).toHaveBeenCalledWith(
+      'room-1',
+      '2026-10-25',
+      expect.any(AbortSignal),
+    );
     expect(result.current.slots).toHaveLength(48);
     expect(result.current.slotsByDate['2026-10-25']).toHaveLength(48);
     expect(result.current.error).toBeNull();
@@ -95,9 +97,7 @@ describe('useRoomAvailability hook', () => {
     };
     vi.mocked(roomApi.getAvailability).mockRejectedValueOnce(error404);
 
-    const { result } = renderHook(() =>
-      useRoomAvailability('room-1', ['2026-10-25'], true),
-    );
+    const { result } = renderHook(() => useRoomAvailability('room-1', ['2026-10-25'], true));
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -122,9 +122,7 @@ describe('useRoomAvailability hook', () => {
     };
     vi.mocked(roomApi.getAvailability).mockRejectedValueOnce(error409);
 
-    const { result } = renderHook(() =>
-      useRoomAvailability('room-1', ['2026-10-25'], true),
-    );
+    const { result } = renderHook(() => useRoomAvailability('room-1', ['2026-10-25'], true));
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -144,14 +142,18 @@ describe('useRoomAvailability hook', () => {
         roomId: 'room-1',
         date: '2026-10-25',
         timezone: 'Asia/Ho_Chi_Minh',
-        slots: [{ startTime: '2026-10-25T02:00:00.000Z', endTime: '2026-10-25T02:30:00.000Z', status: 'AVAILABLE' }],
+        slots: [
+          {
+            startTime: '2026-10-25T02:00:00.000Z',
+            endTime: '2026-10-25T02:30:00.000Z',
+            status: 'AVAILABLE',
+          },
+        ],
       },
     };
     vi.mocked(roomApi.getAvailability).mockResolvedValueOnce(malformedResponse);
 
-    const { result } = renderHook(() =>
-      useRoomAvailability('room-1', ['2026-10-25'], true),
-    );
+    const { result } = renderHook(() => useRoomAvailability('room-1', ['2026-10-25'], true));
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -162,9 +164,7 @@ describe('useRoomAvailability hook', () => {
   });
 
   it('does not fetch when enabled is false or roomId is empty', async () => {
-    const { result } = renderHook(() =>
-      useRoomAvailability('room-1', ['2026-10-25'], false),
-    );
+    const { result } = renderHook(() => useRoomAvailability('room-1', ['2026-10-25'], false));
 
     expect(roomApi.getAvailability).not.toHaveBeenCalled();
     expect(result.current.loading).toBe(false);
@@ -213,9 +213,7 @@ describe('useRoomAvailability hook', () => {
       mockAvailabilityResponse('2026-10-25'),
     );
 
-    const { result } = renderHook(() =>
-      useRoomAvailability('room-1', ['2026-10-25'], true),
-    );
+    const { result } = renderHook(() => useRoomAvailability('room-1', ['2026-10-25'], true));
 
     await waitFor(() => {
       expect(result.current.loading).toBe(false);
@@ -245,9 +243,7 @@ describe('useRoomAvailability hook', () => {
       return new Promise(() => {}); // never resolves
     });
 
-    const { unmount } = renderHook(() =>
-      useRoomAvailability('room-1', ['2026-10-25'], true),
-    );
+    const { unmount } = renderHook(() => useRoomAvailability('room-1', ['2026-10-25'], true));
 
     expect(capturedSignal).toBeDefined();
     expect(capturedSignal!.aborted).toBe(false);

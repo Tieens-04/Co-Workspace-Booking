@@ -126,11 +126,7 @@ const roomsQueryBaseShape = {
       return deduped;
     })
     .optional(),
-  q: z
-    .string()
-    .trim()
-    .max(100, 'Từ khóa tìm kiếm không được vượt quá 100 ký tự')
-    .optional(),
+  q: z.string().trim().max(100, 'Từ khóa tìm kiếm không được vượt quá 100 ký tự').optional(),
   sort: z
     .enum(ROOM_SORT_OPTIONS, {
       message: 'Giá trị sắp xếp không hợp lệ',
@@ -251,9 +247,9 @@ function refineRoomsQuery<T extends z.ZodRawShape>(schema: z.ZodObject<T>) {
     });
 }
 
-export const getRoomsQuerySchema = refineRoomsQuery(
-  z.object(roomsQueryBaseShape),
-).transform(toFindRoomsFilter);
+export const getRoomsQuerySchema = refineRoomsQuery(z.object(roomsQueryBaseShape)).transform(
+  toFindRoomsFilter,
+);
 
 export const getAdminRoomsQuerySchema = refineRoomsQuery(
   z.object({

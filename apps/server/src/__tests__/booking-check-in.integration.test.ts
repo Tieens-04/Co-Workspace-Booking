@@ -186,8 +186,12 @@ describe('CWB-39 attendance with real MySQL', () => {
     const booking = await seed();
     let selected!: () => void;
     let resume!: () => void;
-    const ready = new Promise<void>((resolve) => { selected = resolve; });
-    const release = new Promise<void>((resolve) => { resume = resolve; });
+    const ready = new Promise<void>((resolve) => {
+      selected = resolve;
+    });
+    const release = new Promise<void>((resolve) => {
+      resume = resolve;
+    });
     const findMany = prisma.booking.findMany.bind(prisma.booking);
     const spy = vi.spyOn(prisma.booking, 'findMany').mockImplementationOnce((args) => {
       const pending = (async () => {
@@ -212,14 +216,23 @@ describe('CWB-39 attendance with real MySQL', () => {
       spy.mockRestore();
     }
     expect(await evaluation).toBe(0);
-    expect(await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({ status: 'CONFIRMED', checkedInAt: start });
+    expect(await prisma.booking.findUniqueOrThrow({ where: { id: booking.id } })).toMatchObject({
+      status: 'CONFIRMED',
+      checkedInAt: start,
+    });
   });
 
   it('records attendance through the ADMIN API with and without an explicit empty body', async () => {
     const now = Date.now();
-    const booking = await seed({ startTime: new Date(now - 60_000), endTime: new Date(now + 3_600_000) });
+    const booking = await seed({
+      startTime: new Date(now - 60_000),
+      endTime: new Date(now + 3_600_000),
+    });
     const path = `/api/v1/admin/bookings/${booking.id}/check-in`;
-    const first = await request(app).patch(path).set('Authorization', `Bearer ${adminToken}`).send({});
+    const first = await request(app)
+      .patch(path)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({});
     expect(first.status).toBe(200);
     expect(first.body.data.checkedInAt).toEqual(expect.any(String));
     expect(first.body.data.paymentStatus).toBe('UNPAID');

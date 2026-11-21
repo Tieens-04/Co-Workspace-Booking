@@ -99,15 +99,17 @@ describe('Admin Closure Validators', () => {
 
     it('rejects empty update body {} or only acknowledgeConflictingBookings without any updated field', () => {
       expect(updateClosureSchema.safeParse({}).success).toBe(false);
-      expect(
-        updateClosureSchema.safeParse({ acknowledgeConflictingBookings: true }).success,
-      ).toBe(false);
+      expect(updateClosureSchema.safeParse({ acknowledgeConflictingBookings: true }).success).toBe(
+        false,
+      );
     });
   });
 
   describe('closureIdParamsSchema', () => {
     it('accepts valid UUID', () => {
-      const result = closureIdParamsSchema.safeParse({ id: '11111111-1111-4111-8111-111111111111' });
+      const result = closureIdParamsSchema.safeParse({
+        id: '11111111-1111-4111-8111-111111111111',
+      });
       expect(result.success).toBe(true);
     });
 

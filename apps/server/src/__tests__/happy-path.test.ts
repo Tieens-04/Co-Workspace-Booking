@@ -136,8 +136,24 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
           pricePerHour: new Prisma.Decimal('200000.00'),
           status: RoomStatus.AVAILABLE,
           createdAt: new Date(),
-          images: [{ id: 'img-1', imageUrl: 'https://images.example.com/boardroom.jpg', isPrimary: true, createdAt: new Date() }],
-          amenities: [{ amenity: { id: 'amenity-1', name: 'Wifi tốc độ cao', icon: 'wifi', description: 'High speed wifi' } }],
+          images: [
+            {
+              id: 'img-1',
+              imageUrl: 'https://images.example.com/boardroom.jpg',
+              isPrimary: true,
+              createdAt: new Date(),
+            },
+          ],
+          amenities: [
+            {
+              amenity: {
+                id: 'amenity-1',
+                name: 'Wifi tốc độ cao',
+                icon: 'wifi',
+                description: 'High speed wifi',
+              },
+            },
+          ],
         } as any,
       ],
     ]);
@@ -149,8 +165,24 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
       capacity: 8,
       pricePerHour: new Prisma.Decimal('200000.00'),
       status: RoomStatus.AVAILABLE,
-      images: [{ id: 'img-1', imageUrl: 'https://images.example.com/boardroom.jpg', isPrimary: true, createdAt: new Date() }],
-      amenities: [{ amenity: { id: 'amenity-1', name: 'Wifi tốc độ cao', icon: 'wifi', description: 'High speed wifi' } }],
+      images: [
+        {
+          id: 'img-1',
+          imageUrl: 'https://images.example.com/boardroom.jpg',
+          isPrimary: true,
+          createdAt: new Date(),
+        },
+      ],
+      amenities: [
+        {
+          amenity: {
+            id: 'amenity-1',
+            name: 'Wifi tốc độ cao',
+            icon: 'wifi',
+            description: 'High speed wifi',
+          },
+        },
+      ],
     } as any);
 
     vi.spyOn(roomRepository, 'findAvailabilityById').mockResolvedValue({
@@ -163,7 +195,9 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     vi.spyOn(bookingRepository, 'evaluateNoShowBookings').mockResolvedValue(0);
 
     vi.spyOn(bookingRepository, 'createBooking').mockImplementation(async (data) => {
-      const user = data.userId ? Array.from(mockUsers.values()).find((u) => u.id === data.userId) : null;
+      const user = data.userId
+        ? Array.from(mockUsers.values()).find((u) => u.id === data.userId)
+        : null;
       const bookingId = randomUUID();
       const code = data.bookingCode;
       const hours = data.durationMinutes / 60;
@@ -187,7 +221,13 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
         updatedAt: new Date(),
         room: { id: data.roomId, name: 'Executive Boardroom' },
         customer: data.userId
-          ? { kind: 'USER', name: user?.fullName || 'Khách', email: user?.email, phone: user?.phoneNumber, id: data.userId }
+          ? {
+              kind: 'USER',
+              name: user?.fullName || 'Khách',
+              email: user?.email,
+              phone: user?.phoneNumber,
+              id: data.userId,
+            }
           : { kind: 'GUEST', name: data.guestName, phone: data.guestPhone },
       };
 
@@ -196,7 +236,9 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     });
 
     vi.spyOn(bookingRepository, 'findManyAndCountForUser').mockImplementation(async (userId) => {
-      const list = Array.from(mockBookings.values()).filter((bookingRecord) => bookingRecord.userId === userId);
+      const list = Array.from(mockBookings.values()).filter(
+        (bookingRecord) => bookingRecord.userId === userId,
+      );
       const items = list.map(toCustomerDto);
       return [items.length, items];
     });
@@ -210,7 +252,9 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     vi.spyOn(bookingRepository, 'findManyAndCountForAdmin').mockImplementation(async (filter) => {
       let list = Array.from(mockBookings.values());
       if (filter.bookingCode) {
-        list = list.filter((bookingRecord) => bookingRecord.bookingCode.includes(filter.bookingCode!));
+        list = list.filter((bookingRecord) =>
+          bookingRecord.bookingCode.includes(filter.bookingCode!),
+        );
       }
       const items = list.map(toAdminDto);
       return [items.length, items];
@@ -243,14 +287,12 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     // -------------------------------------------------------------
     // STEP 1: Customer Registration
     // -------------------------------------------------------------
-    const customerRegisterRes = await request(app)
-      .post('/api/v1/auth/register')
-      .send({
-        fullName: 'Nguyễn Văn Khách',
-        email: 'khachhang@example.com',
-        password: 'Password123!',
-        phoneNumber: '0912345678',
-      });
+    const customerRegisterRes = await request(app).post('/api/v1/auth/register').send({
+      fullName: 'Nguyễn Văn Khách',
+      email: 'khachhang@example.com',
+      password: 'Password123!',
+      phoneNumber: '0912345678',
+    });
 
     expect(customerRegisterRes.status).toBe(201);
     expect(customerRegisterRes.body.success).toBe(true);
@@ -261,12 +303,10 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     // -------------------------------------------------------------
     // STEP 2: Customer Login
     // -------------------------------------------------------------
-    const customerLoginRes = await request(app)
-      .post('/api/v1/auth/login')
-      .send({
-        email: 'khachhang@example.com',
-        password: 'Password123!',
-      });
+    const customerLoginRes = await request(app).post('/api/v1/auth/login').send({
+      email: 'khachhang@example.com',
+      password: 'Password123!',
+    });
 
     expect(customerLoginRes.status).toBe(200);
     expect(customerLoginRes.body.success).toBe(true);
@@ -276,8 +316,7 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     // -------------------------------------------------------------
     // STEP 3: Room Discovery (Browse catalog)
     // -------------------------------------------------------------
-    const browseRes = await request(app)
-      .get('/api/v1/rooms?capacity=4');
+    const browseRes = await request(app).get('/api/v1/rooms?capacity=4');
 
     expect(browseRes.status).toBe(200);
     expect(browseRes.body.success).toBe(true);
@@ -289,15 +328,15 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     // -------------------------------------------------------------
     // STEP 4: Room Detail & 30-min Availability Matrix
     // -------------------------------------------------------------
-    const detailRes = await request(app)
-      .get(`/api/v1/rooms/${selectedRoom.id}`);
+    const detailRes = await request(app).get(`/api/v1/rooms/${selectedRoom.id}`);
     expect(detailRes.status).toBe(200);
     expect(detailRes.body.data.id).toBe(selectedRoom.id);
 
     const slot = getFutureSlotIso(5, 2);
 
-    const availabilityRes = await request(app)
-      .get(`/api/v1/rooms/${selectedRoom.id}/availability?date=${slot.dateStr}`);
+    const availabilityRes = await request(app).get(
+      `/api/v1/rooms/${selectedRoom.id}/availability?date=${slot.dateStr}`,
+    );
     expect(availabilityRes.status).toBe(200);
     expect(availabilityRes.body.data.slots.length).toBeGreaterThan(0);
 
@@ -346,12 +385,10 @@ describe('Customer & Admin End-to-End Happy Path Regression Suite (CWB-34)', () 
     // -------------------------------------------------------------
     // STEP 7: Admin Login
     // -------------------------------------------------------------
-    const adminLoginRes = await request(app)
-      .post('/api/v1/auth/login')
-      .send({
-        email: 'admin@co-space.local',
-        password: 'AdminPass123!',
-      });
+    const adminLoginRes = await request(app).post('/api/v1/auth/login').send({
+      email: 'admin@co-space.local',
+      password: 'AdminPass123!',
+    });
 
     expect(adminLoginRes.status).toBe(200);
     expect(adminLoginRes.body.data.user.role).toBe('ADMIN');

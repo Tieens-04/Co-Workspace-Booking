@@ -140,7 +140,7 @@ Test tích hợp MySQL chạy bằng `npm run test:integration --workspace=apps/
 
 ### Kiểm tra tự động trên GitHub (CWB-48)
 
-Workflow **CI**, job **quality**, chạy trên mọi push, pull request và khi chọn Run workflow trong GitHub Actions. Ubuntu 24.04 đọc Node 24.22.1 từ `.nvmrc`, cài npm 11.11.0, in và kiểm tra phiên bản Node/npm trước `npm ci` theo root `package-lock.json`; **browser-e2e** dùng cùng quy trình. MySQL 8 được tạo mới cho mỗi job với database `cospace_ci_test`. Thông tin đăng nhập trong workflow chỉ dành cho service tạm, không truy cập hạ tầng thật. Không cần secrets SMTP/Cloudinary hay database production. Không truyền thông tin xác thực thật vào workflow này; các workflow khác nếu cần secrets phải lấy từ GitHub Actions secrets.
+Workflow **CI**, job **quality**, chạy trên mọi push, pull request và khi chọn Run workflow trong GitHub Actions. Ubuntu 24.04 đọc Node 24.22.1 từ `.nvmrc`, cài npm 11.11.0, in và kiểm tra phiên bản Node/npm trước `npm ci` theo root `package-lock.json`; **browser-e2e** và **docker-smoke** dùng cùng quy trình. MySQL 8 được tạo mới cho mỗi job với database `cospace_ci_test`. Thông tin đăng nhập trong workflow chỉ dành cho service tạm, không truy cập hạ tầng thật. Không cần secrets SMTP/Cloudinary hay database production. Không truyền thông tin xác thực thật vào workflow này; các workflow khác nếu cần secrets phải lấy từ GitHub Actions secrets.
 
 Để chạy quy trình tương đương tại máy, tạo database MySQL 8 riêng kết thúc bằng `_test`, cấp quyền migration/CRUD và tạo bảng tạm cho tài khoản test. Đặt `TEST_DATABASE_URL` trong môi trường shell hoặc `apps/server/.env`; giữ `DATABASE_URL` development riêng, không đặt nó bằng URL test. Chạy tại thư mục gốc:
 
@@ -149,6 +149,7 @@ npm ci
 npm run db:generate --workspace=apps/server
 npm exec --workspace=apps/server -- prisma validate
 npm run db:deploy:test --workspace=apps/server
+npm run format:check
 npm run lint
 npm run typecheck
 npm run test --workspace=apps/client
@@ -157,7 +158,7 @@ npm run test:integration --workspace=apps/server
 npm run build
 ```
 
-`db:deploy:test` kiểm tra URL bằng cùng database guard của integration trước khi gọi `prisma migrate deploy`; chỉ tiến trình Prisma con nhận `DATABASE_URL` test. Guard từ chối URL thiếu/sai, database không kết thúc `_test`, hoặc trùng tên database development kể cả khác host/user. Không dùng lệnh `db:deploy` thông thường để chuẩn bị database test. Integration chạy MySQL thật, tuần tự giữa các file, gồm overlap và hai request đặt cùng phòng/giờ. SMTP bị tắt; Cloudinary dùng cấu hình giả, upload phải được mock rõ ràng và xóa ảnh được thay bằng mock không gọi mạng. Smoke test SMTP/Nginx tiếp tục chạy riêng bằng các lệnh đã ghi bên dưới.
+`db:deploy:test` kiểm tra URL bằng cùng database guard của integration trước khi gọi `prisma migrate deploy`; chỉ tiến trình Prisma con nhận `DATABASE_URL` test. Guard từ chối URL thiếu/sai, database không kết thúc `_test`, hoặc trùng tên database development kể cả khác host/user. Không dùng lệnh `db:deploy` thông thường để chuẩn bị database test. Integration chạy MySQL thật, tuần tự giữa các file, gồm overlap và hai request đặt cùng phòng/giờ. SMTP bị tắt; Cloudinary dùng cấu hình giả, upload phải được mock rõ ràng và xóa ảnh được thay bằng mock không gọi mạng. Hai bộ smoke test Docker (Nginx upload và Compose/Mailpit email) chạy tự động ở job **docker-smoke** sau **quality** và lưu JUnit XML vào artifact **smoke-test-results** trong 14 ngày.
 
 CI xuất console và JUnit XML cho từng bộ frontend/backend/integration, lưu artifact **test-results** trong 14 ngày, kể cả khi test thất bại. Mở Actions → lượt chạy → bước đỏ để xem lỗi; tải artifact để xem báo cáo. Nếu lỗi xảy ra trước khi test bắt đầu, báo cáo tương ứng chưa tồn tại. Mọi bước lỗi đều làm job thất bại; sửa nguyên nhân và chạy lại, không bỏ qua check. Có thể đặt **quality** thành required status check trong GitHub branch protection để chặn merge khi thất bại; workflow không tự thay đổi cấu hình bảo vệ nhánh hoặc triển khai ứng dụng.
 
@@ -222,23 +223,25 @@ kịch bản và lặp ca cạnh tranh 10 lần. Tối đa một retry trong CI,
 vẫn làm job thất bại. Artifact **browser-e2e-results** được giữ 14 ngày cả khi lỗi.
 Job này không triển khai ứng dụng hoặc tự thay đổi branch protection.
 
-### Kiểm tra email qua SMTP local (CWB-44)
+### Kiểm tra email qua SMTP local (CWB-44, CWB-121)
 
 ```bash
-npm run test:smoke:email --workspace=apps/server
+npm run test:smoke:email
+# hoặc: npm run test:smoke:email --workspace=apps/server
 ```
 
-Yêu cầu đã cài dependencies, Docker CLI có Docker Compose và Docker daemon đang chạy; lần đầu cần tải image MySQL/Mailpit. Test dựng MySQL và Mailpit riêng biệt, chỉ dùng tài khoản/dữ liệu giả, gửi tới SMTP local và kiểm tra email booking/hủy booking. Không cần tài khoản Gmail và không gửi email qua SMTP thật. Test tự dọn tài nguyên đã tạo khi kết thúc, báo thất bại nếu Docker/Compose không sẵn sàng và không nằm trong bộ unit test thông thường.
+Yêu cầu đã cài dependencies, Docker CLI có Docker Compose và Docker daemon đang chạy; lần đầu cần tải image MySQL/Mailpit. Test dựng MySQL và Mailpit riêng biệt, chỉ dùng tài khoản/dữ liệu giả, gửi tới SMTP local để kiểm tra: tài khoản mới chưa xác thực bị chặn đặt phòng (`403 EMAIL_NOT_VERIFIED`), nhận thư xác thực qua Mailpit và kích hoạt qua `POST /api/v1/auth/verify-email`, gửi email xác nhận/hủy booking, và bảo toàn đặt/hủy phòng khi SMTP mất kết nối. Không cần tài khoản Gmail và không gửi email qua SMTP thật. Test tự dọn tài nguyên đã tạo khi kết thúc, báo thất bại nếu Docker/Compose không sẵn sàng; không nằm trong bộ unit test thông thường nhưng chạy tự động trên CI tại job **docker-smoke**.
 
 ### Kiểm tra upload ảnh và cấu hình Nginx (CWB-43, CWB-118)
 
 Ảnh phòng hỗ trợ JPEG, PNG, WebP, tối đa **10 ảnh/lần**, mỗi ảnh tối đa **5 MiB** (5 × 1024 × 1024 byte). Nginx giới hạn chung `location /api/` ở **1 MiB** và tách riêng route upload `POST /api/v1/admin/rooms/:id/images` ở **55 MiB** (đủ cho 50 MiB ảnh cộng phần đóng gói multipart), đồng thời giữ đủ 3 security headers (`X-Frame-Options`, `X-Content-Type-Options`, `Referrer-Policy`) trên cả static assets và đặt `Cache-Control: no-cache` cho `index.html`. Backend tiếp tục kiểm tra từng ảnh, số lượng, MIME và chữ ký ảnh; giới hạn proxy không thay thế các kiểm tra này. Khi đổi policy ảnh, cần điều chỉnh giới hạn proxy tương ứng.
 
 ```bash
-npm run test:smoke:upload --workspace=apps/server
+npm run test:smoke:upload
+# hoặc: npm run test:smoke:upload --workspace=apps/server
 ```
 
-Yêu cầu Docker CLI, Docker daemon đang chạy và cổng host `5000` đang trống (dừng backend dev trước). Lần đầu Docker cần tải `nginx:1.27-alpine`; cho phép Docker truy cập backend test trên host qua `server:host-gateway`. Smoke test dùng cấu hình Nginx production nguyên bản, cổng proxy tự cấp, Express và JWT thật; repository và Cloudinary được mock nên không cần MySQL, tài khoản Cloudinary hoặc dữ liệu thật. Test tự dọn container/server khi kết thúc và báo thất bại nếu Docker không sẵn sàng; không chạy cùng bộ unit test thông thường.
+Yêu cầu Docker CLI, Docker daemon đang chạy và cổng host `5000` đang trống (dừng backend dev trước). Lần đầu Docker cần tải `nginx:1.27-alpine`; cho phép Docker truy cập backend test trên host qua `server:host-gateway`. Smoke test dùng cấu hình Nginx production nguyên bản, cổng proxy tự cấp, Express và JWT thật; repository và Cloudinary được mock nên không cần MySQL, tài khoản Cloudinary hoặc dữ liệu thật. Test tự dọn container/server khi kết thúc và báo thất bại nếu Docker không sẵn sàng; không chạy cùng bộ unit test thông thường nhưng chạy tự động trên CI tại job **docker-smoke**.
 
 Smoke test kiểm tra security headers & caching trên `.js`/`.css` (`200` & `404`), `Cache-Control: no-cache` trên `/`, `/index.html` & SPA fallback, chặn `413` ở `> 1 MiB` cho các route `/api/` khác, ảnh 1/3/5 MiB, batch 10 × 5 MiB, giới hạn từng file/số lượng/định dạng, quyền truy cập, anti-spoofing header chuyển tiếp và request trên 55 MiB bị proxy chặn trước Express. Để kiểm chứng test bắt được lỗi cấu hình cũ, đặt biến môi trường `SMOKE_NGINX_CONFIG` thành đường dẫn tuyệt đối tới bản sao `nginx.conf` đã bỏ `client_max_body_size 55m;` trên route upload, rồi chạy lại cùng lệnh: các upload hợp lệ trên giới hạn `1 MiB` phải thất bại. Bỏ biến này để kiểm tra cấu hình production. Không sửa cấu hình production chỉ để chạy đối chứng.
 

@@ -3,13 +3,7 @@
  * Tones map to the --status-* design tokens (see StatusBadge / DESIGN.md).
  */
 export type StatusTone =
-  | 'confirmed'
-  | 'success'
-  | 'cancelled'
-  | 'noshow'
-  | 'unpaid'
-  | 'maintenance'
-  | 'neutral';
+  'confirmed' | 'success' | 'cancelled' | 'noshow' | 'unpaid' | 'maintenance' | 'neutral';
 
 export type StatusKind = 'booking' | 'payment' | 'room';
 

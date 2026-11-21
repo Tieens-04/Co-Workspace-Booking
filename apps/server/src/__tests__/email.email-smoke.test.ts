@@ -61,7 +61,23 @@ interface Booking {
   status: string;
 }
 
-async function api<T>(path: string, method = 'GET', body?: unknown, status = 200): Promise<T> {
+interface MailpitMessageSummary {
+  ID: string;
+  Subject: string;
+  To: Array<{ Address: string }>;
+}
+
+interface MailpitMessageDetail {
+  Text: string;
+  HTML: string;
+}
+
+async function apiRequest<T>(
+  path: string,
+  method = 'GET',
+  body?: unknown,
+  status = 200,
+): Promise<T> {
   const response = await fetch(`${apiUrl}/api/v1${path}`, {
     method,
     headers: {
@@ -72,51 +88,70 @@ async function api<T>(path: string, method = 'GET', body?: unknown, status = 200
     signal: AbortSignal.timeout(15000),
   });
   expect(response.status, `${method} ${path}`).toBe(status);
-  const result = (await response.json()) as { data: T };
+  return (await response.json()) as T;
+}
+
+async function api<T>(path: string, method = 'GET', body?: unknown, status = 200): Promise<T> {
+  const result = await apiRequest<{ data: T }>(path, method, body, status);
   return result.data;
 }
 
-async function createBooking(offsetHours: number): Promise<Booking> {
+function bookingPayload(offsetHours: number) {
   const day = new Date(Date.now() + offsetHours * 60 * 60 * 1000);
   day.setUTCHours(2, 0, 0, 0); // 09:00 Vietnam, within opening hours.
   const start = day.getTime();
-  return api(
-    '/bookings',
-    'POST',
-    {
-      roomId,
-      startTime: new Date(start).toISOString(),
-      endTime: new Date(start + 60 * 60 * 1000).toISOString(),
-    },
-    201,
-  );
+  return {
+    roomId,
+    startTime: new Date(start).toISOString(),
+    endTime: new Date(start + 60 * 60 * 1000).toISOString(),
+  };
 }
 
-async function waitForMail(bookingCode: string, subject: string) {
-  return poll(`${subject} email for ${bookingCode}`, async () => {
+async function createBooking(offsetHours: number): Promise<Booking> {
+  return api('/bookings', 'POST', bookingPayload(offsetHours), 201);
+}
+
+async function waitForMailMessage(
+  label: string,
+  matches: (mail: MailpitMessageSummary) => boolean,
+): Promise<{ message: MailpitMessageSummary; detail: MailpitMessageDetail }> {
+  return poll(label, async () => {
     const response = await fetch(`${mailUrl}/api/v1/messages`, {
       signal: AbortSignal.timeout(3000),
     });
     expect(response.ok).toBe(true);
-    const mailbox = (await response.json()) as {
-      messages: Array<{ ID: string; Subject: string; To: Array<{ Address: string }> }>;
-    };
+    const mailbox = (await response.json()) as { messages: MailpitMessageSummary[] };
     const message = mailbox.messages.find(
-      (mail) =>
-        mail.Subject.includes(subject) &&
-        mail.Subject.includes(bookingCode) &&
-        mail.To.some((address) => address.Address === recipient),
+      (mail) => matches(mail) && mail.To.some((address) => address.Address === recipient),
     );
     if (!message) return undefined;
     const detailResponse = await fetch(`${mailUrl}/api/v1/message/${message.ID}`, {
       signal: AbortSignal.timeout(3000),
     });
     expect(detailResponse.ok).toBe(true);
-    const detail = (await detailResponse.json()) as { Text: string; HTML: string };
-    expect(detail.Text).toContain(bookingCode);
-    expect(detail.HTML).toContain('Email smoke room');
-    return message;
+    const detail = (await detailResponse.json()) as MailpitMessageDetail;
+    return { message, detail };
   });
+}
+
+async function waitForVerificationToken(): Promise<string> {
+  const { detail } = await waitForMailMessage('email verification link', (mail) =>
+    mail.Subject.includes('Xác thực địa chỉ email'),
+  );
+  expect(detail.HTML).toContain('Xác thực địa chỉ email');
+  const match = detail.Text.match(/\/verify-email\?token=([A-Za-z0-9_-]{43})(?:\s|$)/);
+  expect(match?.[1], 'Verification email must contain a 43-char token').toBeTruthy();
+  return match![1];
+}
+
+async function waitForMail(bookingCode: string, subject: string) {
+  const { message, detail } = await waitForMailMessage(
+    `${subject} email for ${bookingCode}`,
+    (mail) => mail.Subject.includes(subject) && mail.Subject.includes(bookingCode),
+  );
+  expect(detail.Text).toContain(bookingCode);
+  expect(detail.HTML).toContain('Email smoke room');
+  return message;
 }
 
 describe('deployed booking email through production Compose', () => {
@@ -139,7 +174,7 @@ describe('deployed booking email through production Compose', () => {
         'DB_PASSWORD=smoke-db-password',
         'DB_USER=smoke_user',
         `DB_NAME=${project.replaceAll('-', '_')}_test`,
-        'DB_PORT=127.0.0.1:0',
+        'DB_PORT=0',
         'JWT_SECRET=smoke-only-jwt-secret-at-least-32-characters',
         'BCRYPT_SALT_ROUNDS=10',
         'CLIENT_URL=http://localhost',
@@ -255,7 +290,19 @@ describe('deployed booking email through production Compose', () => {
     if (directory) await rm(directory, { recursive: true, force: true });
   });
 
-  it('delivers confirmation and cancellation and preserves both operations when SMTP fails', async () => {
+  it('verifies email via Mailpit before booking, delivers confirmation and cancellation, and preserves both operations when SMTP fails', async () => {
+    const blocked = await apiRequest<{ success: boolean; code?: string }>(
+      '/bookings',
+      'POST',
+      bookingPayload(48),
+      403,
+    );
+    expect(blocked.success).toBe(false);
+    expect(blocked.code).toBe('EMAIL_NOT_VERIFIED');
+
+    const verificationToken = await waitForVerificationToken();
+    await api<null>('/auth/verify-email', 'POST', { token: verificationToken }, 200);
+
     const booking = await createBooking(48);
     expect(booking.status).toBe('CONFIRMED');
     expect(booking.bookingCode).toMatch(/^CS-\d{8}-[A-Z0-9]{4}$/);

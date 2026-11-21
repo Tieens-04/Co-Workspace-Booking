@@ -836,11 +836,7 @@ export const AdminPage: React.FC = () => {
           {showRoomList && rooms.length === 0 && (
             <EmptyState
               icon={DoorOpen}
-              title={
-                statusFilter !== 'ALL'
-                  ? 'Không tìm thấy phòng nào'
-                  : 'Chưa có phòng nào'
-              }
+              title={statusFilter !== 'ALL' ? 'Không tìm thấy phòng nào' : 'Chưa có phòng nào'}
               description={
                 statusFilter !== 'ALL'
                   ? `Không có phòng nào phù hợp với bộ lọc trạng thái "${statusFilter}". Thử chọn bộ lọc khác.`

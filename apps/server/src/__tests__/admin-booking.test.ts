@@ -1150,7 +1150,11 @@ describe('Admin Booking Management API Unit Tests', () => {
 
     it('returns 409 BOOKING_STATE_CONFLICT when booking is not CANCELLED', async () => {
       vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
-        new AppError('BOOKING_STATE_CONFLICT', 'Chỉ có thể hoàn tiền cho đơn đặt phòng đã hủy', 409),
+        new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể hoàn tiền cho đơn đặt phòng đã hủy',
+          409,
+        ),
       );
       const res = await request(app)
         .post(`/api/v1/admin/bookings/${bookingId}/refund`)
@@ -1162,7 +1166,11 @@ describe('Admin Booking Management API Unit Tests', () => {
 
     it('returns 409 BOOKING_STATE_CONFLICT when booking is UNPAID', async () => {
       vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
-        new AppError('BOOKING_STATE_CONFLICT', 'Không thể hoàn tiền cho đơn đặt phòng chưa thanh toán', 409),
+        new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể hoàn tiền cho đơn đặt phòng chưa thanh toán',
+          409,
+        ),
       );
       const res = await request(app)
         .post(`/api/v1/admin/bookings/${bookingId}/refund`)
@@ -1186,7 +1194,11 @@ describe('Admin Booking Management API Unit Tests', () => {
 
     it('returns 400 REFUND_AMOUNT_EXCEEDED when refund amount exceeds remaining refundable amount', async () => {
       vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockRejectedValue(
-        new AppError('REFUND_AMOUNT_EXCEEDED', 'Số tiền hoàn vượt quá số tiền còn lại có thể hoàn', 400),
+        new AppError(
+          'REFUND_AMOUNT_EXCEEDED',
+          'Số tiền hoàn vượt quá số tiền còn lại có thể hoàn',
+          400,
+        ),
       );
       const res = await request(app)
         .post(`/api/v1/admin/bookings/${bookingId}/refund`)
@@ -1204,7 +1216,9 @@ describe('Admin Booking Management API Unit Tests', () => {
         totalAmount: '600000.00',
         refundedAmount: '200000.00',
       });
-      const spy = vi.spyOn(bookingRepository, 'recordRefundForAdmin').mockResolvedValue(updatedBooking);
+      const spy = vi
+        .spyOn(bookingRepository, 'recordRefundForAdmin')
+        .mockResolvedValue(updatedBooking);
 
       const res = await request(app)
         .post(`/api/v1/admin/bookings/${bookingId}/refund`)
@@ -1229,5 +1243,4 @@ describe('Admin Booking Management API Unit Tests', () => {
       );
     });
   });
-
 });

@@ -148,9 +148,7 @@ export const verifyEmailRateLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   keyGenerator: (req) => getClientRateLimitKey(req),
-  handler: tooManyAttempts(
-    'Quá nhiều lần xác thực email không thành công. Vui lòng thử lại sau.',
-  ),
+  handler: tooManyAttempts('Quá nhiều lần xác thực email không thành công. Vui lòng thử lại sau.'),
 });
 
 /** Resend verification email: 5 requests per user per 15 minutes. Keyed by verified user id. */

@@ -71,13 +71,11 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
 
   it('register creates user with emailVerifiedAt: null and atomically enqueues EMAIL_VERIFICATION outbox', async () => {
     const email = `unverified-${randomUUID()}@example.com`;
-    const res = await request(app)
-      .post('/api/v1/auth/register')
-      .send({
-        email,
-        password: 'Password123!',
-        fullName: 'New Customer',
-      });
+    const res = await request(app).post('/api/v1/auth/register').send({
+      email,
+      password: 'Password123!',
+      fullName: 'New Customer',
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
@@ -101,13 +99,11 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
 
   it('unverified customer can login and view rooms, but booking is blocked with 403 EMAIL_NOT_VERIFIED', async () => {
     const email = `unverified-booking-${randomUUID()}@example.com`;
-    const regRes = await request(app)
-      .post('/api/v1/auth/register')
-      .send({
-        email,
-        password: 'Password123!',
-        fullName: 'Blocked Customer',
-      });
+    const regRes = await request(app).post('/api/v1/auth/register').send({
+      email,
+      password: 'Password123!',
+      fullName: 'Blocked Customer',
+    });
     expect(regRes.status).toBe(201);
     const userId = regRes.body.data.id;
     createdUserIds.push(userId);
@@ -124,9 +120,7 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
     expect(roomsRes.status).toBe(200);
 
     // /me profile shows emailVerifiedAt: null
-    const meRes = await request(app)
-      .get('/api/v1/me')
-      .set('Authorization', `Bearer ${token}`);
+    const meRes = await request(app).get('/api/v1/me').set('Authorization', `Bearer ${token}`);
     expect(meRes.status).toBe(200);
     expect(meRes.body.data.emailVerifiedAt).toBeNull();
 
@@ -270,9 +264,7 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
     expect(unknownRes.body.code).toBe('INVALID_VERIFICATION_TOKEN');
 
     // 2. Verify with valid token
-    const goodRes = await request(app)
-      .post('/api/v1/auth/verify-email')
-      .send({ token: rawToken });
+    const goodRes = await request(app).post('/api/v1/auth/verify-email').send({ token: rawToken });
     expect(goodRes.status).toBe(200);
     expect(goodRes.body.success).toBe(true);
 
@@ -314,13 +306,11 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
 
     // With authenticated customer
     const email = `resend-test-${randomUUID()}@example.com`;
-    const regRes = await request(app)
-      .post('/api/v1/auth/register')
-      .send({
-        email,
-        password: 'Password123!',
-        fullName: 'Resend User',
-      });
+    const regRes = await request(app).post('/api/v1/auth/register').send({
+      email,
+      password: 'Password123!',
+      fullName: 'Resend User',
+    });
     const userId = regRes.body.data.id;
     createdUserIds.push(userId);
 
@@ -509,7 +499,9 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
     const pass1Result = await worker.processDue();
     expect(pass1Result.retried).toBeGreaterThanOrEqual(1);
 
-    const outboxAfterPass1 = await prisma.emailOutbox.findUniqueOrThrow({ where: { id: outbox.id } });
+    const outboxAfterPass1 = await prisma.emailOutbox.findUniqueOrThrow({
+      where: { id: outbox.id },
+    });
     expect(outboxAfterPass1.status).toBe('QUEUED');
     expect(outboxAfterPass1.attempts).toBe(1);
     expect(outboxAfterPass1.lastError).toBe('SMTP_ERROR');
@@ -529,7 +521,9 @@ describe('Email verification integration tests (CWB-87, real MySQL)', () => {
     const pass2Result = await worker.processDue(new Date(Date.now() + 60 * 1000));
     expect(pass2Result.sent).toBeGreaterThanOrEqual(1);
 
-    const outboxAfterPass2 = await prisma.emailOutbox.findUniqueOrThrow({ where: { id: outbox.id } });
+    const outboxAfterPass2 = await prisma.emailOutbox.findUniqueOrThrow({
+      where: { id: outbox.id },
+    });
     expect(outboxAfterPass2.status).toBe('SENT');
     expect(outboxAfterPass2.sentAt).not.toBeNull();
 

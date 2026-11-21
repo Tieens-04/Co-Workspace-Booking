@@ -32,10 +32,7 @@ export const adminClosureApi = {
     return response.data;
   },
 
-  update: async (
-    id: string,
-    payload: UpdateClosurePayload,
-  ): Promise<ApiResponse<ClosureItem>> => {
+  update: async (id: string, payload: UpdateClosurePayload): Promise<ApiResponse<ClosureItem>> => {
     const response = await apiClient.patch<ApiResponse<ClosureItem>>(
       `/admin/closures/${id}`,
       payload,

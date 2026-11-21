@@ -210,7 +210,9 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
 
   describe('Real MySQL Room Availability Filtering', () => {
     it('returns 48 slots with accurate occupancy from database bookings', async () => {
-      const res = await request(app).get(`/api/v1/rooms/${testRoomId}/availability?date=${testDate}`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${testRoomId}/availability?date=${testDate}`,
+      );
 
       expect(res.status).toBe(200);
       expect(res.body.success).toBe(true);
@@ -235,7 +237,9 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
       expect(morningBooked.every((s: { status: string }) => s.status === 'BOOKED')).toBe(true);
 
       // Boundary slot right before (09:30-10:00 VN = 02:30-03:00 UTC) is AVAILABLE
-      const slotBeforeA = slots.find((s: { endTime: string }) => s.endTime === '2026-10-15T03:00:00.000Z');
+      const slotBeforeA = slots.find(
+        (s: { endTime: string }) => s.endTime === '2026-10-15T03:00:00.000Z',
+      );
       expect(slotBeforeA?.status).toBe('AVAILABLE');
 
       // Boundary slot right after: Booking D (12:00-14:00 VN) is CANCELLED -> slots must be AVAILABLE
@@ -272,7 +276,9 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     });
 
     it('isolates bookings by room: other room bookings do not appear in availability', async () => {
-      const res = await request(app).get(`/api/v1/rooms/${otherRoomId}/availability?date=${testDate}`);
+      const res = await request(app).get(
+        `/api/v1/rooms/${otherRoomId}/availability?date=${testDate}`,
+      );
 
       expect(res.status).toBe(200);
       const slots = res.body.data.slots;

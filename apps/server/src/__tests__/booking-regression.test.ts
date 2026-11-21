@@ -337,9 +337,7 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
       const mockTx = {
         $queryRaw: vi
           .fn()
-          .mockResolvedValue([
-            { id: customerSub, locked_at: null, email_verified_at: new Date() },
-          ]),
+          .mockResolvedValue([{ id: customerSub, locked_at: null, email_verified_at: new Date() }]),
         booking: {
           count: vi.fn().mockResolvedValue(0),
           findMany: vi.fn().mockResolvedValue([{ id: 'existing-conflicting-id' }]),
@@ -414,9 +412,7 @@ describe('Critical Booking Regression & Edge-Case Unit Tests (CWB-28)', () => {
       const mockTx = {
         $queryRaw: vi
           .fn()
-          .mockResolvedValue([
-            { id: customerSub, locked_at: null, email_verified_at: new Date() },
-          ]),
+          .mockResolvedValue([{ id: customerSub, locked_at: null, email_verified_at: new Date() }]),
         booking: {
           count: vi.fn().mockResolvedValue(0),
           findMany: vi.fn().mockResolvedValue([]), // No conflicts found!

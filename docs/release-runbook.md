@@ -44,7 +44,7 @@ Với cả hai phương án, đặt `CLIENT_URL=https://<domain>` cho CORS và l
 
 ## 3. Quy trình phát hành
 
-1. **Điều kiện:** PR đã merge với CI xanh (`quality`, `browser-e2e`, `docker-build`, `secret-scan`). Ghi lại commit SHA sẽ triển khai.
+1. **Điều kiện:** PR đã merge với CI xanh (`quality`, `browser-e2e`, `docker-build`, `docker-smoke`, `secret-scan`). Ghi lại commit SHA sẽ triển khai.
 2. **Sao lưu trước migration** (bắt buộc với mọi bản có thư mục migration mới):
 
    ```bash
@@ -129,7 +129,7 @@ So sánh số lượng với database nguồn tại thời điểm sao lưu và 
 
 ```
 Release: <commit-sha>  Ngày: <YYYY-MM-DD>  Người thực hiện: <tên>
-CI: quality / browser-e2e / docker-build / secret-scan = pass (link run)
+CI: quality / browser-e2e / docker-build / docker-smoke / secret-scan = pass (link run)
 Backup: backups/<file>.sql  sha256=<...>  size=<...>
 Restore drill: <db> users=<n> bookings=<n> latest_migration=<name>  OK/FAIL
 Deploy: compose ps healthy  readiness=200

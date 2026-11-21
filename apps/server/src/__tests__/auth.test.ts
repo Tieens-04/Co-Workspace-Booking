@@ -20,8 +20,12 @@ import {
 vi.mock('../utils/prisma.util.js', () => {
   const fakeTx = { emailOutbox: { create: vi.fn() } };
   return {
-    default: { $transaction: (cb: any) => (typeof cb === 'function' ? cb(fakeTx) : Promise.all(cb)) },
-    prisma: { $transaction: (cb: any) => (typeof cb === 'function' ? cb(fakeTx) : Promise.all(cb)) },
+    default: {
+      $transaction: (cb: any) => (typeof cb === 'function' ? cb(fakeTx) : Promise.all(cb)),
+    },
+    prisma: {
+      $transaction: (cb: any) => (typeof cb === 'function' ? cb(fakeTx) : Promise.all(cb)),
+    },
   };
 });
 

@@ -53,7 +53,6 @@ export class AdminBookingController {
     }
   };
 
-
   recordRefund = async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { id } = req.params as unknown as RefundBookingParamsInput;

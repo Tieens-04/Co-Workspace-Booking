@@ -116,6 +116,26 @@ test('client Dockerfile healthcheck probes IPv4 127.0.0.1 instead of localhost (
   assert.doesNotMatch(dockerfile, /http:\/\/localhost\//);
 });
 
+function parseComposeConfigIfAvailable(repoRoot, envOverrides = {}) {
+  const composeProbe = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' });
+  if (composeProbe.status !== 0) return null;
+  const cleanEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) =>
+      /^(PATH|SYSTEMROOT|WINDIR|TEMP|TMP|HOME|USERPROFILE|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG)$/i.test(
+        key,
+      ),
+    ),
+  );
+  Object.assign(cleanEnv, envOverrides);
+  const configResult = spawnSync(
+    'docker',
+    ['compose', '--env-file', '.env.production.example', 'config', '--format', 'json'],
+    { cwd: repoRoot, encoding: 'utf8', env: cleanEnv },
+  );
+  assert.equal(configResult.status, 0, configResult.stderr);
+  return JSON.parse(configResult.stdout);
+}
+
 test('docker-compose.yml uses silent mysqladmin ping and discrete DB_* vars without raw DB_PASSWORD URL interpolation (CWB-117)', async () => {
   const repoRoot = path.resolve(__dirname, '..');
   const compose = await readFile(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
@@ -144,26 +164,9 @@ test('docker-compose.yml uses silent mysqladmin ping and discrete DB_* vars with
     /COPY --from=builder \/app\/apps\/server\/dist \.\/apps\/server\/dist[\s\S]*ENV NODE_OPTIONS="--import=file:\/\/\/app\/apps\/server\/dist\/config\/register-database-url\.js"/,
   );
 
-  const composeProbe = spawnSync('docker', ['compose', 'version'], { encoding: 'utf8' });
-  if (composeProbe.status === 0) {
-    const specialPassword = ['ci', 'smoke', 'p@ss:w#rd/1?x=2%253'].join('-');
-    const cleanEnv = Object.fromEntries(
-      Object.entries(process.env).filter(([key]) =>
-        /^(PATH|SYSTEMROOT|WINDIR|TEMP|TMP|HOME|USERPROFILE|DOCKER_HOST|DOCKER_CONTEXT|DOCKER_CONFIG)$/i.test(
-          key,
-        ),
-      ),
-    );
-    cleanEnv.DB_PASSWORD = specialPassword;
-
-    const configResult = spawnSync(
-      'docker',
-      ['compose', '--env-file', '.env.production.example', 'config', '--format', 'json'],
-      { cwd: repoRoot, encoding: 'utf8', env: cleanEnv },
-    );
-    assert.equal(configResult.status, 0, configResult.stderr);
-
-    const parsed = JSON.parse(configResult.stdout);
+  const specialPassword = ['ci', 'smoke', 'p@ss:w#rd/1?x=2%253'].join('-');
+  const parsed = parseComposeConfigIfAvailable(repoRoot, { DB_PASSWORD: specialPassword });
+  if (parsed) {
     assert.deepEqual(parsed.services.db.healthcheck.test, [
       'CMD',
       'mysqladmin',
@@ -443,4 +446,351 @@ test('nginx.conf static guard fails closed on single-line locations, inline comm
       ),
     /client_max_body_size/,
   );
+});
+
+function stripYamlComment(line) {
+  let quote = null;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (quote === "'") {
+      if (ch === "'" && line[i + 1] === "'") i += 1;
+      else if (ch === "'") quote = null;
+    } else if (quote === '"') {
+      if (ch === '\\') i += 1;
+      else if (ch === '"') quote = null;
+    } else if (ch === "'" || ch === '"') {
+      quote = ch;
+    } else if (ch === '#' && (i === 0 || /\s/.test(line[i - 1]))) {
+      return line.slice(0, i);
+    }
+  }
+  return line;
+}
+
+function extractWorkflowJob(workflowYaml, jobName) {
+  const stripped = workflowYaml
+    .split(/\r?\n/)
+    .map((line) => stripYamlComment(line).trimEnd())
+    .join('\n');
+  const jobsMatch = /^jobs:\s*$/m.exec(stripped);
+  assert.ok(jobsMatch, 'workflow must declare a jobs: section');
+  const afterJobs = stripped.slice(jobsMatch.index + jobsMatch[0].length + 1);
+  const nextTopLevel = afterJobs.search(/^\S/m);
+  const jobsBody = nextTopLevel === -1 ? afterJobs : afterJobs.slice(0, nextTopLevel);
+  const jobHeader = new RegExp(`^  ${jobName}:\\s*$`, 'm');
+  const match = jobHeader.exec(jobsBody);
+  if (!match) return null;
+  const afterHeader = jobsBody.slice(match.index + match[0].length + 1);
+  const nextJob = afterHeader.search(/^  [A-Za-z0-9_-]+:\s*$/m);
+  return nextJob === -1 ? afterHeader : afterHeader.slice(0, nextJob);
+}
+
+function splitJobHeaderAndSteps(jobBody, jobName) {
+  const stepsMatch = /^    steps:\s*$/m.exec(jobBody);
+  assert.ok(stepsMatch, `${jobName} job must declare a steps: section`);
+  const header = jobBody.slice(0, stepsMatch.index);
+  const stepsRaw = jobBody.slice(stepsMatch.index + stepsMatch[0].length + 1).replace(/^\n+/, '');
+  const steps = stepsRaw
+    .split(/\n(?=      - )/)
+    .map((step) => step.trimEnd())
+    .filter((step) => step.startsWith('      - '));
+  assert.ok(steps.length > 0, `${jobName} job must declare at least one step`);
+  return { header, steps };
+}
+
+function jobHasNeed(jobHeader, requiredJob) {
+  const scalar = /^    needs:\s*['"]?([A-Za-z0-9_-]+)['"]?\s*$/m.exec(jobHeader);
+  if (scalar) return scalar[1] === requiredJob;
+  const inlineList = /^    needs:\s*\[([^\r\n\]]*)\]\s*$/m.exec(jobHeader);
+  if (inlineList) {
+    return inlineList[1]
+      .split(',')
+      .map((item) => item.trim().replace(/^['"]|['"]$/g, ''))
+      .includes(requiredJob);
+  }
+  const blockList = /^    needs:\s*\n((?:      -\s*[^\n]+\n?)+)/m.exec(jobHeader);
+  if (blockList) {
+    return blockList[1]
+      .trim()
+      .split('\n')
+      .map((line) =>
+        line
+          .replace(/^      -\s*/, '')
+          .trim()
+          .replace(/^['"]|['"]$/g, ''),
+      )
+      .includes(requiredJob);
+  }
+  return false;
+}
+
+function extractStepRun(step) {
+  const blockMatch = /^(?:      - |        )run:\s*[|>][-+]?\s*\n((?:          .*\n?|\n)*)/m.exec(
+    step,
+  );
+  if (blockMatch) return blockMatch[1];
+  const inlineMatch = /^(?:      - |        )run:\s*(.+)$/m.exec(step);
+  return inlineMatch ? inlineMatch[1].trim() : '';
+}
+
+function assertBlockingJob(jobHeader, jobName) {
+  assert.doesNotMatch(
+    jobHeader,
+    /^    continue-on-error:\s*(?:true\b|\$\{\{)/m,
+    `${jobName} job must not set continue-on-error`,
+  );
+  assert.doesNotMatch(
+    jobHeader,
+    /^    if:\s*(?:false\b|\$\{\{\s*false\b)/m,
+    `${jobName} job must not be disabled with if: false`,
+  );
+}
+
+function assertBlockingStep(step, label) {
+  assert.doesNotMatch(
+    step,
+    /^(?:      - |        )continue-on-error:\s*(?:true\b|\$\{\{)/m,
+    `${label} step must not set continue-on-error`,
+  );
+  assert.doesNotMatch(
+    step,
+    /^(?:      - |        )if:\s*(?:false\b|\$\{\{\s*false\b)/m,
+    `${label} step must not be disabled with if: false`,
+  );
+}
+
+function assertCiWorkflowConfig(ciYaml) {
+  const qualityJob = extractWorkflowJob(ciYaml, 'quality');
+  assert.ok(qualityJob, 'CI workflow must define a quality job');
+  const quality = splitJobHeaderAndSteps(qualityJob, 'quality');
+  assertBlockingJob(quality.header, 'quality');
+
+  const formatStepIndex = quality.steps.findIndex((step) =>
+    /\bnpm run format:check\b/.test(extractStepRun(step)),
+  );
+  const lintStepIndex = quality.steps.findIndex((step) =>
+    /\bnpm run lint\b/.test(extractStepRun(step)),
+  );
+  assert.notEqual(formatStepIndex, -1, 'quality job must run npm run format:check');
+  assert.notEqual(lintStepIndex, -1, 'quality job must run npm run lint');
+  assert.ok(
+    formatStepIndex < lintStepIndex ||
+      (formatStepIndex === lintStepIndex &&
+        extractStepRun(quality.steps[formatStepIndex]).indexOf('npm run format:check') <
+          extractStepRun(quality.steps[lintStepIndex]).indexOf('npm run lint')),
+    'quality job must run npm run format:check before npm run lint',
+  );
+  assertBlockingStep(quality.steps[formatStepIndex], 'quality format:check');
+
+  const smokeJob = extractWorkflowJob(ciYaml, 'docker-smoke');
+  assert.ok(smokeJob, 'CI workflow must define a docker-smoke job');
+  const smoke = splitJobHeaderAndSteps(smokeJob, 'docker-smoke');
+  assertBlockingJob(smoke.header, 'docker-smoke');
+  assert.ok(jobHasNeed(smoke.header, 'quality'), 'docker-smoke job must declare needs: quality');
+
+  const npmCiIndex = smoke.steps.findIndex((step) => /\bnpm ci\b/.test(extractStepRun(step)));
+  const generateIndex = smoke.steps.findIndex((step) =>
+    /\bnpm run db:generate --workspace=apps\/server\b/.test(extractStepRun(step)),
+  );
+  const uploadSmokeIndex = smoke.steps.findIndex((step) =>
+    /\bnpm run test:smoke:upload --workspace=apps\/server\b/.test(extractStepRun(step)),
+  );
+  const emailSmokeIndex = smoke.steps.findIndex((step) =>
+    /\bnpm run test:smoke:email --workspace=apps\/server\b/.test(extractStepRun(step)),
+  );
+  const artifactIndex = smoke.steps.findIndex((step) =>
+    /^(?:      - |        )uses:\s*actions\/upload-artifact@v4\b/m.test(step),
+  );
+
+  assert.notEqual(npmCiIndex, -1, 'docker-smoke must run npm ci');
+  assert.notEqual(generateIndex, -1, 'docker-smoke must generate Prisma client');
+  assert.notEqual(uploadSmokeIndex, -1, 'docker-smoke must run test:smoke:upload');
+  assert.notEqual(emailSmokeIndex, -1, 'docker-smoke must run test:smoke:email');
+  assert.notEqual(artifactIndex, -1, 'docker-smoke must upload JUnit artifacts');
+
+  assert.ok(npmCiIndex < generateIndex, 'npm ci must run before db:generate in docker-smoke');
+  assert.ok(
+    generateIndex < uploadSmokeIndex,
+    'db:generate must run before test:smoke:upload in docker-smoke',
+  );
+  assert.ok(
+    generateIndex < emailSmokeIndex,
+    'db:generate must run before test:smoke:email in docker-smoke',
+  );
+  assert.ok(
+    uploadSmokeIndex < artifactIndex && emailSmokeIndex < artifactIndex,
+    'both Docker smoke suites must run before upload-artifact in docker-smoke',
+  );
+
+  assertBlockingStep(smoke.steps[npmCiIndex], 'docker-smoke npm ci');
+  assertBlockingStep(smoke.steps[generateIndex], 'docker-smoke db:generate');
+  assertBlockingStep(smoke.steps[uploadSmokeIndex], 'docker-smoke test:smoke:upload');
+  assertBlockingStep(smoke.steps[emailSmokeIndex], 'docker-smoke test:smoke:email');
+
+  assert.match(
+    extractStepRun(smoke.steps[uploadSmokeIndex]),
+    /--outputFile=\.\.\/\.\.\/reports\/smoke-upload\.xml\b/,
+  );
+  assert.match(
+    extractStepRun(smoke.steps[emailSmokeIndex]),
+    /--outputFile=\.\.\/\.\.\/reports\/smoke-email\.xml\b/,
+  );
+  assert.match(smoke.steps[artifactIndex], /^(?:      - |        )if:\s*always\(\)\s*$/m);
+  assert.match(smoke.steps[artifactIndex], /^          path:\s*reports\/smoke-\*\.xml\s*$/m);
+}
+
+test('root package.json exposes format:check and Docker smoke test scripts (CWB-121)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const pkg = JSON.parse(await readFile(path.join(repoRoot, 'package.json'), 'utf8'));
+  assert.match(pkg.scripts['format:check'] ?? '', /prettier --check/);
+  assert.equal(
+    pkg.scripts['test:smoke:upload'],
+    'npm run test:smoke:upload --workspace=apps/server',
+  );
+  assert.equal(pkg.scripts['test:smoke:email'], 'npm run test:smoke:email --workspace=apps/server');
+});
+
+test('CI workflow enforces format:check in quality and runs Docker smoke suites in docker-smoke (CWB-121)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const ciYaml = await readFile(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+  assertCiWorkflowConfig(ciYaml);
+});
+
+test('CI workflow static guard handles quoted #, valid needs forms, and fails closed on neutered or misordered steps (CWB-121)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const validYaml = (
+    await readFile(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8')
+  ).replace(/\r\n/g, '\n');
+
+  // Also ensure existing docker-build job with # inside single quotes is never truncated.
+  const dockerBuildJob = extractWorkflowJob(validYaml, 'docker-build');
+  assert.ok(dockerBuildJob);
+  assert.match(dockerBuildJob, /DB_PASSWORD=a@b:c#d\/e\?f%25/);
+
+  // 1. Quoted # inside a shell command must not truncate the rest of the line.
+  assert.doesNotThrow(() =>
+    assertCiWorkflowConfig(
+      validYaml.replace(
+        '- run: npm run format:check',
+        '- run: echo "gate #1" && npm run format:check',
+      ),
+    ),
+  );
+
+  // 2. Equivalent GitHub Actions needs syntax (inline array & block sequence) must pass.
+  assert.doesNotThrow(() =>
+    assertCiWorkflowConfig(
+      validYaml.replace(/(\n  docker-smoke:\n    needs: )quality/, '$1[secret-scan, quality]'),
+    ),
+  );
+  assert.doesNotThrow(() =>
+    assertCiWorkflowConfig(
+      validYaml.replace(
+        /(\n  docker-smoke:\n    needs:) quality/,
+        '$1\n      - secret-scan\n      - quality',
+      ),
+    ),
+  );
+  assert.throws(
+    () =>
+      assertCiWorkflowConfig(
+        validYaml.replace(/(\n  docker-smoke:\n    needs: )quality/, '$1secret-scan'),
+      ),
+    /needs: quality/,
+  );
+
+  // 3. Step name spoofing without executing npm run format:check in run: must fail.
+  assert.throws(
+    () =>
+      assertCiWorkflowConfig(
+        validYaml.replace(
+          '- run: npm run format:check',
+          '- name: npm run format:check\n        run: echo skipped',
+        ),
+      ),
+    /format:check/,
+  );
+
+  // 4. continue-on-error: true or if: false on format:check or docker-smoke must fail.
+  assert.throws(
+    () =>
+      assertCiWorkflowConfig(
+        validYaml.replace(
+          '- run: npm run format:check',
+          '- name: Format check\n        continue-on-error: true\n        run: npm run format:check',
+        ),
+      ),
+    /continue-on-error/,
+  );
+  assert.throws(
+    () =>
+      assertCiWorkflowConfig(
+        validYaml.replace(
+          '  docker-smoke:\n    needs: quality',
+          '  docker-smoke:\n    if: false\n    needs: quality',
+        ),
+      ),
+    /if: false/,
+  );
+
+  // 5. Running upload smoke before prisma generate, or upload-artifact without if: always(), must fail.
+  assert.throws(
+    () =>
+      assertCiWorkflowConfig(
+        validYaml.replace(
+          `      - name: Generate Prisma client\n        run: npm run db:generate --workspace=apps/server\n      - name: Nginx and room image upload smoke tests\n        run: npm run test:smoke:upload --workspace=apps/server -- --reporter=default --reporter=junit --outputFile=../../reports/smoke-upload.xml`,
+          `      - name: Nginx and room image upload smoke tests\n        run: npm run test:smoke:upload --workspace=apps/server -- --reporter=default --reporter=junit --outputFile=../../reports/smoke-upload.xml\n      - name: Generate Prisma client\n        run: npm run db:generate --workspace=apps/server`,
+        ),
+      ),
+    /before test:smoke:upload/,
+  );
+  assert.throws(
+    () =>
+      assertCiWorkflowConfig(
+        validYaml.replace(
+          '      - name: Upload smoke test results\n        if: always()',
+          '      - name: Upload smoke test results',
+        ),
+      ),
+    /always/,
+  );
+
+  // 6. Top-level keys appended after jobs: must not leak into docker-smoke slice.
+  assert.throws(
+    () =>
+      assertCiWorkflowConfig(
+        validYaml.replace(
+          /      - name: Production Compose and Mailpit email smoke tests[\s\S]*$/,
+          'x-disabled:\n  note: npm run test:smoke:email --workspace=apps/server actions/upload-artifact@v4\n',
+        ),
+      ),
+    /test:smoke:email/,
+  );
+});
+
+test('email smoke test binds loopback DB_PORT=0 and verifies account via Mailpit before booking (CWB-121)', async () => {
+  const repoRoot = path.resolve(__dirname, '..');
+  const smokeTest = await readFile(
+    path.join(repoRoot, 'apps/server/src/__tests__/email.email-smoke.test.ts'),
+    'utf8',
+  );
+
+  assert.match(smokeTest, /['"`]DB_PORT=0['"`]/);
+  assert.doesNotMatch(smokeTest, /DB_PORT=127\.0\.0\.1:/);
+  assert.match(smokeTest, /\/auth\/verify-email/);
+  assert.match(smokeTest, /EMAIL_NOT_VERIFIED/);
+
+  const parsed = parseComposeConfigIfAvailable(repoRoot, { DB_PORT: '0' });
+  if (parsed) {
+    assert.deepEqual(parsed.services.db.ports, [
+      {
+        mode: 'ingress',
+        host_ip: '127.0.0.1',
+        target: 3306,
+        published: '0',
+        protocol: 'tcp',
+      },
+    ]);
+    assert.equal(parsed.services.server.environment.DB_PORT, '3306');
+  }
 });
