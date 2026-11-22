@@ -193,7 +193,6 @@ export function isBookingOngoing(
 
 function toBookingResponse(
   booking: Prisma.BookingGetPayload<{ include: typeof createdBookingInclude }>,
-  now: Date = new Date(),
 ): BookingResponseDto {
   return {
     id: booking.id,
@@ -212,7 +211,6 @@ function toBookingResponse(
     roomUnavailable: false,
     roomUnavailableReason: null,
     roomUnavailableCause: null,
-    isOngoing: isBookingOngoing(booking, now),
   };
 }
 
@@ -679,7 +677,7 @@ export class BookingRepository
           });
           const closures = await loadOverlappingClosuresForConfirmed(tx, [original], replayNow);
           return {
-            ...toBookingResponse(original, replayNow),
+            ...toBookingResponse(original),
             ...resolveBookingRoomUnavailability(original, closures, undefined, replayNow),
             idempotentReplay: true,
           };
