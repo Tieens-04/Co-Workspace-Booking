@@ -1,5 +1,6 @@
 import { BookingStatus, Prisma, Role } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
+import { escapeMysqlLike } from '../utils/mysql-like.util.js';
 import { AppError } from '../utils/error.util.js';
 import { AuditActor, recordAuditEvent } from './audit.repository.js';
 import { BookingRepository, bookingRepository } from './booking.repository.js';
@@ -62,10 +63,11 @@ export class AdminUserRepository {
     if (filter.status) where.lockedAt = filter.status === 'LOCKED' ? { not: null } : null;
     if (filter.q) {
       // MySQL's default *_ci collation makes `contains` case-insensitive.
+      const q = escapeMysqlLike(filter.q);
       where.OR = [
-        { email: { contains: filter.q } },
-        { fullName: { contains: filter.q } },
-        { phoneNumber: { contains: filter.q } },
+        { email: { contains: q } },
+        { fullName: { contains: q } },
+        { phoneNumber: { contains: q } },
       ];
     }
 

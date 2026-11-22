@@ -199,6 +199,7 @@ Hỗ trợ phân trang và bộ lọc linh hoạt:
   - `minPrice` (tùy chọn): Giá theo giờ tối thiểu (không âm, inclusive), tối đa 2 chữ số thập phân.
   - `maxPrice` (tùy chọn): Giá theo giờ tối đa (không âm, inclusive), tối đa 2 chữ số thập phân. Giá phải nằm trong phạm vi `DECIMAL(10,2)`; `minPrice > maxPrice` sẽ trả về `400 VALIDATION_ERROR`.
   - `amenityIds` (tùy chọn): Chuỗi danh sách UUID phân cách bằng dấu phẩy (ví dụ `uuid1,uuid2`). Tự động chuẩn hóa khoảng trắng và loại bỏ ID trùng lặp.
+  - `q` (tùy chọn, CWB-84 / CWB-94, tối đa 100 ký tự, tự trim): Từ khóa tìm chuỗi con trong tên phòng (không phân biệt hoa thường, giữ nguyên tìm tiếng Việt có dấu). Các ký tự `%`, `_`, `\` được escape ở tầng truy vấn MySQL để khớp đúng ký tự literal thay vì làm wildcard `LIKE`.
 - **Quy tắc lọc tiện ích (Amenity ALL Semantics)**:
   - Phòng phải sở hữu **tất cả** các tiện ích trong `amenityIds` mới xuất hiện trong kết quả. Phòng chỉ có một phần hoặc không có tiện ích nào sẽ bị loại trừ.
   - UUID hợp lệ nhưng không tồn tại trong hệ thống sẽ trả về danh sách rỗng (`total: 0`), không báo lỗi.
@@ -399,7 +400,7 @@ Các endpoint dành riêng cho vai trò `ADMIN` phục vụ quản trị danh s�
 ### 1. Danh sách phòng quản trị: `GET /api/v1/admin/rooms`
 
 - **Quyền truy cập**: Bắt buộc đăng nhập với vai trò `ADMIN`. Không có token trả về `401 UNAUTHORIZED`; vai trò `CUSTOMER` trả về `403 FORBIDDEN`.
-- **Query Parameters**: Tái sử dụng query schema của danh sách công khai (`page`, `limit`, `capacity`, `minPrice`, `maxPrice`, `amenityIds`).
+- **Query Parameters**: Tái sử dụng query schema của danh sách công khai (`page`, `limit`, `q`, `capacity`, `minPrice`, `maxPrice`, `amenityIds`, `sort`, `date`, `startTime`, `endTime`) kèm `status`. Tham số `q` cũng escape literal `%`, `_`, `\` như API công khai (CWB-94).
 - **Phản hồi**: `200 OK` kèm danh sách phòng, phân trang và thông tin trạng thái đầy đủ.
 - **Phía client (CWB-54)**: Trang quản trị phòng hủy request cũ bằng `AbortController` khi đổi trang, đổi phiên đăng nhập hoặc rời trang. Chỉ response mới nhất của phiên hiện tại được cập nhật danh sách, phân trang, loading và lỗi. Đổi tài khoản sẽ xóa danh sách cũ và tải lại từ trang 1.
 
@@ -858,7 +859,7 @@ Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đ
     - `bookingCode` (tùy chọn): Khớp chính xác (exact match), không phân biệt hoa thường (case-insensitive), tự động loại bỏ mọi khoảng trắng (`\s+`).
     - `date` (tùy chọn): Ngày bắt đầu sử dụng phòng (`YYYY-MM-DD`) theo múi giờ Việt Nam `Asia/Ho_Chi_Minh` (`+07:00`), tính trọn vẹn trong khoảng `[dayStart, dayEnd)`.
     - `status` (tùy chọn): Enum trạng thái (`CONFIRMED`, `COMPLETED`, `CANCELLED`, `NO_SHOW`).
-    - `customer` (tùy chọn, CWB-79, tối đa 191 ký tự, tự trim): chuỗi con không phân biệt hoa thường của email/họ tên/SĐT tài khoản **hoặc** tên/SĐT khách vãng lai (`guestName`, `guestPhone`).
+    - `customer` (tùy chọn, CWB-79 / CWB-94, tối đa 191 ký tự, tự trim): chuỗi con không phân biệt hoa thường của email/họ tên/SĐT tài khoản **hoặc** tên/SĐT khách vãng lai (`guestName`, `guestPhone`); các ký tự `%`, `_`, `\` được escape để khớp literal thay vì làm wildcard `LIKE`.
     - `needsAttention` (tùy chọn, CWB-91, `'true' | 'false'`): khi `true`, lọc các đơn `CONFIRMED` đang bị gián đoạn (phòng không ở trạng thái `AVAILABLE` hoặc giao với bất kỳ `Closure` nào của phòng/toàn cơ sở).
     - Nghiêm cấm tham số truy vấn ngoài allowlist (`400 VALIDATION_ERROR`).
   - **Dữ liệu trả về (Data Projection)**:
@@ -981,7 +982,7 @@ npm run test --workspace=apps/client -- src/__tests__/AdminEmailsPage.test.tsx
 
 - **Dữ liệu**: `users.locked_at` (`NULL` = đang hoạt động) và `users.lock_reason` (tối đa 500 ký tự), migration `20261106100000_cwb79_user_lock` chỉ thêm cột nullable nên tài khoản hiện có vẫn hoạt động. Các tài khoản đã xóa/ẩn danh (`deleted_at IS NOT NULL`) được loại trừ khỏi danh sách và thao tác khóa/mở khóa.
 - **API ADMIN** (thiếu token `401`, CUSTOMER `403`):
-  - `GET /api/v1/admin/users?page=&limit=&q=&role=&status=`: chỉ truy vấn các tài khoản chưa xóa (`deleted_at IS NULL`), `limit` 1–100 (mặc định 20), `q` tìm chuỗi con (không phân biệt hoa thường) trong email/họ tên/SĐT, `role` ∈ `CUSTOMER|ADMIN`, `status` ∈ `ACTIVE|LOCKED`, trường lạ → `400`. Mỗi tài khoản gồm `id, email, fullName, phoneNumber, role, status, lockedAt, lockReason, createdAt` và `bookingCount` (mọi trạng thái), `noShowCount` (đánh giá lazy no-show theo tập `userIds` trên trang trước khi đếm booking `NO_SHOW`), `upcomingBookingCount` (`CONFIRMED`, bắt đầu ≥ hiện tại), `lastBookingAt` (thời điểm tạo booking gần nhất). Không bao giờ trả `passwordHash` hay `tokenVersion`. Sắp xếp mới tạo trước.
+  - `GET /api/v1/admin/users?page=&limit=&q=&role=&status=`: chỉ truy vấn các tài khoản chưa xóa (`deleted_at IS NULL`), `limit` 1–100 (mặc định 20), `q` tìm chuỗi con (không phân biệt hoa thường; escape literal `%`, `_`, `\` theo CWB-94) trong email/họ tên/SĐT, `role` ∈ `CUSTOMER|ADMIN`, `status` ∈ `ACTIVE|LOCKED`, trường lạ → `400`. Mỗi tài khoản gồm `id, email, fullName, phoneNumber, role, status, lockedAt, lockReason, createdAt` và `bookingCount` (mọi trạng thái), `noShowCount` (đánh giá lazy no-show theo tập `userIds` trên trang trước khi đếm booking `NO_SHOW`), `upcomingBookingCount` (`CONFIRMED`, bắt đầu ≥ hiện tại), `lastBookingAt` (thời điểm tạo booking gần nhất). Không bao giờ trả `passwordHash` hay `tokenVersion`. Sắp xếp mới tạo trước.
   - `PATCH /api/v1/admin/users/:id/status` với body `{ status: "LOCKED" | "ACTIVE", reason }` (`reason` bắt buộc, trim, 1–500 ký tự). Chỉ áp dụng cho tài khoản `CUSTOMER` chưa xóa: khóa/mở khóa chính mình hoặc ADMIN khác → `403 ADMIN_ACCOUNT_PROTECTED`; không tồn tại hoặc đã xóa (`deleted_at IS NOT NULL`) → `404 USER_NOT_FOUND` (không ghi audit event); đã ở trạng thái yêu cầu → `409 USER_STATUS_UNCHANGED`. Thao tác khóa dòng `users` (`FOR UPDATE`), ghi audit event trong cùng transaction và trả `{ user, affectedBookings }` (với `noShowCount` đã đánh giá lazy no-show).
 - **Hiệu lực khi khóa**: tăng `token_version` nên mọi JWT đã cấp bị từ chối ngay (`401`, CWB-77); kiểm tra phiên cũng từ chối tài khoản đang khóa; đăng nhập trả `403 ACCOUNT_LOCKED`. Các transaction tạo booking, đổi lịch booking, cập nhật hồ sơ/đổi mật khẩu (`/me`) và xóa tài khoản đều kiểm tra lại dưới khóa dòng `users` (`FOR UPDATE`) và trả `403 ACCOUNT_LOCKED` (riêng `GET /me` và `POST /me/logout-all` từ chối với `401` và không tăng `token_version`), nên request đã qua xác thực ngay trước lúc khóa cũng không thực hiện được.
 - **Booking tương lai không tự hủy**: `affectedBookings` liệt kê các booking `CONFIRMED` sắp tới (mã, phòng, giờ) để admin liên hệ khách hoặc hủy thủ công qua luồng hủy của admin. Mở khóa không khôi phục token cũ; khách đăng nhập lại.

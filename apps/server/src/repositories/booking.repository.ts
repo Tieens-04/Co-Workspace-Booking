@@ -7,6 +7,7 @@ import {
   RoomStatus,
 } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
+import { escapeMysqlLike } from '../utils/mysql-like.util.js';
 import { summarizeRevenueGroups, toRevenueGroups } from '../utils/booking-revenue.util.js';
 import { lockRoomRow, type LockedRoomRecord } from './room.repository.js';
 import {
@@ -1153,8 +1154,8 @@ export class BookingRepository
     }
 
     if (filter.customer) {
-      // CWB-79: registered customers and walk-in guests; *_ci collation = case-insensitive.
-      const q = filter.customer;
+      // CWB-79 / CWB-94: registered customers and walk-in guests; *_ci collation = case-insensitive.
+      const q = escapeMysqlLike(filter.customer);
       where.OR = [
         { user: { email: { contains: q } } },
         { user: { fullName: { contains: q } } },
