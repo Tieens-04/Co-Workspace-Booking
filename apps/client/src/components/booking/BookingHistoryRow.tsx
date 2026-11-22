@@ -59,6 +59,11 @@ export const BookingHistoryRow: React.FC<BookingHistoryRowProps> = ({ booking })
 
       <div className="flex flex-col items-end gap-1 self-center justify-self-end [grid-area:status] md:self-start">
         <StatusBadge kind="booking" status={booking.status} data-testid="booking-status-badge" />
+        {booking.status === 'CONFIRMED' && booking.isOngoing ? (
+          <ToneBadge tone="success" data-testid="booking-ongoing-badge">
+            Đang diễn ra
+          </ToneBadge>
+        ) : null}
         {booking.status === 'CONFIRMED' && booking.roomUnavailable && (
           <>
             <ToneBadge tone="maintenance" data-testid="booking-unavailable-badge">
@@ -71,6 +76,14 @@ export const BookingHistoryRow: React.FC<BookingHistoryRowProps> = ({ booking })
             )}
           </>
         )}
+        {booking.status === 'CANCELLED' &&
+        (booking.paymentStatus === 'REFUNDED' || booking.paymentStatus === 'PARTIALLY_REFUNDED') ? (
+          <StatusBadge
+            kind="payment"
+            status={booking.paymentStatus}
+            data-testid="booking-refund-badge"
+          />
+        ) : null}
         {cancellationActorLabel && (
           <span
             className="text-xs text-muted-foreground whitespace-nowrap"

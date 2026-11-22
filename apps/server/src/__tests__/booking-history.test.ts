@@ -3,7 +3,7 @@ import request from 'supertest';
 import { Role, BookingStatus, PaymentStatus } from '@prisma/client';
 import app from '../app.js';
 import { generateToken } from '../utils/jwt.util.js';
-import { bookingRepository } from '../repositories/booking.repository.js';
+import { bookingRepository, isBookingOngoing } from '../repositories/booking.repository.js';
 import { BookingService } from '../services/booking.service.js';
 import { BookingResponseDto } from '../types/booking.type.js';
 
@@ -105,12 +105,18 @@ describe('Booking History & Detail Unit Tests (/api/v1/bookings)', () => {
       expect(res2.body.code).toBe('VALIDATION_ERROR');
     });
 
-    it('rejects invalid view enum value', async () => {
-      const res = await request(app)
+    it('rejects invalid view enum values (including unsupported view=NO_SHOW)', async () => {
+      const res1 = await request(app)
         .get('/api/v1/bookings?view=INVALID_VIEW')
         .set('Authorization', `Bearer ${customerToken}`);
-      expect(res.status).toBe(400);
-      expect(res.body.code).toBe('VALIDATION_ERROR');
+      expect(res1.status).toBe(400);
+      expect(res1.body.code).toBe('VALIDATION_ERROR');
+
+      const res2 = await request(app)
+        .get('/api/v1/bookings?view=NO_SHOW')
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(res2.status).toBe(400);
+      expect(res2.body.code).toBe('VALIDATION_ERROR');
     });
 
     it('rejects unallowed/unexpected query parameters on GET /api/v1/bookings', async () => {
@@ -167,26 +173,36 @@ describe('Booking History & Detail Unit Tests (/api/v1/bookings)', () => {
       );
     });
 
-    it('handles UPCOMING and COMPLETED view filters correctly', async () => {
+    it('handles UPCOMING, COMPLETED, and CANCELLED view filters correctly', async () => {
       vi.spyOn(bookingRepository, 'findManyAndCountForUser').mockResolvedValue([0, []]);
 
-      await request(app)
+      const upRes = await request(app)
         .get('/api/v1/bookings?view=UPCOMING')
         .set('Authorization', `Bearer ${customerToken}`);
-
+      expect(upRes.status).toBe(200);
       expect(bookingRepository.findManyAndCountForUser).toHaveBeenCalledWith(
         customerSub,
         { page: 1, limit: 10, view: 'UPCOMING' },
         expect.any(Date),
       );
 
-      await request(app)
+      const compRes = await request(app)
         .get('/api/v1/bookings?view=COMPLETED')
         .set('Authorization', `Bearer ${customerToken}`);
-
+      expect(compRes.status).toBe(200);
       expect(bookingRepository.findManyAndCountForUser).toHaveBeenCalledWith(
         customerSub,
         { page: 1, limit: 10, view: 'COMPLETED' },
+        expect.any(Date),
+      );
+
+      const cancRes = await request(app)
+        .get('/api/v1/bookings?view=CANCELLED')
+        .set('Authorization', `Bearer ${customerToken}`);
+      expect(cancRes.status).toBe(200);
+      expect(bookingRepository.findManyAndCountForUser).toHaveBeenCalledWith(
+        customerSub,
+        { page: 1, limit: 10, view: 'CANCELLED' },
         expect.any(Date),
       );
     });
@@ -305,5 +321,55 @@ describe('Booking History & Detail Unit Tests (/api/v1/bookings)', () => {
         fixedNow,
       );
     });
+  });
+
+  describe('isBookingOngoing half-open interval [startTime, endTime)', () => {
+    const start = new Date('2026-11-22T03:00:00.000Z');
+    const end = new Date('2026-11-22T05:00:00.000Z');
+
+    it('returns true for CONFIRMED booking strictly inside (startTime, endTime)', () => {
+      expect(
+        isBookingOngoing(
+          { status: BookingStatus.CONFIRMED, startTime: start, endTime: end },
+          new Date('2026-11-22T04:00:00.000Z'),
+        ),
+      ).toBe(true);
+    });
+
+    it('returns true at exact startTime = now boundary for CONFIRMED booking', () => {
+      expect(
+        isBookingOngoing(
+          { status: BookingStatus.CONFIRMED, startTime: start, endTime: end },
+          start,
+        ),
+      ).toBe(true);
+    });
+
+    it('returns false at exact endTime = now boundary for CONFIRMED booking', () => {
+      expect(
+        isBookingOngoing({ status: BookingStatus.CONFIRMED, startTime: start, endTime: end }, end),
+      ).toBe(false);
+    });
+
+    it('returns false when startTime > now for future CONFIRMED booking', () => {
+      expect(
+        isBookingOngoing(
+          { status: BookingStatus.CONFIRMED, startTime: start, endTime: end },
+          new Date('2026-11-22T02:59:59.999Z'),
+        ),
+      ).toBe(false);
+    });
+
+    it.each([BookingStatus.CANCELLED, BookingStatus.COMPLETED, BookingStatus.NO_SHOW])(
+      'returns false for %s booking even when now is within [startTime, endTime)',
+      (status) => {
+        expect(
+          isBookingOngoing(
+            { status, startTime: start, endTime: end },
+            new Date('2026-11-22T04:00:00.000Z'),
+          ),
+        ).toBe(false);
+      },
+    );
   });
 });

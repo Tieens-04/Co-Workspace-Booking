@@ -45,6 +45,7 @@ export interface BookingResponseDto {
   roomUnavailable?: boolean;
   roomUnavailableReason?: string | null;
   roomUnavailableCause?: BookingRoomUnavailableCause | null;
+  isOngoing?: boolean;
 }
 
 export interface FutureBookingWarningItem {
@@ -59,7 +60,8 @@ export interface FutureBookingWarningDetails {
   bookings: FutureBookingWarningItem[];
 }
 
-export type BookingHistoryView = 'ALL' | 'UPCOMING' | 'COMPLETED';
+export const BOOKING_HISTORY_VIEWS = ['ALL', 'UPCOMING', 'COMPLETED', 'CANCELLED'] as const;
+export type BookingHistoryView = (typeof BOOKING_HISTORY_VIEWS)[number];
 
 export interface FindUserBookingsFilter {
   page: number;

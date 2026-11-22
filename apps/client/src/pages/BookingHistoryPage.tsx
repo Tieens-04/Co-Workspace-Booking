@@ -15,12 +15,12 @@ import { BookingHistoryRow } from '../components/booking/BookingHistoryRow';
 import { Stagger, StaggerItem } from '../components/motion/Stagger';
 
 const PAGE_LIMIT = 10;
-const VALID_VIEWS: BookingHistoryView[] = ['ALL', 'UPCOMING', 'COMPLETED'];
 
 const VIEW_OPTIONS: SegmentedOption<BookingHistoryView>[] = [
   { value: 'ALL', label: 'Tất cả' },
   { value: 'UPCOMING', label: 'Sắp tới' },
-  { value: 'COMPLETED', label: 'Đã hoàn tất' },
+  { value: 'COMPLETED', label: 'Đã kết thúc' },
+  { value: 'CANCELLED', label: 'Đã hủy' },
 ];
 
 interface BookingHistoryState {
@@ -48,10 +48,9 @@ export const BookingHistoryPage: React.FC = () => {
     const rawView = searchParams.get('view');
     const rawPage = searchParams.get('page');
 
-    let view: BookingHistoryView = 'ALL';
-    if (rawView && VALID_VIEWS.includes(rawView as BookingHistoryView)) {
-      view = rawView as BookingHistoryView;
-    }
+    const view: BookingHistoryView =
+      (rawView ? VIEW_OPTIONS.find((option) => option.value === rawView)?.value : undefined) ??
+      'ALL';
 
     let page = 1;
     if (rawPage && /^[1-9]\d*$/.test(rawPage)) {
@@ -243,7 +242,9 @@ export const BookingHistoryPage: React.FC = () => {
       case 'UPCOMING':
         return 'Không có đơn đặt phòng nào sắp tới.';
       case 'COMPLETED':
-        return 'Chưa có đơn đặt phòng nào đã hoàn tất.';
+        return 'Chưa có đơn đặt phòng nào đã kết thúc.';
+      case 'CANCELLED':
+        return 'Không có đơn đặt phòng nào đã hủy.';
       case 'ALL':
       default:
         return 'Bạn chưa có đơn đặt phòng nào.';

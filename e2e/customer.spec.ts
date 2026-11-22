@@ -140,3 +140,84 @@ test('invalid room id URL displays not-found state without retry button and has 
   await expect(page.getByText('Lỗi kết nối')).not.toBeVisible();
   await noOverflow(page);
 });
+
+test('booking history shows ongoing booking first in upcoming, filters ended/cancelled views, and keeps URL tab on reload', async ({
+  page,
+  scenario,
+}) => {
+  const now = Date.now();
+  const ongoing = await scenario.booking({
+    startTime: new Date(now - 10 * 60_000),
+    endTime: new Date(now + 50 * 60_000),
+    status: 'CONFIRMED',
+    paymentStatus: 'UNPAID',
+  });
+  const future = await scenario.booking({
+    startTime: tomorrowAt(14),
+    endTime: tomorrowAt(16),
+    status: 'CONFIRMED',
+    paymentStatus: 'UNPAID',
+  });
+  const completed = await scenario.booking({
+    startTime: new Date(now - 48 * HOUR),
+    endTime: new Date(now - 46 * HOUR),
+    status: 'COMPLETED',
+    paymentStatus: 'PAID',
+    paymentMethod: 'CASH',
+  });
+  const noShow = await scenario.booking({
+    startTime: new Date(now - 24 * HOUR),
+    endTime: new Date(now - 22 * HOUR),
+    status: 'NO_SHOW',
+    paymentStatus: 'UNPAID',
+  });
+  const refundedCancelled = await scenario.booking({
+    startTime: new Date(now - 72 * HOUR),
+    endTime: new Date(now - 70 * HOUR),
+    status: 'CANCELLED',
+    paymentStatus: 'REFUNDED',
+    paymentMethod: 'QR',
+    refundedAmount: '200000.00',
+    cancelledBy: 'ADMIN',
+    cancellationReason: 'Bảo trì đột xuất',
+  });
+
+  await login(page, scenario.customer);
+  await page.goto('/bookings');
+
+  // 1. Tab "Sắp tới": ongoing booking appears first with "Đang diễn ra" badge, followed by future
+  await page.getByRole('button', { name: 'Sắp tới', exact: true }).click();
+  await expect(page).toHaveURL(/\/bookings\?view=UPCOMING$/);
+  const upcomingItems = page.locator('[data-testid^="booking-item-"]');
+  await expect(upcomingItems).toHaveCount(2);
+  await expect(upcomingItems.nth(0)).toContainText(ongoing.bookingCode);
+  await expect(upcomingItems.nth(0).getByTestId('booking-ongoing-badge')).toHaveText(
+    'Đang diễn ra',
+  );
+  await expect(upcomingItems.nth(1)).toContainText(future.bookingCode);
+  await expect(upcomingItems.nth(1).getByTestId('booking-ongoing-badge')).toHaveCount(0);
+  await noOverflow(page);
+
+  // 2. Tab "Đã kết thúc": includes both COMPLETED and NO_SHOW
+  await page.getByRole('button', { name: 'Đã kết thúc', exact: true }).click();
+  await expect(page).toHaveURL(/\/bookings\?view=COMPLETED$/);
+  await expect(page.getByTestId(`booking-item-${completed.id}`)).toBeVisible();
+  await expect(page.getByTestId(`booking-item-${noShow.id}`)).toBeVisible();
+  await expect(page.locator('[data-testid^="booking-item-"]')).toHaveCount(2);
+
+  // 3. Tab "Đã hủy": includes cancelled + refund badge, and persists across page reload
+  await page.getByRole('button', { name: 'Đã hủy', exact: true }).click();
+  await expect(page).toHaveURL(/\/bookings\?view=CANCELLED$/);
+  const cancelledRow = page.getByTestId(`booking-item-${refundedCancelled.id}`);
+  await expect(cancelledRow).toBeVisible();
+  await expect(cancelledRow.getByTestId('booking-refund-badge')).toHaveText('Đã hoàn tiền');
+
+  await page.reload();
+  await expect(page).toHaveURL(/\/bookings\?view=CANCELLED$/);
+  await expect(page.getByRole('button', { name: 'Đã hủy', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  );
+  await expect(page.getByTestId(`booking-item-${refundedCancelled.id}`)).toBeVisible();
+  await noOverflow(page);
+});

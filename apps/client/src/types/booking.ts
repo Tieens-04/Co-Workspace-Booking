@@ -45,11 +45,12 @@ export interface BookingResult {
   roomUnavailable?: boolean;
   roomUnavailableReason?: string | null;
   roomUnavailableCause?: BookingRoomUnavailableCause | null;
+  isOngoing?: boolean;
 }
 
 export type CreateBookingResponse = ApiResponse<BookingResult>;
 
-export type BookingHistoryView = 'ALL' | 'UPCOMING' | 'COMPLETED';
+export type BookingHistoryView = 'ALL' | 'UPCOMING' | 'COMPLETED' | 'CANCELLED';
 
 export interface GetBookingsParams {
   page?: number;
