@@ -1,5 +1,6 @@
 import { Prisma, RoomStatus } from '@prisma/client';
 import prisma from '../utils/prisma.util.js';
+import { escapeMysqlLike } from '../utils/mysql-like.util.js';
 import { FindRoomsFilter, RoomSortOption } from '../types/room.type.js';
 import { AppError } from '../utils/error.util.js';
 import { BLOCKING_BOOKING_STATUSES } from '../types/booking.type.js';
@@ -204,7 +205,7 @@ export class RoomRepository implements RoomRepositoryContract {
 
     if (filter.q) {
       where.name = {
-        contains: filter.q,
+        contains: escapeMysqlLike(filter.q),
       };
     }
 

@@ -8,6 +8,7 @@ import dotenv from 'dotenv';
 import { randomUUID } from 'node:crypto';
 import { BookingStatus, PaymentStatus, Prisma, PrismaClient, RoomStatus } from '@prisma/client';
 import { validateTestDatabase } from '../src/__tests__/support/test-database.js';
+import { escapeMysqlLike } from '../src/utils/mysql-like.util.js';
 
 dotenv.config();
 // The app client logs every query in development; keep the benchmark output readable.
@@ -22,6 +23,7 @@ const ITERATIONS = Number(process.argv[3] ?? 30);
 const ROOMS = 20;
 const runId = randomUUID().slice(0, 8);
 const prefix = `BENCH_${runId}`;
+const escapedPrefix = escapeMysqlLike(prefix);
 
 const percentile = (values: number[], p: number) => {
   const sorted = [...values].sort((a, b) => a - b);
@@ -156,9 +158,9 @@ async function main() {
     // CWB-57: lazy no-show evaluation with a real backlog, global vs scoped to the 90-day period.
     // Seeded CONFIRMED rows have tracking off; turn it on (tagged) so they become candidates and
     // reset them before every timed run so each run sees the same backlog.
-    const backlogTag = { bookingCode: { startsWith: prefix }, note: 'bench-backlog' };
+    const backlogTag = { bookingCode: { startsWith: escapedPrefix }, note: 'bench-backlog' };
     await db.booking.updateMany({
-      where: { bookingCode: { startsWith: prefix }, status: BookingStatus.CONFIRMED },
+      where: { bookingCode: { startsWith: escapedPrefix }, status: BookingStatus.CONFIRMED },
       data: { attendanceTrackingEnabled: true, note: 'bench-backlog' },
     });
     const backlog = await db.booking.count({ where: backlogTag });
@@ -248,8 +250,8 @@ async function main() {
       console.log(`\nEXPLAIN (${label}):\n${text}`);
     }
   } finally {
-    await db.booking.deleteMany({ where: { bookingCode: { startsWith: prefix } } });
-    await db.room.deleteMany({ where: { name: { startsWith: prefix } } });
+    await db.booking.deleteMany({ where: { bookingCode: { startsWith: escapedPrefix } } });
+    await db.room.deleteMany({ where: { name: { startsWith: escapedPrefix } } });
     await db.$disconnect();
     await appPrisma.$disconnect();
   }
