@@ -818,6 +818,7 @@ Revenue, số lượt booking và status breakdown vẫn tính độc lập theo
 Các khoảng dùng `[start, end)`: trạng thái mới hiệu lực ngay tại mốc chuyển; phút lẻ được giữ lại
 để không làm tròn từng khoảng gây sai số. `occupancyRate = bookedMinutes / totalRoomMinutes * 100`,
 làm tròn một chữ số thập phân; mẫu bằng 0 trả 0. Không clamp để che lỗi dữ liệu.
+API tiếp tục trả `bookedMinutes` và `totalRoomMinutes` dạng số thực chính xác (không làm tròn thành số nguyên phút ở server để tránh sai số làm tròn kép); giao diện `/admin/dashboard` quy đổi sang giờ và định dạng theo `vi-VN` tối đa 1 chữ số thập phân (`"Đã đặt X giờ / Y giờ khả dụng"`, CWB-93).
 Đọc booking và inventory trong cùng snapshot MySQL Repeatable Read.
 
 Lịch sử `room_status_history` được ghi trong giao dịch tạo phòng/đổi trạng thái, sau khóa dòng phòng.
