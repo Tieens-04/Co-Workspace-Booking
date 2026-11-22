@@ -203,6 +203,9 @@ describe('AdminDashboardPage Component Tests (CWB-32)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('kpi-today-bookings')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('kpi-occupancy-hours')).toHaveTextContent(
+      'Đã đặt 20,4 giờ / 48 giờ khả dụng',
+    );
 
     vi.mocked(adminDashboardApi.getDashboardKpi).mockResolvedValueOnce({
       success: true,
@@ -223,6 +226,53 @@ describe('AdminDashboardPage Component Tests (CWB-32)', () => {
     await waitFor(() => {
       expect(screen.getByTestId('kpi-actual-revenue')).toHaveTextContent('6.500.000');
     });
+    expect(screen.getByTestId('kpi-occupancy-hours')).toHaveTextContent(
+      'Đã đặt 127,7 giờ / 336 giờ khả dụng',
+    );
+  });
+
+  it('formats fractional room-minutes as rounded vi-VN hours without altering occupancyRate (CWB-93)', async () => {
+    vi.mocked(adminDashboardApi.getDashboardKpi).mockResolvedValueOnce({
+      success: true,
+      message: 'OK',
+      data: {
+        ...mockKpiDayData,
+        occupancyRate: 1.5,
+        bookedMinutes: 60,
+        totalRoomMinutes: 3886.048083333333,
+      },
+    });
+
+    renderWithContext();
+
+    const occupancyCard = await screen.findByTestId('kpi-card-occupancy');
+    expect(screen.getByTestId('kpi-occupancy-rate')).toHaveTextContent('1.5%');
+    expect(screen.getByTestId('kpi-occupancy-hours')).toHaveTextContent(
+      'Đã đặt 1 giờ / 64,8 giờ khả dụng',
+    );
+    expect(occupancyCard).not.toHaveTextContent('phút');
+    expect(occupancyCard).not.toHaveTextContent('3886.048083333333');
+  });
+
+  it('renders zero booked and available hours cleanly when occupancy inventory is zero (CWB-93)', async () => {
+    vi.mocked(adminDashboardApi.getDashboardKpi).mockResolvedValueOnce({
+      success: true,
+      message: 'OK',
+      data: {
+        ...mockKpiDayData,
+        occupancyRate: 0,
+        bookedMinutes: 0,
+        totalRoomMinutes: 0,
+      },
+    });
+
+    renderWithContext();
+
+    await screen.findByTestId('kpi-card-occupancy');
+    expect(screen.getByTestId('kpi-occupancy-rate')).toHaveTextContent('0%');
+    expect(screen.getByTestId('kpi-occupancy-hours')).toHaveTextContent(
+      'Đã đặt 0 giờ / 0 giờ khả dụng',
+    );
   });
 
   it('handles error state and provides a retry button', async () => {

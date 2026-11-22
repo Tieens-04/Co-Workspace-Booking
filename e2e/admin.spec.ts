@@ -219,3 +219,107 @@ test('admin archives room with future booking, retains booking, hides from publi
     'AVAILABLE',
   );
 });
+
+test('admin dashboard formats fractional room-minutes as vi-VN hours without overflow', async ({
+  page,
+  scenario,
+}) => {
+  await login(page, scenario.admin);
+
+  const today = localInput(new Date()).slice(0, 10);
+  const weekSafeStart = new Date(new Date(`${today}T00:00:00.000+07:00`).getTime() - 7 * 24 * HOUR);
+  await scenario.db.room.update({
+    where: { id: scenario.room.id },
+    data: {
+      createdAt: weekSafeStart,
+      statusHistory: {
+        updateMany: {
+          where: { roomId: scenario.room.id },
+          data: { effectiveAt: weekSafeStart },
+        },
+      },
+    },
+  });
+
+  const createdAt = new Date(`${today}T05:17:17.123+07:00`);
+  const fractionalRoom = await scenario.db.room.create({
+    data: {
+      name: `${scenario.prefix}-fractional`,
+      capacity: 6,
+      pricePerHour: '100000.00',
+      createdAt,
+      statusHistory: {
+        create: { status: 'AVAILABLE', effectiveAt: createdAt },
+      },
+    },
+  });
+  scenario.rooms.push(fractionalRoom);
+
+  const bookingStart = new Date(`${today}T08:00:00+07:00`);
+  await scenario.booking({
+    roomId: fractionalRoom.id,
+    startTime: bookingStart,
+    endTime: new Date(bookingStart.getTime() + HOUR),
+    status: 'COMPLETED',
+    paymentStatus: 'PAID',
+    totalAmount: '100000.00',
+  });
+
+  const viHoursFormatter = new Intl.NumberFormat('vi-VN', { maximumFractionDigits: 1 });
+  const strictViNumber = /^(?:0|[1-9]\d{0,2}(?:\.\d{3})*)(?:,[1-9])?$/;
+  const expectedOccupancyText = (kpi: { bookedMinutes: number; totalRoomMinutes: number }) => {
+    const booked = kpi.bookedMinutes > 0 ? viHoursFormatter.format(kpi.bookedMinutes / 60) : '0';
+    const total =
+      kpi.totalRoomMinutes > 0 ? viHoursFormatter.format(kpi.totalRoomMinutes / 60) : '0';
+    expect(booked).toMatch(strictViNumber);
+    expect(total).toMatch(strictViNumber);
+    return `Đã đặt ${booked} giờ / ${total} giờ khả dụng`;
+  };
+
+  const dayKpiResponse = page.waitForResponse(
+    (r) =>
+      r.url().includes('/api/v1/admin/dashboard/kpi') &&
+      r.url().includes('period=day') &&
+      r.request().method() === 'GET',
+  );
+  const scheduleResponse = page.waitForResponse(
+    (r) => r.url().includes('/api/v1/admin/dashboard/schedule') && r.request().method() === 'GET',
+  );
+  await page.goto('/admin/dashboard');
+  const [dayKpiRes, scheduleRes] = await Promise.all([dayKpiResponse, scheduleResponse]);
+  expect(dayKpiRes.ok()).toBe(true);
+  expect(scheduleRes.ok()).toBe(true);
+  const dayKpiBody = (await dayKpiRes.json()) as {
+    data: { totalRoomMinutes: number; bookedMinutes: number };
+  };
+  expect(Number.isInteger(dayKpiBody.data.totalRoomMinutes)).toBe(false);
+  expect(dayKpiBody.data.bookedMinutes).toBeGreaterThanOrEqual(60);
+
+  const occupancyCard = page.getByTestId('kpi-card-occupancy');
+  const occupancyHours = page.getByTestId('kpi-occupancy-hours');
+  await expect(occupancyHours).toHaveText(expectedOccupancyText(dayKpiBody.data));
+  await expect(occupancyCard).not.toContainText('phút');
+  await expect(page.getByTestId('kpi-total-rooms')).toBeVisible();
+  await expect(page.getByTestId('dashboard-schedule-skeleton')).toBeHidden();
+  await noOverflow(page);
+
+  const weekKpiResponse = page.waitForResponse(
+    (r) =>
+      r.url().includes('/api/v1/admin/dashboard/kpi') &&
+      r.url().includes('period=week') &&
+      r.request().method() === 'GET',
+  );
+  await page.getByTestId('filter-period-week-btn').click();
+  const weekKpiRes = await weekKpiResponse;
+  expect(weekKpiRes.ok()).toBe(true);
+  const weekKpiBody = (await weekKpiRes.json()) as {
+    data: { totalRoomMinutes: number; bookedMinutes: number };
+  };
+  expect(Number.isInteger(weekKpiBody.data.totalRoomMinutes)).toBe(false);
+  expect(weekKpiBody.data.totalRoomMinutes).toBeGreaterThan(dayKpiBody.data.totalRoomMinutes);
+
+  await expect(page.getByTestId('kpi-card-bookings')).toContainText('ĐẶT PHÒNG TRONG TUẦN');
+  await expect(occupancyHours).toHaveText(expectedOccupancyText(weekKpiBody.data));
+  await expect(occupancyCard).not.toContainText('phút');
+  await noOverflow(page);
+});
