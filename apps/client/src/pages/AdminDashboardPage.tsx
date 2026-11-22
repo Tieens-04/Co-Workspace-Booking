@@ -10,7 +10,7 @@ import {
 } from '../types/admin-dashboard';
 import { RoomOverviewGrid } from '../components/RoomOverviewGrid';
 import { KpiCard, KpiCardSkeleton, KpiMeter } from '../components/admin/dashboard/KpiCard';
-import { formatCurrency } from '../utils/format';
+import { formatCurrency, formatHoursFromMinutes } from '../utils/format';
 import { getVietnamTodayString } from '../utils/bookingTime';
 import { PageHeader } from '@/components/common/PageHeader';
 import { ErrorState } from '@/components/common/EmptyState';
@@ -292,8 +292,9 @@ export const AdminDashboardPage: React.FC = () => {
                 value={`${kpiData.occupancyRate}%`}
                 visual={<KpiMeter value={kpiData.occupancyRate} label="Tỷ lệ lấp đầy phòng" />}
               >
-                <p>
-                  Đã đặt: {kpiData.bookedMinutes} / {kpiData.totalRoomMinutes} phút
+                <p data-testid="kpi-occupancy-hours">
+                  Đã đặt {formatHoursFromMinutes(kpiData.bookedMinutes)} giờ /{' '}
+                  {formatHoursFromMinutes(kpiData.totalRoomMinutes)} giờ khả dụng
                 </p>
               </KpiCard>
 
