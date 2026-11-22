@@ -85,9 +85,11 @@ export const activeBookingLimitError = (limit: number): AppError =>
   );
 
 /**
- * CWB-78: a customer may hold at most `limit` upcoming CONFIRMED bookings (the "Sắp tới" view:
- * CONFIRMED and start >= now). Must run inside the booking transaction after the customer's
- * `users` row is locked, so concurrent requests of the same customer (any room) serialize here.
+ * CWB-78: a customer may hold at most `limit` not-yet-started CONFIRMED bookings
+ * (`startTime >= now`), intentionally excluding already-started ongoing bookings shown in the
+ * "Sắp tới" (`UPCOMING`, `endTime > now`) history view (CWB-92). Must run inside the booking
+ * transaction after the customer's `users` row is locked, so concurrent requests of the same
+ * customer (any room) serialize here.
  */
 async function assertActiveBookingCapacity(
   tx: Prisma.TransactionClient,
@@ -173,8 +175,25 @@ export type RescheduledBookingResult = BookingResponseDto & { isRescheduled: boo
 
 const createdBookingInclude = { room: { select: { id: true, name: true } } } as const;
 
+export function isBookingOngoing(
+  booking: {
+    status: BookingStatus;
+    startTime: Date;
+    endTime: Date;
+  },
+  now: Date,
+): boolean {
+  const nowMs = now.getTime();
+  return (
+    booking.status === BookingStatus.CONFIRMED &&
+    booking.startTime.getTime() <= nowMs &&
+    nowMs < booking.endTime.getTime()
+  );
+}
+
 function toBookingResponse(
   booking: Prisma.BookingGetPayload<{ include: typeof createdBookingInclude }>,
+  now: Date = new Date(),
 ): BookingResponseDto {
   return {
     id: booking.id,
@@ -193,6 +212,7 @@ function toBookingResponse(
     roomUnavailable: false,
     roomUnavailableReason: null,
     roomUnavailableCause: null,
+    isOngoing: isBookingOngoing(booking, now),
   };
 }
 
@@ -403,6 +423,7 @@ export function mapBookingRecordToDto(
     cancelledBy: record.cancelledBy ?? null,
     refundedAmount: formatAmount(record.refundedAmount),
     ...unavailability,
+    isOngoing: isBookingOngoing(record, now),
   };
 }
 
@@ -658,7 +679,7 @@ export class BookingRepository
           });
           const closures = await loadOverlappingClosuresForConfirmed(tx, [original], replayNow);
           return {
-            ...toBookingResponse(original),
+            ...toBookingResponse(original, replayNow),
             ...resolveBookingRoomUnavailability(original, closures, undefined, replayNow),
             idempotentReplay: true,
           };
@@ -775,9 +796,11 @@ export class BookingRepository
 
     if (filter.view === 'UPCOMING') {
       where.status = BookingStatus.CONFIRMED;
-      where.startTime = { gte: now };
+      where.endTime = { gt: now };
     } else if (filter.view === 'COMPLETED') {
-      where.status = BookingStatus.COMPLETED;
+      where.status = { in: [BookingStatus.COMPLETED, BookingStatus.NO_SHOW] };
+    } else if (filter.view === 'CANCELLED') {
+      where.status = BookingStatus.CANCELLED;
     }
 
     const orderBy: Prisma.BookingOrderByWithRelationInput[] =

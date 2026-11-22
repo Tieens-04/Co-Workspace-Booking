@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { positiveIntSchema, MYSQL_INT_MAX } from './room.validator.js';
+import { BOOKING_HISTORY_VIEWS } from '../types/booking.type.js';
 
 const noteSchema = z
   .union([z.string().trim().max(500, 'Ghi chú không được vượt quá 500 ký tự'), z.null()])
@@ -27,8 +28,7 @@ export const createBookingSchema = z
 
 export type CreateBookingInput = z.infer<typeof createBookingSchema>;
 
-export const bookingHistoryViewSchema = z.enum(['ALL', 'UPCOMING', 'COMPLETED']);
-export type BookingHistoryViewInput = z.infer<typeof bookingHistoryViewSchema>;
+export const bookingHistoryViewSchema = z.enum(BOOKING_HISTORY_VIEWS);
 
 export const getBookingsQuerySchema = z
   .object({
