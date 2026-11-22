@@ -543,6 +543,16 @@ describe('Room List & Detail HTTP Regressions (Mocked Repository)', () => {
       expect(where.status).toBe(RoomStatus.ARCHIVED);
     });
 
+    it('escapes MySQL LIKE wildcards and backslashes in filter.q inside buildWhere (CWB-94)', () => {
+      const where = roomRepository.buildWhere({
+        page: 1,
+        limit: 10,
+        q: '50%_A\\B',
+      });
+
+      expect(where.name).toEqual({ contains: '50\\%\\_A\\\\B' });
+    });
+
     it('sets where.id = { in: [] } when slot search is combined with non-AVAILABLE status (Finding 2 Regression)', () => {
       const whereArchived = roomRepository.buildWhere({
         page: 1,
