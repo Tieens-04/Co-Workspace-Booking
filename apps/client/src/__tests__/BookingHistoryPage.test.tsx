@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, within, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { BookingHistoryPage } from '../pages/BookingHistoryPage';
 import { AuthProvider } from '../context/AuthContext';
 import { bookingApi } from '../services/booking.api';
@@ -76,10 +76,16 @@ describe('BookingHistoryPage', () => {
     vi.restoreAllMocks();
   });
 
+  const LocationProbe = () => {
+    const location = useLocation();
+    return <span data-testid="location-probe">{`${location.pathname}${location.search}`}</span>;
+  };
+
   const renderComponent = (initialEntries = ['/bookings']) => {
     return render(
       <MemoryRouter initialEntries={initialEntries}>
         <AuthProvider>
+          <LocationProbe />
           <Routes>
             <Route path="/bookings" element={<BookingHistoryPage />} />
             <Route path="/bookings/:id" element={<div>Mock Booking Detail Page</div>} />
@@ -185,7 +191,11 @@ describe('BookingHistoryPage', () => {
       'aria-pressed',
       'false',
     );
-    expect(screen.getByRole('button', { name: /^Đã hoàn tất$/i })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: /^Đã kết thúc$/i })).toHaveAttribute(
+      'aria-pressed',
+      'false',
+    );
+    expect(screen.getByRole('button', { name: /^Đã hủy$/i })).toHaveAttribute(
       'aria-pressed',
       'false',
     );
@@ -242,8 +252,8 @@ describe('BookingHistoryPage', () => {
     });
     expect(upcomingBtn).toHaveAttribute('aria-pressed', 'true');
 
-    // Click "Đã hoàn tất"
-    const completedBtn = screen.getByRole('button', { name: /^Đã hoàn tất$/i });
+    // Click "Đã kết thúc"
+    const completedBtn = screen.getByRole('button', { name: /^Đã kết thúc$/i });
     await user.click(completedBtn);
 
     await waitFor(() => {
@@ -253,6 +263,18 @@ describe('BookingHistoryPage', () => {
       );
     });
     expect(completedBtn).toHaveAttribute('aria-pressed', 'true');
+
+    // Click "Đã hủy"
+    const cancelledBtn = screen.getByRole('button', { name: /^Đã hủy$/i });
+    await user.click(cancelledBtn);
+
+    await waitFor(() => {
+      expect(bookingApi.getBookings).toHaveBeenCalledWith(
+        { view: 'CANCELLED', page: 1, limit: 10 },
+        expect.any(AbortSignal),
+      );
+    });
+    expect(cancelledBtn).toHaveAttribute('aria-pressed', 'true');
   });
 
   it('handles pagination navigation and controls', async () => {
@@ -302,12 +324,24 @@ describe('BookingHistoryPage', () => {
     expect(await screen.findByText('Không có đơn đặt phòng nào sắp tới.')).toBeInTheDocument();
   });
 
-  it('displays empty state for COMPLETED view', async () => {
+  it('displays empty state for COMPLETED view ("Đã kết thúc")', async () => {
     vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse([], 0, 0));
 
     renderComponent(['/bookings?view=COMPLETED']);
 
-    expect(await screen.findByText('Chưa có đơn đặt phòng nào đã hoàn tất.')).toBeInTheDocument();
+    expect(await screen.findByText('Chưa có đơn đặt phòng nào đã kết thúc.')).toBeInTheDocument();
+  });
+
+  it('displays empty state for CANCELLED view ("Đã hủy")', async () => {
+    vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse([], 0, 0));
+
+    renderComponent(['/bookings?view=CANCELLED']);
+
+    expect(screen.getByRole('button', { name: /^Đã hủy$/i })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(await screen.findByText('Không có đơn đặt phòng nào đã hủy.')).toBeInTheDocument();
   });
 
   it('displays error state and retries on button click', async () => {
@@ -616,11 +650,13 @@ describe('BookingHistoryPage', () => {
     renderComponent();
 
     expect(await screen.findByText('CS-20261025-CANC')).toBeInTheDocument();
-    expect(screen.getByText('Đã hủy').closest('[data-status]')).toHaveAttribute(
+    const cancelledItem = screen.getByTestId('booking-item-booking-cancelled');
+    expect(within(cancelledItem).getByText('Đã hủy').closest('[data-status]')).toHaveAttribute(
       'data-status',
       'CANCELLED',
     );
-    expect(screen.getByText('Không đến').closest('[data-status]')).toHaveAttribute(
+    const noShowItem = screen.getByTestId('booking-item-booking-noshow');
+    expect(within(noShowItem).getByText('Không đến').closest('[data-status]')).toHaveAttribute(
       'data-status',
       'NO_SHOW',
     );
@@ -676,6 +712,172 @@ describe('BookingHistoryPage', () => {
       expect(
         within(cancelledRow).queryByTestId('booking-unavailable-badge'),
       ).not.toBeInTheDocument();
+    });
+  });
+
+  describe('CWB-92: Ongoing badge, refund status badges, and URL view persistence', () => {
+    it('renders "Đang diễn ra" badge alongside "Đã xác nhận" only for ongoing CONFIRMED bookings', async () => {
+      const items: BookingResult[] = [
+        {
+          ...mockBookings[0],
+          id: 'b-ongoing',
+          bookingCode: 'CS-CWB92-LIVE',
+          status: 'CONFIRMED',
+          isOngoing: true,
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-future',
+          bookingCode: 'CS-CWB92-NEXT',
+          status: 'CONFIRMED',
+          isOngoing: false,
+        },
+        {
+          ...mockBookings[1],
+          id: 'b-completed',
+          bookingCode: 'CS-CWB92-DONE',
+          status: 'COMPLETED',
+          isOngoing: true,
+        },
+      ];
+
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(items, 3, 1));
+      renderComponent(['/bookings?view=UPCOMING']);
+
+      const ongoingRow = await screen.findByTestId('booking-item-b-ongoing');
+      expect(within(ongoingRow).getByTestId('booking-status-badge')).toHaveTextContent(
+        'Đã xác nhận',
+      );
+      expect(within(ongoingRow).getByTestId('booking-ongoing-badge')).toHaveTextContent(
+        'Đang diễn ra',
+      );
+
+      const futureRow = screen.getByTestId('booking-item-b-future');
+      expect(within(futureRow).queryByTestId('booking-ongoing-badge')).not.toBeInTheDocument();
+
+      const completedRow = screen.getByTestId('booking-item-b-completed');
+      expect(within(completedRow).queryByTestId('booking-ongoing-badge')).not.toBeInTheDocument();
+    });
+
+    it('renders refund status badges for REFUNDED and PARTIALLY_REFUNDED cancelled bookings only', async () => {
+      const items: BookingResult[] = [
+        {
+          ...mockBookings[0],
+          id: 'b-canc-refunded',
+          bookingCode: 'CS-CWB92-REF1',
+          status: 'CANCELLED',
+          paymentStatus: 'REFUNDED',
+          refundedAmount: '500000.00',
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-canc-partial',
+          bookingCode: 'CS-CWB92-REF2',
+          status: 'CANCELLED',
+          paymentStatus: 'PARTIALLY_REFUNDED',
+          refundedAmount: '250000.00',
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-canc-unpaid',
+          bookingCode: 'CS-CWB92-UNP',
+          status: 'CANCELLED',
+          paymentStatus: 'UNPAID',
+        },
+        {
+          ...mockBookings[0],
+          id: 'b-canc-paid',
+          bookingCode: 'CS-CWB92-PAID',
+          status: 'CANCELLED',
+          paymentStatus: 'PAID',
+        },
+      ];
+
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(items, 4, 1));
+      renderComponent(['/bookings?view=CANCELLED']);
+
+      const refundedRow = await screen.findByTestId('booking-item-b-canc-refunded');
+      expect(within(refundedRow).getByTestId('booking-refund-badge')).toHaveTextContent(
+        'Đã hoàn tiền',
+      );
+      expect(within(refundedRow).getByTestId('booking-refund-badge')).toHaveAttribute(
+        'data-status',
+        'REFUNDED',
+      );
+
+      const partialRow = screen.getByTestId('booking-item-b-canc-partial');
+      expect(within(partialRow).getByTestId('booking-refund-badge')).toHaveTextContent(
+        'Đã hoàn một phần',
+      );
+      expect(within(partialRow).getByTestId('booking-refund-badge')).toHaveAttribute(
+        'data-status',
+        'PARTIALLY_REFUNDED',
+      );
+
+      const unpaidRow = screen.getByTestId('booking-item-b-canc-unpaid');
+      expect(within(unpaidRow).queryByTestId('booking-refund-badge')).not.toBeInTheDocument();
+
+      const paidRow = screen.getByTestId('booking-item-b-canc-paid');
+      expect(within(paidRow).queryByTestId('booking-refund-badge')).not.toBeInTheDocument();
+    });
+
+    it('initializes from ?view=CANCELLED&page=2, resets page to 1 when switching tabs, and strips ?view= for ALL', async () => {
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(
+        mockResponse([mockBookings[0]], 15, 2, 2),
+      );
+      const user = userEvent.setup();
+
+      renderComponent(['/bookings?view=CANCELLED&page=2']);
+
+      expect(screen.getByTestId('location-probe')).toHaveTextContent(
+        '/bookings?view=CANCELLED&page=2',
+      );
+      expect(screen.getByRole('button', { name: /^Đã hủy$/i })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      await waitFor(() => {
+        expect(bookingApi.getBookings).toHaveBeenCalledWith(
+          { view: 'CANCELLED', page: 2, limit: 10 },
+          expect.any(AbortSignal),
+        );
+      });
+
+      await user.click(screen.getByRole('button', { name: /^Sắp tới$/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId('location-probe')).toHaveTextContent('/bookings?view=UPCOMING');
+        expect(bookingApi.getBookings).toHaveBeenCalledWith(
+          { view: 'UPCOMING', page: 1, limit: 10 },
+          expect.any(AbortSignal),
+        );
+      });
+
+      await user.click(screen.getByRole('button', { name: /^Tất cả$/i }));
+      await waitFor(() => {
+        expect(screen.getByTestId('location-probe')).toHaveTextContent('/bookings');
+        expect(bookingApi.getBookings).toHaveBeenCalledWith(
+          { view: 'ALL', page: 1, limit: 10 },
+          expect.any(AbortSignal),
+        );
+      });
+    });
+
+    it('normalizes unsupported ?view=NO_SHOW back to /bookings (ALL view)', async () => {
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse(mockBookings, 2, 1));
+
+      renderComponent(['/bookings?view=NO_SHOW']);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('location-probe')).toHaveTextContent('/bookings');
+      });
+      expect(screen.getByRole('button', { name: /^Tất cả$/i })).toHaveAttribute(
+        'aria-pressed',
+        'true',
+      );
+      expect(bookingApi.getBookings).toHaveBeenCalledWith(
+        { view: 'ALL', page: 1, limit: 10 },
+        expect.any(AbortSignal),
+      );
     });
   });
 });
