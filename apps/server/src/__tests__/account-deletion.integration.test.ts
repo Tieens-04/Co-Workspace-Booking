@@ -23,6 +23,7 @@ import { meService } from '../services/me.service.js';
 import { EmailOutboxService } from '../services/email-outbox.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 const DELETION_URL = '/api/v1/me/deletion';
 const HOUR = 3_600_000;
@@ -42,12 +43,8 @@ describe('Account deletion / anonymization POST /api/v1/me/deletion (CWB-88, rea
   const adminToken = admins.token(Role.ADMIN);
   const userIds: string[] = [];
   let roomId: string;
-  let codeSeq = 0;
 
-  const bookingCode = () => {
-    codeSeq += 1;
-    return `CS-29991231-${randomUUID().slice(0, 4).toUpperCase()}${codeSeq}`.slice(0, 20);
-  };
+  const bookingCode = () => testBookingCode('29991231');
 
   const createCustomer = async (role: Role = Role.CUSTOMER) => {
     const email = `${prefix}_${randomUUID()}@example.com`;

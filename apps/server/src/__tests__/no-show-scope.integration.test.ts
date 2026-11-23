@@ -5,6 +5,7 @@ import { BookingStatus, PaymentStatus, Prisma, Role, RoomStatus } from '@prisma/
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 import { getVietnamTodayString } from '../utils/dashboard-date.util.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
 
@@ -30,7 +31,7 @@ describe('CWB-57 scoped lazy no-show evaluation (real MySQL)', () => {
     start.setUTCHours(2, 0, 0, 0); // 09:00 Vietnam
     return prisma.booking.create({
       data: {
-        bookingCode: `CS-20261104-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261104'),
         roomId: room,
         guestName: 'Khách',
         guestPhone: '0900000000',
@@ -124,7 +125,7 @@ describe('CWB-57 scoped lazy no-show evaluation (real MySQL)', () => {
     const create = (startTime: Date, hours: number, checkedInAt: Date | null = null) =>
       prisma.booking.create({
         data: {
-          bookingCode: `CS-20261104-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261104'),
           roomId,
           guestName: 'Khách',
           guestPhone: '0900000000',

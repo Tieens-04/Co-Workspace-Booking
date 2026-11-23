@@ -7,6 +7,7 @@ import * as roomRepository from '../repositories/room.repository.js';
 import * as bookingCodeUtil from '../utils/booking-code.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import prisma from '../utils/prisma.util.js';
+import { nextUnusedBookingCode } from './support/test-booking-code.js';
 
 const start = new Date('2030-06-10T02:00:00.000Z'); // 09:00 Vietnam
 const end = new Date('2030-06-10T03:30:00.000Z');
@@ -176,11 +177,7 @@ describe.each([
   });
 
   it('revalidates the lead boundary on retry after a real unique-code collision', async () => {
-    const dateSegment = bookingCodeUtil.getBookingDateSegment(start);
-    let collisionCode: string;
-    do {
-      collisionCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-    } while (await prisma.booking.findUnique({ where: { bookingCode: collisionCode } }));
+    const collisionCode = await nextUnusedBookingCode(prisma, start);
     const existing = await prisma.booking.create({
       data: {
         bookingCode: collisionCode,

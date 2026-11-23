@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { RoomStatus, BookingStatus, PaymentStatus } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 describe('Room API Integration Tests (Real MySQL Database)', () => {
   const testPrefix = `test_${randomUUID()}`;
@@ -150,7 +151,7 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
     // Confirmed booking on roomAll: testDate 10:00 - 12:00 VN (03:00 - 05:00 UTC)
     const bookingConfirmed = await prisma.booking.create({
       data: {
-        bookingCode: `CS-${testDateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode(testDateCompact),
         userId: testUserId,
         roomId: roomAllId,
         startTime: new Date(`${testDate}T03:00:00.000Z`),
@@ -165,7 +166,7 @@ describe('Room API Integration Tests (Real MySQL Database)', () => {
     // Cancelled booking on roomPartial: testDate 10:00 - 12:00 VN (03:00 - 05:00 UTC)
     const bookingCancelled = await prisma.booking.create({
       data: {
-        bookingCode: `CS-${testDateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode(testDateCompact),
         userId: testUserId,
         roomId: roomPartialId,
         startTime: new Date(`${testDate}T03:00:00.000Z`),

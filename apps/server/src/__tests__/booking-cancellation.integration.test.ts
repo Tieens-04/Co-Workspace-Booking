@@ -6,6 +6,7 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
 
 describe('Customer Cancellation API Integration Tests (Real MySQL Database & Locking)', () => {
@@ -90,7 +91,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -136,7 +137,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -167,7 +168,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -200,7 +201,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
       // Customer 1 creates and cancels a booking
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -240,7 +241,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -271,7 +272,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -301,7 +302,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id, // Customer A
           startTime: start,
@@ -353,7 +354,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -379,7 +380,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -407,7 +408,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -445,7 +446,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,
@@ -562,7 +563,7 @@ describe('Customer Cancellation API Integration Tests (Real MySQL Database & Loc
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261025-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261025'),
           roomId: availableRoomId,
           userId: testUser1Id,
           startTime: start,

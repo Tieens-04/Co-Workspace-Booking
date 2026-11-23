@@ -6,6 +6,7 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { bookingService } from '../services/booking.service.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 describe('Booking History & Detail Integration Tests (Real MySQL Database)', () => {
   const testPrefix = `test_history_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
@@ -85,7 +86,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const upEnd = new Date(upStart.getTime() + 2 * 60 * 60 * 1000);
     const bUpcoming = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261001-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261001'),
         userId: customer1Id,
         roomId,
         startTime: upStart,
@@ -104,7 +105,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const ongoingEnd = new Date(now + 50 * 60 * 1000);
     const bOngoing = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261001-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261001'),
         userId: customer1Id,
         roomId,
         startTime: ongoingStart,
@@ -123,7 +124,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const pastEnd = new Date(pastStart.getTime() + 2 * 60 * 60 * 1000);
     const bCompleted = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260920-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260920'),
         userId: customer1Id,
         roomId,
         startTime: pastStart,
@@ -142,7 +143,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const pastConfEnd = new Date(pastConfStart.getTime() + 2 * 60 * 60 * 1000);
     const bPastConf = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260923-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260923'),
         userId: customer1Id,
         roomId,
         startTime: pastConfStart,
@@ -161,7 +162,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const pastCheckedInEnd = new Date(pastCheckedInStart.getTime() + 2 * 60 * 60 * 1000);
     const bPastCheckedIn = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260924-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260924'),
         userId: customer1Id,
         roomId,
         startTime: pastCheckedInStart,
@@ -181,7 +182,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const cancEnd = new Date(cancStart.getTime() + 2 * 60 * 60 * 1000);
     const bCanc = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261002-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261002'),
         userId: customer1Id,
         roomId,
         startTime: cancStart,
@@ -200,7 +201,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const cancRefEnd = new Date(cancRefStart.getTime() + 2 * 60 * 60 * 1000);
     const bCancRef = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260922-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260922'),
         userId: customer1Id,
         roomId,
         startTime: cancRefStart,
@@ -222,7 +223,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const cancPartEnd = new Date(cancPartStart.getTime() + 2 * 60 * 60 * 1000);
     const bCancPart = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260921-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260921'),
         userId: customer1Id,
         roomId,
         startTime: cancPartStart,
@@ -243,7 +244,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const cancPaidEnd = new Date(cancPaidStart.getTime() + 2 * 60 * 60 * 1000);
     const bCancPaid = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260919-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260919'),
         userId: customer1Id,
         roomId,
         startTime: cancPaidStart,
@@ -264,7 +265,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
     const c2End = new Date(c2Start.getTime() + 2 * 60 * 60 * 1000);
     const bC2 = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260928-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260928'),
         userId: customer2Id,
         roomId: maintenanceRoomId,
         startTime: c2Start,
@@ -280,7 +281,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
 
     const bC2Ongoing = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260928-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260928'),
         userId: customer2Id,
         roomId: maintenanceRoomId,
         startTime: new Date(now - 15 * 60 * 1000),
@@ -296,7 +297,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
 
     const bC2Canc = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260927-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260927'),
         userId: customer2Id,
         roomId: maintenanceRoomId,
         startTime: new Date(now - 2 * 24 * 60 * 60 * 1000),
@@ -313,7 +314,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
 
     const bC2NoShow = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20260926-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20260926'),
         userId: customer2Id,
         roomId: maintenanceRoomId,
         startTime: new Date(now - 3 * 24 * 60 * 60 * 1000),
@@ -567,7 +568,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
       // 1. startTime === fixedNow, endTime > fixedNow (CONFIRMED) -> ongoing & in UPCOMING
       const bStartAtNow = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261122-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261122'),
           userId: boundaryUserId,
           roomId,
           startTime: fixedNow,
@@ -582,7 +583,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
       // 2. endTime === fixedNow (CONFIRMED, unchecked-in) -> lazily NO_SHOW, excluded from UPCOMING, included in COMPLETED
       const bEndAtNowNoCheckin = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261122-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261122'),
           userId: boundaryUserId,
           roomId,
           startTime: new Date(fixedNow.getTime() - 60 * 60 * 1000),
@@ -599,7 +600,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
       // 3. endTime === fixedNow (CONFIRMED, checked-in) -> stays CONFIRMED, excluded from UPCOMING & COMPLETED
       const bEndAtNowCheckedIn = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261122-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261122'),
           userId: boundaryUserId,
           roomId,
           startTime: new Date(fixedNow.getTime() - 60 * 60 * 1000),
@@ -616,7 +617,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
       // 4. startTime < fixedNow < endTime (endTime = fixedNow + 1s, CONFIRMED) -> ongoing & in UPCOMING
       const bEndingJustAfterNow = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261122-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261122'),
           userId: boundaryUserId,
           roomId,
           startTime: new Date(fixedNow.getTime() - 30 * 60 * 1000),
@@ -631,7 +632,7 @@ describe('Booking History & Detail Integration Tests (Real MySQL Database)', () 
       // 5. startTime > fixedNow (CONFIRMED) -> in UPCOMING after ongoing bookings, isOngoing = false
       const bFuture = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261122-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261122'),
           userId: boundaryUserId,
           roomId,
           startTime: new Date(fixedNow.getTime() + 30 * 60 * 1000),

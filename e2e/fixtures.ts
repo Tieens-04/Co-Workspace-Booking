@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomInt, randomUUID } from 'node:crypto';
 import { test as base, expect } from '@playwright/test';
 import { PrismaClient, Prisma, type User, type Room } from '@prisma/client';
 import bcrypt from 'bcryptjs';
@@ -7,6 +7,15 @@ import { testDatabaseUrl } from './env.js';
 export const PASSWORD = 'BrowserTest49!';
 export const HOUR = 3_600_000;
 export const HALF_HOUR = HOUR / 2;
+const BOOKING_CODE_ALPHABET = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+
+function randomBookingCodeSuffix(length = 4): string {
+  let out = '';
+  for (let i = 0; i < length; i += 1) {
+    out += BOOKING_CODE_ALPHABET[randomInt(0, BOOKING_CODE_ALPHABET.length)];
+  }
+  return out;
+}
 
 /** Wall-clock input values are always Vietnam time, independently of the runner timezone. */
 export function localInput(at: Date): string {
@@ -69,18 +78,35 @@ export class Scenario {
 
   async booking(overrides: Partial<Prisma.BookingUncheckedCreateInput> = {}) {
     const start = tomorrowAt();
-    return this.db.booking.create({
-      data: {
-        id: randomUUID(),
-        bookingCode: `CS-${localInput(start).slice(0, 10).replaceAll('-', '')}-${randomUUID().slice(0, 4).toUpperCase()}`,
-        userId: this.customer.id,
-        roomId: this.room.id,
-        startTime: start,
-        endTime: new Date(start.getTime() + 2 * HOUR),
-        totalAmount: new Prisma.Decimal('200000.00'),
-        ...overrides,
-      },
-    });
+    const dateSegment = localInput(start).slice(0, 10).replaceAll('-', '');
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const bookingCode =
+        overrides.bookingCode ?? `CS-${dateSegment}-${randomBookingCodeSuffix(4)}`;
+      try {
+        return await this.db.booking.create({
+          data: {
+            id: randomUUID(),
+            userId: this.customer.id,
+            roomId: this.room.id,
+            startTime: start,
+            endTime: new Date(start.getTime() + 2 * HOUR),
+            totalAmount: new Prisma.Decimal('200000.00'),
+            ...overrides,
+            bookingCode,
+          },
+        });
+      } catch (error) {
+        if (
+          !overrides.bookingCode &&
+          error instanceof Prisma.PrismaClientKnownRequestError &&
+          error.code === 'P2002'
+        ) {
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw new Error('Unable to generate a unique E2E bookingCode after 10 attempts');
   }
 
   async dispose() {

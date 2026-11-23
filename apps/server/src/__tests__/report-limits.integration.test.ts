@@ -12,6 +12,7 @@ import {
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 import { getVietnamTodayString } from '../utils/dashboard-date.util.js';
 
 describe('CWB-57 bounded revenue period and paginated schedule (real MySQL)', () => {
@@ -29,7 +30,7 @@ describe('CWB-57 bounded revenue period and paginated schedule (real MySQL)', ()
     start.setUTCHours(3, 0, 0, 0);
     return prisma.booking.create({
       data: {
-        bookingCode: `CS-20261103-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261103'),
         roomId,
         guestName: 'Khách',
         guestPhone: '0900000000',

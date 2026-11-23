@@ -5,6 +5,7 @@ import { BookingStatus, PaymentStatus, Prisma, Role, RoomStatus } from '@prisma/
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 describe('CWB-67 audit log for admin mutations (real MySQL)', () => {
   const prefix = `test_audit_${randomUUID().slice(0, 8)}`;
@@ -22,7 +23,7 @@ describe('CWB-67 audit log for admin mutations (real MySQL)', () => {
     const start = new Date(Date.now() + 96 * 3_600_000);
     const booking = await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261103-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261103'),
         roomId,
         userId: customerId,
         startTime: start,

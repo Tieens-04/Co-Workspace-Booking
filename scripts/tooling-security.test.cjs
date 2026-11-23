@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
-const { mkdtemp, readFile, rm, writeFile } = require('node:fs/promises');
+const { mkdtemp, readdir, readFile, rm, writeFile } = require('node:fs/promises');
 const { createRequire } = require('node:module');
 const { tmpdir } = require('node:os');
 const path = require('node:path');
@@ -793,4 +793,59 @@ test('email smoke test binds loopback DB_PORT=0 and verifies account via Mailpit
     ]);
     assert.equal(parsed.services.server.environment.DB_PORT, '3306');
   }
+});
+
+async function listTypeScriptFiles(dir) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...(await listTypeScriptFiles(fullPath)));
+    } else if (/\.(?:ts|tsx)$/.test(entry.name)) {
+      files.push(fullPath);
+    }
+  }
+  return files;
+}
+
+function findShortUuidBookingCodeLines(source) {
+  const shortUuidSlice = /\brandomUUID\(\)(?:\.replace\([^)]*\))?\.slice\(\s*0\s*,\s*[1-7]\s*\)/;
+  const codeContext = /\b(?:[A-Za-z0-9_]*[Cc]ode[A-Za-z0-9_]*\s*[:=]|CS-)/;
+  return source
+    .split(/\r?\n/)
+    .map((line, index) => ({ line, lineNumber: index + 1 }))
+    .filter(({ line }) => shortUuidSlice.test(line) && codeContext.test(line));
+}
+
+test('integration and E2E fixtures never derive bookingCode from <8-hex UUID slices', async () => {
+  assert.equal(
+    findShortUuidBookingCodeLines(
+      'bookingCode: `CS-20261104-${randomUUID().slice(0, 4).toUpperCase()}`',
+    ).length,
+    1,
+  );
+  assert.equal(
+    findShortUuidBookingCodeLines('const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF1`')
+      .length,
+    1,
+  );
+  assert.equal(
+    findShortUuidBookingCodeLines('name: `${testPrefix}_Room_${randomUUID().slice(0, 6)}`').length,
+    0,
+  );
+
+  const repoRoot = path.resolve(__dirname, '..');
+  const roots = [path.join(repoRoot, 'apps/server/src/__tests__'), path.join(repoRoot, 'e2e')];
+  const violations = [];
+  for (const root of roots) {
+    for (const file of await listTypeScriptFiles(root)) {
+      const content = await readFile(file, 'utf8');
+      for (const hit of findShortUuidBookingCodeLines(content)) {
+        violations.push(`${path.relative(repoRoot, file)}:${hit.lineNumber}: ${hit.line.trim()}`);
+      }
+    }
+  }
+
+  assert.deepEqual(violations, []);
 });
