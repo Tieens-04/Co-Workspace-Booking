@@ -6,6 +6,7 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { nextUnusedBookingCode, testBookingCode } from './support/test-booking-code.js';
 import * as bookingCodeUtil from '../utils/booking-code.util.js';
 import { ENV } from '../config/env.config.js';
 
@@ -280,7 +281,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
 
       await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261201-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261201'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: baseStart,
@@ -385,7 +386,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       // Create a CANCELLED booking
       await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261201-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261201'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: cancelStart,
@@ -525,12 +526,8 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       const preStart = new Date(slotEnd.getTime() + 60 * 60 * 1000);
       const preEnd = new Date(preStart.getTime() + 60 * 60 * 1000);
 
-      const dateSegment = bookingCodeUtil.getBookingDateSegment(slotStart);
-      const collisionCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-      let uniqueCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-      while (uniqueCode === collisionCode) {
-        uniqueCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-      }
+      const collisionCode = await nextUnusedBookingCode(prisma, slotStart);
+      const uniqueCode = await nextUnusedBookingCode(prisma, slotStart, [collisionCode]);
 
       // Verify neither code exists in DB before test setup
       const existing = await prisma.booking.findFirst({
@@ -618,8 +615,7 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       const preStart = new Date(slotEnd.getTime() + 60 * 60 * 1000);
       const preEnd = new Date(preStart.getTime() + 60 * 60 * 1000);
 
-      const dateSegment = bookingCodeUtil.getBookingDateSegment(slotStart);
-      const collisionCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
+      const collisionCode = await nextUnusedBookingCode(prisma, slotStart);
 
       // Verify code does not exist in DB before test setup
       const existing = await prisma.booking.findUnique({
@@ -684,12 +680,8 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
       const preStart = new Date(slotEnd.getTime() + 60 * 60 * 1000);
       const preEnd = new Date(preStart.getTime() + 60 * 60 * 1000);
 
-      const dateSegment = bookingCodeUtil.getBookingDateSegment(slotStart);
-      const unrelatedCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-      let uniqueCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-      while (uniqueCode === unrelatedCode) {
-        uniqueCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-      }
+      const unrelatedCode = await nextUnusedBookingCode(prisma, slotStart);
+      const uniqueCode = await nextUnusedBookingCode(prisma, slotStart, [unrelatedCode]);
 
       // Verify neither code exists in DB before test setup
       const existing = await prisma.booking.findFirst({
@@ -769,12 +761,8 @@ describe('Booking API Integration Tests (Real MySQL Database & Transactions)', (
         // Verify preStart is after slotEnd (2026-12-02T04:00:00.000Z), so no overlap
         expect(preStart.toISOString()).toBe('2026-12-02T04:00:00.000Z');
 
-        const dateSegment = bookingCodeUtil.getBookingDateSegment(slotStart);
-        const collisionCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-        let uniqueCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-        while (uniqueCode === collisionCode) {
-          uniqueCode = `CS-${dateSegment}-${randomUUID().slice(0, 4).toUpperCase()}`;
-        }
+        const collisionCode = await nextUnusedBookingCode(prisma, slotStart);
+        const uniqueCode = await nextUnusedBookingCode(prisma, slotStart, [collisionCode]);
 
         // Verify neither code exists in DB before test setup
         const existing = await prisma.booking.findFirst({

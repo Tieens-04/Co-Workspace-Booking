@@ -9,6 +9,7 @@ import { generateToken } from '../utils/jwt.util.js';
 import { EmailOutboxService } from '../services/email-outbox.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 const HOUR = 3_600_000;
 
@@ -31,7 +32,7 @@ describe('QR payment instructions and payment receipt email (CWB-89, real MySQL)
     start.setUTCMinutes(0, 0, 0);
     return prisma.booking.create({
       data: {
-        bookingCode: `CS-20991231-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20991231'),
         roomId,
         ...(guest
           ? { guestName: 'Khách vãng lai', guestPhone: '0904000001' }

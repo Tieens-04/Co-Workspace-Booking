@@ -13,6 +13,7 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { bookingRepository } from '../repositories/booking.repository.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL & Transactions)', () => {
   const testPrefix = `test_admin_booking_${randomUUID().slice(0, 8)}`;
@@ -337,7 +338,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const userBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-${compact(targetDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode(compact(targetDateStr)),
           userId: testUserId,
           roomId: availableRoomId,
           startTime: userStart,
@@ -356,7 +357,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const guestBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-${compact(targetDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode(compact(targetDateStr)),
           userId: null,
           guestName: 'Phạm Thị Khách',
           guestPhone: '0977889900',
@@ -374,7 +375,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       // Midnight start booking at exactly 00:00 VN on targetDateStr (17:00 UTC on prevDateStr)
       const midnightBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-${compact(targetDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode(compact(targetDateStr)),
           userId: testUserId,
           roomId: availableRoomId,
           startTime: new Date(`${targetDateStr}T00:00:00.000+07:00`),
@@ -390,7 +391,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       // Next day midnight start booking at exactly 00:00 VN on nextDateStr -> UPPER BOUND EXCLUSIVE
       const nextDayBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-${compact(nextDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode(compact(nextDateStr)),
           userId: null,
           guestName: 'Khách Hôm Sau',
           guestPhone: '0933445566',
@@ -408,7 +409,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       // Overnight booking starting on previous VN day at 23:00 VN ending 01:00 VN on targetDateStr
       const overnightBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-${compact(prevDateStr)}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode(compact(prevDateStr)),
           userId: testUserId,
           roomId: availableRoomId,
           startTime: new Date(`${prevDateStr}T23:00:00.000+07:00`),
@@ -718,7 +719,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261026'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -753,7 +754,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261026'),
           roomId: availableRoomId,
           guestName: 'Guest QR Tester',
           guestPhone: '0904000001',
@@ -793,7 +794,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261026'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -820,7 +821,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261026'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -867,7 +868,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261026'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -901,7 +902,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261026'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -928,7 +929,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
         const start = new Date(Date.now() - 6 * HOUR);
         return prisma.booking.create({
           data: {
-            bookingCode: `CS-20261104-${randomUUID().slice(0, 4).toUpperCase()}`,
+            bookingCode: testBookingCode('20261104'),
             roomId: availableRoomId,
             userId: testUserId,
             startTime: start,
@@ -1015,7 +1016,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261026-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261026'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -1044,7 +1045,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261027-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261027'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -1078,7 +1079,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261028-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261028'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -1106,7 +1107,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const booking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261029-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261029'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: start,
@@ -1140,7 +1141,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
       const overdueBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-20261030-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode('20261030'),
           roomId: availableRoomId,
           userId: testUserId,
           startTime: pastStart,
@@ -1168,7 +1169,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
   describe('AC8: Revenue Query (Actual vs Potential Revenue)', () => {
     it('computes actualRevenue strictly from PAID bookings and potentialRevenue from active bookings', async () => {
-      const codePrefix = randomUUID().slice(0, 6).toUpperCase();
+      const codePrefix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
 
       // Create 1 PAID booking (200.00)
       const start1 = new Date(Date.now() + 200 * 60 * 60 * 1000);
@@ -1225,7 +1226,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
 
   describe('Refund Recording Integration Tests (CWB-83, real MySQL & Audit)', () => {
     it('successfully records full refund for CANCELLED + PAID booking and writes audit log', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF1`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() + 300 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 
@@ -1290,7 +1291,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('handles two consecutive partial refunds until fully refunded, then rejects subsequent refund', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF2`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() + 310 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 
@@ -1350,7 +1351,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('rejects refund if booking is not CANCELLED', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF3`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() + 320 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 
@@ -1381,7 +1382,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('rejects refund if booking is UNPAID', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF4`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() + 330 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 
@@ -1413,7 +1414,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('rejects refund when amount exceeds remaining refundable amount', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF5`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() + 340 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 
@@ -1447,7 +1448,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('deducts refund from actual revenue in revenue API', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF6`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() - 24 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 
@@ -1491,7 +1492,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('throws REFUND_AMOUNT_INVALID when repository receives refundAmount <= 0 (Defense-in-depth, F4 Regression)', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-RF7`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() + 350 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 
@@ -1535,7 +1536,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     });
 
     it('handles concurrent refund requests using Promise.all without double refund exceeding total amount (F8 Concurrency)', async () => {
-      const code = `CS-${randomUUID().slice(0, 6).toUpperCase()}-CRF`;
+      const code = testBookingCode('20261115');
       const start = new Date(Date.now() + 360 * 3600 * 1000);
       const end = new Date(start.getTime() + 2 * 3600 * 1000);
 

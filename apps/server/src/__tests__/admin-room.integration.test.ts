@@ -5,6 +5,7 @@ import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 import { roomRepository } from '../repositories/room.repository.js';
 import { generateToken } from '../utils/jwt.util.js';
 
@@ -476,7 +477,7 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
     it('warns with 409 ROOM_HAS_FUTURE_BOOKINGS when future CONFIRMED booking exists, rolls back, and does not mutate booking', async () => {
       const futureStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
       const futureEnd = new Date(Date.now() + 26 * 60 * 60 * 1000);
-      const testCode = `CS-20261201-${randomUUID().slice(0, 4).toUpperCase()}`;
+      const testCode = testBookingCode('20261201');
 
       const booking = await prisma.booking.create({
         data: {
@@ -522,7 +523,7 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
 
       const futureStart = new Date(Date.now() + 48 * 60 * 60 * 1000);
       const futureEnd = new Date(Date.now() + 50 * 60 * 60 * 1000);
-      const testCode = `CS-20261203-${randomUUID().slice(0, 4).toUpperCase()}`;
+      const testCode = testBookingCode('20261203');
 
       const existingBooking = await prisma.booking.create({
         data: {
@@ -731,7 +732,7 @@ describe('Admin Room API Integration Tests (Real MySQL Database & Transactions)'
       })
         .format(futureStart)
         .replace(/-/g, '');
-      const testCode = `CS-${futureDateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`;
+      const testCode = testBookingCode(futureDateCompact);
 
       const booking = await prisma.booking.create({
         data: {

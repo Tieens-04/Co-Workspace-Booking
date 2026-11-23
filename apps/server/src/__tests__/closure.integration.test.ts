@@ -5,6 +5,7 @@ import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 describe('Admin Closure API & Availability/Booking Blocking Integration Tests (MySQL)', () => {
   const accounts = new TestAccounts();
@@ -272,7 +273,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
     let conflictingBookingCode: string;
 
     beforeAll(async () => {
-      conflictingBookingCode = `CS-${compactDate(day1)}-${randomUUID().slice(0, 4).toUpperCase()}`;
+      conflictingBookingCode = testBookingCode(compactDate(day1));
       await prisma.booking.create({
         data: {
           bookingCode: conflictingBookingCode,
@@ -352,7 +353,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         await prisma.booking.createMany({
           data: [
             {
-              bookingCode: `CS-${compactDate(availDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              bookingCode: testBookingCode(compactDate(availDate)),
               userId: testUserId,
               roomId: availRoomId,
               startTime: new Date(`${availDate}T00:00:00.000Z`),
@@ -362,7 +363,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
               paymentStatus: PaymentStatus.UNPAID,
             },
             {
-              bookingCode: `CS-${compactDate(availDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              bookingCode: testBookingCode(compactDate(availDate)),
               userId: testUserId,
               roomId: availRoomId,
               startTime: new Date(`${availDate}T03:00:00.000Z`),
@@ -552,7 +553,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       // Create a valid booking at 10:00-12:00 UTC (17:00-19:00 VN)
       const validBooking = await prisma.booking.create({
         data: {
-          bookingCode: `CS-${compactDate(day1)}-${randomUUID().slice(0, 4).toUpperCase()}`,
+          bookingCode: testBookingCode(compactDate(day1)),
           userId: testUserId,
           roomId: testRoomAId,
           startTime: new Date(`${day1}T10:00:00.000Z`),
@@ -641,7 +642,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         // 4. Reschedule into facility-wide closure on Room B is blocked with 409 ROOM_CLOSED
         const openBooking = await prisma.booking.create({
           data: {
-            bookingCode: `CS-${compactDate(day2)}-${randomUUID().slice(0, 4).toUpperCase()}`,
+            bookingCode: testBookingCode(compactDate(day2)),
             userId: user2.id,
             roomId: testRoomBId,
             startTime: new Date(`${day2}T07:00:00.000Z`),
@@ -766,7 +767,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         await prisma.booking.createMany({
           data: [
             {
-              bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              bookingCode: testBookingCode(compactDate(schedDate)),
               userId: testUserId,
               roomId: schedRoomId,
               startTime: new Date(`${schedDate}T00:00:00.000Z`),
@@ -776,7 +777,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
               paymentStatus: PaymentStatus.UNPAID,
             },
             {
-              bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              bookingCode: testBookingCode(compactDate(schedDate)),
               userId: testUserId,
               roomId: schedRoomId,
               startTime: new Date(`${schedDate}T03:00:00.000Z`),
@@ -786,7 +787,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
               paymentStatus: PaymentStatus.UNPAID,
             },
             {
-              bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+              bookingCode: testBookingCode(compactDate(schedDate)),
               userId: testUserId,
               roomId: schedRoomId,
               startTime: new Date(`${schedDate}T05:00:00.000Z`),
@@ -800,7 +801,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
 
         const roomBBooking = await prisma.booking.create({
           data: {
-            bookingCode: `CS-${compactDate(schedDate)}-${randomUUID().slice(0, 6).toUpperCase()}`,
+            bookingCode: testBookingCode(compactDate(schedDate)),
             userId: testUserId,
             roomId: testRoomBId,
             startTime: new Date(`${schedDate}T04:00:00.000Z`),
@@ -1102,7 +1103,7 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
         const idemKey = `mvcc_race_${randomUUID().replace(/-/g, '').slice(0, 24)}`;
         const dummyBooking = await prisma.booking.create({
           data: {
-            bookingCode: `CS-${dummySlot.dateCompact}-${randomUUID().slice(0, 4).toUpperCase()}`,
+            bookingCode: testBookingCode(dummySlot.dateCompact),
             userId: raceUserId,
             roomId: testRoomAId,
             startTime: new Date(dummySlot.startTime),

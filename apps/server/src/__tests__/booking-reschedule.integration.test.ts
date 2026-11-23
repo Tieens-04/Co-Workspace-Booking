@@ -6,6 +6,7 @@ import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
 import { TestAccounts } from './support/test-accounts.js';
+import { testBookingCode } from './support/test-booking-code.js';
 import { EmailOutboxService } from '../services/email-outbox.service.js';
 import { NotificationService } from '../services/notification.service.js';
 import { ENV } from '../config/env.config.js';
@@ -821,7 +822,7 @@ describe('Customer Reschedule API Integration Tests (Real MySQL Database & Locki
     const unverifiedToken = generateToken({ sub: unverified.id, role: Role.CUSTOMER });
     const booking = await prisma.booking.create({
       data: {
-        bookingCode: `CS-RES-UNVER-${randomUUID().slice(0, 6)}`,
+        bookingCode: testBookingCode('20261108'),
         userId: unverified.id,
         roomId: room1Id,
         startTime: new Date(makeIso(18, 0)),

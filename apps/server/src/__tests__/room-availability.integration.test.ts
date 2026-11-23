@@ -5,6 +5,7 @@ import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
 import { generateToken } from '../utils/jwt.util.js';
+import { testBookingCode } from './support/test-booking-code.js';
 
 describe('Room Availability Integration Tests (Real MySQL Database)', () => {
   const testPrefix = `test_avail_${randomUUID()}`;
@@ -95,7 +96,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     // Booking A on testRoom: 10:00 - 12:00 VN (03:00 - 05:00 UTC) -> CONFIRMED, UNPAID (blocks)
     await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261015-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261015'),
         userId: testUserId,
         roomId: testRoomId,
         startTime: new Date('2026-10-15T03:00:00.000Z'),
@@ -109,7 +110,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     // Booking B on testRoom: 14:00 - 16:00 VN (07:00 - 09:00 UTC) -> CONFIRMED, PAID (blocks)
     await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261015-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261015'),
         userId: testUserId,
         roomId: testRoomId,
         startTime: new Date('2026-10-15T07:00:00.000Z'),
@@ -123,7 +124,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     // Booking C on otherRoom: 10:00 - 12:00 VN (03:00 - 05:00 UTC) -> CONFIRMED (must not affect testRoom)
     await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261015-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261015'),
         userId: testUserId,
         roomId: otherRoomId,
         startTime: new Date('2026-10-15T03:00:00.000Z'),
@@ -137,7 +138,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     // Booking D on testRoom: 12:00 - 14:00 VN (05:00 - 07:00 UTC) -> CANCELLED (must not block)
     await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261015-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261015'),
         userId: testUserId,
         roomId: testRoomId,
         startTime: new Date('2026-10-15T05:00:00.000Z'),
@@ -151,7 +152,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     // Booking E on testRoom: 16:00 - 18:00 VN (09:00 - 11:00 UTC) -> COMPLETED (must not block)
     await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261015-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261015'),
         userId: testUserId,
         roomId: testRoomId,
         startTime: new Date('2026-10-15T09:00:00.000Z'),
@@ -165,7 +166,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     // Booking F on testRoom: 18:00 - 20:00 VN (11:00 - 13:00 UTC) -> NO_SHOW (must not block)
     await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261015-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261015'),
         userId: testUserId,
         roomId: testRoomId,
         startTime: new Date('2026-10-15T11:00:00.000Z'),
@@ -179,7 +180,7 @@ describe('Room Availability Integration Tests (Real MySQL Database)', () => {
     // Booking G: Overnight booking starting from previous day 23:30 VN to 00:30 VN (16:30 - 17:30 UTC on Oct 14)
     await prisma.booking.create({
       data: {
-        bookingCode: `CS-20261014-${randomUUID().slice(0, 4).toUpperCase()}`,
+        bookingCode: testBookingCode('20261014'),
         userId: testUserId,
         roomId: testRoomId,
         startTime: new Date('2026-10-14T16:30:00.000Z'),
