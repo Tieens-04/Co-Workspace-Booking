@@ -6,6 +6,7 @@ import { Card } from '@/components/ui/card';
 import { AuthNotice } from '../components/auth/AuthNotice';
 import { authApi } from '../services/auth.api';
 import { useAuth } from '../hooks/useAuth';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
@@ -15,6 +16,7 @@ const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
  * action before calling POST to protect against aggressive link pre-fetching.
  */
 export const VerifyEmailPage: React.FC = () => {
+  usePageTitle('Xác thực email');
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, refreshProfile } = useAuth();
 

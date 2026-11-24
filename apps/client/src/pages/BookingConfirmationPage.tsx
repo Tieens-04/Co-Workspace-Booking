@@ -16,6 +16,7 @@ import { CopyCodeButton } from '../components/booking/CopyCodeButton';
 import { PaymentInstructions } from '../components/booking/PaymentInstructions';
 import { BookingTimeRange } from '../components/booking/BookingTimeRange';
 import { SuccessMark } from '../components/motion/SuccessMark';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export const BookingConfirmationPage: React.FC = () => {
   const location = useLocation();
@@ -108,6 +109,12 @@ export const BookingConfirmationPage: React.FC = () => {
   const fetchFailed = Boolean(routeId && current?.error === 'failed');
   const isValidBooking = Boolean(booking) && (routeId ? isCustomerSession : isAuthorizedCustomer);
 
+  usePageTitle(
+    !fetchFailed && !isLoading && !isFetchingDetail && isValidBooking && booking
+      ? `Xác nhận đặt phòng ${booking.bookingCode}`
+      : 'Xác nhận đặt phòng',
+  );
+
   // Sanitize browser history state on mount to prevent
   // booking data from lingering in history across logout or navigation,
   // while strictly preserving React Router's internal navigation metadata (idx, key).
@@ -129,6 +136,7 @@ export const BookingConfirmationPage: React.FC = () => {
         <ErrorState
           className="mx-auto max-w-3xl"
           title="Không thể tải thông tin đặt phòng"
+          titleAs="h1"
           description="Đơn của bạn vẫn được lưu. Vui lòng thử lại hoặc xem trong lịch sử đặt phòng."
           onRetry={() => setRetryIndex((n) => n + 1)}
           retryTestId="confirmation-retry"
@@ -160,6 +168,7 @@ export const BookingConfirmationPage: React.FC = () => {
             icon={Info}
             className="mx-auto max-w-3xl"
             title="Không tìm thấy thông tin đặt phòng"
+            titleAs="h1"
             description={
               <>
                 Không có đơn đặt phòng nào thuộc tài khoản này khớp với liên kết hiện tại. Nếu bạn

@@ -9,6 +9,7 @@ import { FeaturedSpaces } from '../components/landing/FeaturedSpaces';
 import { Hero } from '../components/landing/Hero';
 import { PrinciplesRow } from '../components/landing/PrinciplesRow';
 import { useLandingRooms } from '../components/landing/useLandingRooms';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 /** Query keys the room explorer used to read on "/" before it moved to "/rooms". */
 const LEGACY_EXPLORER_KEYS = ['page', 'capacity', 'minPrice', 'maxPrice', 'amenityIds'];
@@ -29,6 +30,7 @@ export const HomePage: React.FC = () => {
 
 /** Split out so a legacy redirect never fires the landing API calls. */
 function Landing() {
+  usePageTitle('Trang chủ');
   const { rooms: fetchedRooms, status, retry } = useLandingRooms();
   // Showcase rooms people can book first; maintenance rooms still appear (with their badge) after.
   const rooms = useMemo(

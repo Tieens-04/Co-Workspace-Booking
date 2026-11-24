@@ -7,12 +7,14 @@ import { Input } from '@/components/ui/input';
 import { Field } from '@/components/common/Field';
 import { AuthNotice } from '../components/auth/AuthNotice';
 import { AuthContext } from '../context/auth-context-base';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { authApi } from '../services/auth.api';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /** Requests a reset link. The confirmation never reveals whether the email is registered. */
 export const ForgotPasswordPage: React.FC = () => {
+  usePageTitle('Quên mật khẩu');
   const isAuthenticated = Boolean(useContext(AuthContext)?.isAuthenticated);
   const [email, setEmail] = useState('');
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -83,7 +85,7 @@ export const ForgotPasswordPage: React.FC = () => {
         {isAuthenticated ? (
           <Link
             to="/account"
-            className="font-medium text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
+            className="inline-flex min-h-9 items-center rounded-sm px-1 font-medium text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             Về trang tài khoản
           </Link>
@@ -92,7 +94,7 @@ export const ForgotPasswordPage: React.FC = () => {
             Nhớ ra mật khẩu?{' '}
             <Link
               to="/login"
-              className="font-medium text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground"
+              className="inline-flex min-h-9 items-center rounded-sm px-1 font-medium text-foreground underline decoration-input underline-offset-4 hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
             >
               Quay lại đăng nhập
             </Link>

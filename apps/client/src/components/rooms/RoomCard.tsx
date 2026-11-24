@@ -79,7 +79,7 @@ export const RoomCard = memo(function RoomCard({
           {hiddenAmenityCount > 0 && <li className="tabular-nums">+{hiddenAmenityCount}</li>}
         </ul>
 
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-4">
+        <div className="mt-1 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 border-t pt-2">
           <span className="text-[1.0625rem] font-bold tabular-nums">
             {formatVnd(room.pricePerHour)}
           </span>
@@ -87,7 +87,7 @@ export const RoomCard = memo(function RoomCard({
             to={`/rooms/${room.id}`}
             state={{ from }}
             aria-label={`Xem chi tiết ${room.name}`}
-            className="inline-flex items-center gap-1.5 rounded-sm text-sm font-semibold text-foreground no-underline after:absolute after:inset-0 after:rounded-xl after:content-['']"
+            className="inline-flex min-h-11 items-center gap-1.5 rounded-sm text-sm font-semibold text-foreground no-underline after:absolute after:inset-0 after:rounded-xl after:content-['']"
           >
             Xem chi tiết
             <ArrowRight

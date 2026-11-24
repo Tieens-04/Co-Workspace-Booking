@@ -24,6 +24,7 @@ import { NativeSelect } from '@/components/common/NativeSelect';
 import { RoomTable } from '../components/admin/rooms/RoomTable';
 import { RoomForm } from '../components/admin/rooms/RoomForm';
 import { RoomNotice } from '../components/admin/rooms/RoomNotice';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const initialFormValues: AdminRoomFormValues = {
   name: '',
@@ -47,6 +48,7 @@ function getImageUploadError(error: { response?: { status?: number; data?: unkno
 }
 
 export const AdminPage: React.FC = () => {
+  usePageTitle('Quản lý phòng');
   const principalId = useContext(AuthContext)?.principal?.id;
   const activePrincipalRef = useRef<string | undefined>(principalId);
   activePrincipalRef.current = principalId;

@@ -7,12 +7,14 @@ import { Field } from '@/components/common/Field';
 import { AuthNotice } from '../components/auth/AuthNotice';
 import { PasswordInput } from '../components/auth/PasswordInput';
 import { AuthContext } from '../context/auth-context-base';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { authApi } from '../services/auth.api';
 
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 
 /** Sets a new password from the emailed one-time link (`/reset-password?token=...`). */
 export const ResetPasswordPage: React.FC = () => {
+  usePageTitle('Đặt lại mật khẩu');
   const auth = useContext(AuthContext);
   const [searchParams, setSearchParams] = useSearchParams();
   // Keep the token in memory only and drop it from the address bar/history right away.

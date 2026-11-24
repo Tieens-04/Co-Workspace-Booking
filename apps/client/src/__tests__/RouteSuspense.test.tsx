@@ -4,6 +4,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Link, MemoryRouter, Outlet, Route, Routes } from 'react-router-dom';
 import { RouteSuspense } from '../components/RouteSuspense';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -60,12 +61,17 @@ describe('RouteSuspense (CWB-58)', () => {
       Promise.reject(new TypeError('Failed to fetch dynamically imported module')),
     );
 
+    function OkPage() {
+      usePageTitle('Trang khác');
+      return <p>Trang khác</p>;
+    }
+
     render(
       <MemoryRouter initialEntries={['/broken']}>
         <Routes>
           <Route element={<Shell />}>
             <Route path="broken" element={<BrokenPage />} />
-            <Route path="ok" element={<p>Trang khác</p>} />
+            <Route path="ok" element={<OkPage />} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -73,11 +79,17 @@ describe('RouteSuspense (CWB-58)', () => {
 
     const fallback = await screen.findByTestId('route-error');
     expect(fallback).toHaveTextContent('Không thể tải trang');
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(
+      screen.getByRole('heading', { level: 1, name: 'Không thể tải trang' }),
+    ).toBeInTheDocument();
+    expect(document.title).toBe('Không thể tải trang · Co-Space');
     expect(screen.getByTestId('route-error-retry')).toHaveTextContent('Tải lại trang');
     expect(screen.getByRole('navigation')).toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: 'Ok' }));
     expect(await screen.findByText('Trang khác')).toBeInTheDocument();
     expect(screen.queryByTestId('route-error')).not.toBeInTheDocument();
+    expect(document.title).toBe('Trang khác · Co-Space');
   });
 });

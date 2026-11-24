@@ -507,4 +507,42 @@ describe('RoomDetailPage', () => {
       expect(screen.queryByTestId('customer-booking-form')).not.toBeInTheDocument();
     });
   });
+
+  describe('Route title and h1 accessibility (CWB-95)', () => {
+    it('sets document.title to room name when loaded and resets cleanly on room switch or error', async () => {
+      const user = userEvent.setup();
+      vi.mocked(roomApi.getRoomById)
+        .mockResolvedValueOnce(mockRoomResponse())
+        .mockRejectedValueOnce({
+          name: 'AxiosError',
+          response: { status: 404, data: { code: 'ROOM_NOT_FOUND', message: 'Not found' } },
+        });
+
+      const { Link } = await import('react-router-dom');
+      render(
+        <MemoryRouter initialEntries={['/rooms/room-101']}>
+          <AuthProvider>
+            <nav>
+              <Link to="/rooms/room-missing">Phòng khác</Link>
+            </nav>
+            <Routes>
+              <Route path="/rooms/:id" element={<RoomDetailPage />} />
+              <Route path="/rooms" element={<div>Discovery List Page</div>} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      expect(await screen.findByText('Deluxe Meeting Space')).toBeInTheDocument();
+      expect(document.title).toBe('Deluxe Meeting Space · Co-Space');
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+
+      await user.click(screen.getByRole('link', { name: 'Phòng khác' }));
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Không tìm thấy phòng' }),
+      ).toBeInTheDocument();
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(document.title).toBe('Chi tiết phòng · Co-Space');
+    });
+  });
 });

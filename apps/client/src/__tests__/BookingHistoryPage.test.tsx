@@ -879,5 +879,18 @@ describe('BookingHistoryPage', () => {
         expect.any(AbortSignal),
       );
     });
+
+    it('keeps a single h1 and sets route title when empty state renders beneath PageHeader (CWB-95)', async () => {
+      vi.mocked(bookingApi.getBookings).mockResolvedValue(mockResponse([], 0, 0));
+
+      renderComponent();
+
+      expect(await screen.findByTestId('booking-history-empty')).toBeInTheDocument();
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Lịch sử đặt phòng' }),
+      ).toBeInTheDocument();
+      expect(document.title).toBe('Lịch sử đặt phòng · Co-Space');
+    });
   });
 });

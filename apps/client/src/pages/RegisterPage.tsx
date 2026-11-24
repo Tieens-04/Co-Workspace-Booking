@@ -14,8 +14,10 @@ import { Field } from '@/components/common/Field';
 import { Stagger, StaggerItem } from '../components/motion/Stagger';
 import { AuthNotice } from '../components/auth/AuthNotice';
 import { PasswordInput } from '../components/auth/PasswordInput';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export const RegisterPage: React.FC = () => {
+  usePageTitle('Đăng ký');
   const navigate = useNavigate();
 
   const [fullName, setFullName] = useState<string>('');
@@ -245,7 +247,7 @@ export const RegisterPage: React.FC = () => {
           Đã có tài khoản?{' '}
           <Link
             to="/login"
-            className="font-medium text-foreground underline decoration-input underline-offset-4 transition-colors duration-150 hover:decoration-foreground"
+            className="inline-flex min-h-9 items-center rounded-sm px-1 font-medium text-foreground underline decoration-input underline-offset-4 transition-colors duration-150 hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             Đăng nhập ngay
           </Link>

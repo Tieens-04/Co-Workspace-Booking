@@ -594,5 +594,15 @@ describe('BookingConfirmationPage', () => {
       expect(screen.getByTestId('confirmation-empty-state')).toBeInTheDocument();
       expect(screen.queryByTestId('booking-confirmation-view')).not.toBeInTheDocument();
     });
+
+    it('renders a single h1 and generic title when opened without an ID or state (CWB-95)', () => {
+      renderComponent();
+
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(
+        screen.getByRole('heading', { level: 1, name: 'Không tìm thấy thông tin đặt phòng' }),
+      ).toBeInTheDocument();
+      expect(document.title).toBe('Xác nhận đặt phòng · Co-Space');
+    });
   });
 });

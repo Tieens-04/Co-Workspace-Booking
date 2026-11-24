@@ -1,7 +1,25 @@
 import { Component, Suspense, type ErrorInfo, type ReactNode } from 'react';
 import { useLocation } from 'react-router-dom';
 import { ErrorState } from '@/components/common/EmptyState';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { PageLoading } from './PageLoading';
+
+function RouteErrorFallback() {
+  usePageTitle('Không thể tải trang');
+  return (
+    <div className="mx-auto w-full max-w-xl px-4 py-12">
+      <ErrorState
+        title="Không thể tải trang"
+        titleAs="h1"
+        description="Kết nối có thể đã bị gián đoạn hoặc ứng dụng vừa được cập nhật. Tải lại trang để thử lại."
+        retryLabel="Tải lại trang"
+        retryTestId="route-error-retry"
+        onRetry={() => window.location.reload()}
+        data-testid="route-error"
+      />
+    </div>
+  );
+}
 
 interface BoundaryProps {
   resetKey: string;
@@ -34,18 +52,7 @@ class RouteErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 
   render() {
     if (!this.state.error) return this.props.children;
-    return (
-      <div className="mx-auto w-full max-w-xl px-4 py-12">
-        <ErrorState
-          title="Không thể tải trang"
-          description="Kết nối có thể đã bị gián đoạn hoặc ứng dụng vừa được cập nhật. Tải lại trang để thử lại."
-          retryLabel="Tải lại trang"
-          retryTestId="route-error-retry"
-          onRetry={() => window.location.reload()}
-          data-testid="route-error"
-        />
-      </div>
-    );
+    return <RouteErrorFallback />;
   }
 }
 

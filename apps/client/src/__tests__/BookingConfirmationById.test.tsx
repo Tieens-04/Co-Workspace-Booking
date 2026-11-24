@@ -141,4 +141,34 @@ describe('Booking confirmation by id (CWB-70)', () => {
     expect(await screen.findByTestId('confirmation-empty-state')).toBeInTheDocument();
     expect(bookingApi.getBookingById).not.toHaveBeenCalled();
   });
+
+  it('sets dynamic title with booking code and uses a single h1 on empty and load-error states (CWB-95)', async () => {
+    vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce({
+      success: true,
+      message: 'OK',
+      data: booking,
+    });
+    const ok = render(view(auth('customer-1')));
+    expect(await screen.findByTestId('booking-confirmation-view')).toBeInTheDocument();
+    expect(document.title).toBe(`Xác nhận đặt phòng ${booking.bookingCode} · Co-Space`);
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    ok.unmount();
+
+    vi.mocked(bookingApi.getBookingById).mockRejectedValueOnce({ response: { status: 404 } });
+    const notFound = render(view(auth('customer-1')));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Không tìm thấy thông tin đặt phòng' }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(document.title).toBe('Xác nhận đặt phòng · Co-Space');
+    notFound.unmount();
+
+    vi.mocked(bookingApi.getBookingById).mockRejectedValueOnce({ response: { status: 500 } });
+    render(view(auth('customer-1')));
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Không thể tải thông tin đặt phòng' }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+    expect(document.title).toBe('Xác nhận đặt phòng · Co-Space');
+  });
 });

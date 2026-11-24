@@ -8,6 +8,7 @@ import { Pagination } from '@/components/common/Pagination';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../hooks/useToast';
 import {
   adminEmailOutboxApi,
@@ -59,6 +60,7 @@ const errorMessage = (err: unknown, fallback: string) =>
 
 /** ADMIN view of booking email delivery with manual requeue for FAILED/SKIPPED (CWB-68). */
 export const AdminEmailsPage: React.FC = () => {
+  usePageTitle('Email thông báo');
   const { showToast } = useToast();
   const [items, setItems] = useState<EmailOutboxItem[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
