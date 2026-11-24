@@ -19,6 +19,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { AmenityIcon } from '../components/rooms/AmenityIcon';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../hooks/useToast';
 import { adminAmenityApi, AdminAmenity } from '../services/admin-amenity.api';
 
@@ -29,6 +30,7 @@ const errorMessage = (err: unknown, fallback: string) =>
 
 /** ADMIN amenity catalog: create, edit and delete only when no room uses the amenity. */
 export const AdminAmenitiesPage: React.FC = () => {
+  usePageTitle('Danh mục tiện ích');
   const { showToast } = useToast();
   const [amenities, setAmenities] = useState<AdminAmenity[]>([]);
   const [isLoading, setIsLoading] = useState(true);

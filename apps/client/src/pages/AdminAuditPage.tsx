@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import { usePageTitle } from '../hooks/usePageTitle';
 import {
   adminAuditApi,
   AUDIT_ACTION_LABELS,
@@ -35,6 +36,7 @@ const ENTITY_LABELS: Record<string, string> = {
 
 /** ADMIN read-only trail of admin booking and room status changes (CWB-67). */
 export const AdminAuditPage: React.FC = () => {
+  usePageTitle('Lịch sử thao tác');
   const [events, setEvents] = useState<AuditEvent[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
   const [page, setPage] = useState(1);

@@ -2,8 +2,10 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 export const NotFoundPage: React.FC = () => {
+  usePageTitle('Không tìm thấy trang');
   return (
     <section className="container-page grid flex-1 content-center gap-10 py-20 md:grid-cols-[auto_minmax(0,1fr)] md:items-end md:gap-16 md:py-28">
       <h1 className="text-[clamp(6.5rem,3.5rem+13vw,14rem)] leading-[0.86] font-extrabold tracking-[-0.06em] tabular-nums">

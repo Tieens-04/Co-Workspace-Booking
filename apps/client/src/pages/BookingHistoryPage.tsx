@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult, BookingHistoryView } from '../types/booking';
 import { PaginationMeta } from '../types/room';
@@ -40,6 +41,7 @@ const DEFAULT_PAGINATION: PaginationMeta = {
 };
 
 export const BookingHistoryPage: React.FC = () => {
+  usePageTitle('Lịch sử đặt phòng');
   const { principal } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 

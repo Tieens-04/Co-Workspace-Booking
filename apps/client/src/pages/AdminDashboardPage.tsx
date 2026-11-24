@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Pagination } from '@/components/common/Pagination';
+import { usePageTitle } from '../hooks/usePageTitle';
 
 const SCHEDULE_PAGE_SIZE = 20;
 
@@ -32,6 +33,7 @@ const getErrorMessage = (err: unknown, fallback: string): string => {
 };
 
 export const AdminDashboardPage: React.FC = () => {
+  usePageTitle('Tổng quan quản trị');
   const [period, setPeriod] = useState<DashboardPeriodType>('day');
   const [selectedDate, setSelectedDate] = useState<string>(() => getVietnamTodayString());
   // CWB-57: the room schedule is paginated server-side.

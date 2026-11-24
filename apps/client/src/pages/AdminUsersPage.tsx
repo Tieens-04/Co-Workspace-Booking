@@ -20,6 +20,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Textarea } from '@/components/ui/textarea';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../hooks/useToast';
 import { useReturnFocus } from '../hooks/useReturnFocus';
 import {
@@ -56,6 +57,7 @@ interface LockOutcome {
 
 /** ADMIN customer management: search accounts, lock/unlock customers with a reason (CWB-79). */
 export const AdminUsersPage: React.FC = () => {
+  usePageTitle('Khách hàng');
   const { showToast } = useToast();
   const [items, setItems] = useState<AdminUserItem[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);

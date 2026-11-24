@@ -21,6 +21,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { EmailVerificationNotice } from '../components/auth/EmailVerificationNotice';
 import { PasswordInput } from '../components/auth/PasswordInput';
 import { useAuth } from '../hooks/useAuth';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useReturnFocus } from '../hooks/useReturnFocus';
 import { useToast } from '../hooks/useToast';
 import { meApi } from '../services/me.api';
@@ -46,6 +47,7 @@ const errorMessage = (err: unknown, fallback: string) =>
 
 /** Personal profile (name, phone) and password change for any signed-in role. */
 export const AccountPage: React.FC = () => {
+  usePageTitle('Thông tin tài khoản');
   const { principal, login, logout, applyProfile } = useAuth();
   const { showToast } = useToast();
   const principalId = principal?.id;
