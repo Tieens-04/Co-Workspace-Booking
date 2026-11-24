@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../hooks/useToast';
 import { bookingApi } from '../services/booking.api';
 import { BookingResult } from '../types/booking';
@@ -87,6 +88,12 @@ export const BookingDetailPage: React.FC = () => {
   const effectiveIsLoading = !isCurrentId || state.isLoading;
   const effectiveIsNotFound = isCurrentId && state.isNotFound;
   const effectiveErrorMessage = isCurrentId ? state.errorMessage : null;
+
+  usePageTitle(
+    !effectiveIsLoading && !effectiveIsNotFound && !effectiveErrorMessage && effectiveBooking
+      ? `Chi tiết đặt phòng ${effectiveBooking.bookingCode}`
+      : 'Chi tiết đặt phòng',
+  );
 
   // Stale request guards
   const requestIdRef = useRef<number>(0);
@@ -338,7 +345,7 @@ export const BookingDetailPage: React.FC = () => {
       <div className="mx-auto grid max-w-3xl gap-8">
         <Link
           to="/bookings"
-          className="inline-flex items-center gap-1.5 justify-self-start text-sm text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline"
+          className="inline-flex min-h-11 items-center gap-1.5 justify-self-start rounded-sm text-sm text-muted-foreground underline-offset-4 transition-colors duration-150 hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           <ArrowLeft aria-hidden="true" className="size-4" /> Quay lại lịch sử đặt phòng
         </Link>
@@ -366,6 +373,7 @@ export const BookingDetailPage: React.FC = () => {
             data-testid="booking-not-found-state"
             icon={SearchX}
             title="Không tìm thấy thông tin đặt phòng"
+            titleAs="h1"
             description="Đơn đặt phòng này không tồn tại hoặc bạn không có quyền truy cập vào thông tin này."
             action={
               <div className="flex flex-wrap gap-2">
@@ -387,6 +395,7 @@ export const BookingDetailPage: React.FC = () => {
         {!effectiveIsLoading && !effectiveIsNotFound && effectiveErrorMessage && (
           <ErrorState
             title="Lỗi kết nối máy chủ"
+            titleAs="h1"
             description={effectiveErrorMessage}
             onRetry={fetchDetail}
           />

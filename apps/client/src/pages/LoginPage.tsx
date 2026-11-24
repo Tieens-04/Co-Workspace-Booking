@@ -4,6 +4,7 @@ import axios from 'axios';
 import { AnimatePresence, m } from 'motion/react';
 import { DURATION, EASE_EDITORIAL } from '@/lib/motion';
 import { useAuth } from '../hooks/useAuth';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { authApi } from '../services/auth.api';
 import { ApiErrorResponse } from '../types/auth';
 import { loginSchema } from '../utils/validation';
@@ -18,6 +19,7 @@ import { AuthNotice } from '../components/auth/AuthNotice';
 import { PasswordInput } from '../components/auth/PasswordInput';
 
 export const LoginPage: React.FC = () => {
+  usePageTitle('Đăng nhập');
   const navigate = useNavigate();
   const location = useLocation();
   const { login, sessionExpired, clearSessionExpiredNotice } = useAuth();
@@ -217,7 +219,7 @@ export const LoginPage: React.FC = () => {
             </Field>
             <Link
               to="/forgot-password"
-              className="-mt-2 justify-self-end text-sm text-muted-foreground underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground"
+              className="-my-1.5 inline-flex min-h-9 items-center justify-self-end rounded-sm px-1 text-sm text-muted-foreground underline decoration-input underline-offset-4 hover:text-foreground hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               data-testid="forgot-password-link"
             >
               Quên mật khẩu?
@@ -236,7 +238,7 @@ export const LoginPage: React.FC = () => {
           Chưa có tài khoản?{' '}
           <Link
             to="/register"
-            className="font-medium text-foreground underline decoration-input underline-offset-4 transition-colors duration-150 hover:decoration-foreground"
+            className="inline-flex min-h-9 items-center rounded-sm px-1 font-medium text-foreground underline decoration-input underline-offset-4 transition-colors duration-150 hover:decoration-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             Đăng ký ngay
           </Link>

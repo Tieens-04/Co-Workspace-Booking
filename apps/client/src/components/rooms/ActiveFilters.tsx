@@ -99,7 +99,7 @@ export function ActiveFilters({
           type="button"
           variant="link"
           size="sm"
-          className="ml-1 text-[0.8125rem]"
+          className="ml-1 min-h-9 px-1 text-[0.8125rem]"
           onClick={onClearAll}
         >
           <RotateCcw aria-hidden="true" className="size-3.5" />

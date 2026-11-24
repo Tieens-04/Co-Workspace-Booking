@@ -4,6 +4,7 @@ import { roomApi } from '../services/room.api';
 import { RoomDetail } from '../types/room';
 import { formatVnd } from '../utils/format';
 import { useAuth } from '../hooks/useAuth';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { BookingForm } from '../components/BookingForm';
 import { CircleCheck, SearchX, Wrench } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -47,6 +48,7 @@ export const RoomDetailPage: React.FC = () => {
 
   const fetchRoom = (roomId: string, signal?: AbortSignal) => {
     setLoading(true);
+    setRoom(null);
     setErrorCode(null);
     setErrorMessage(null);
 
@@ -89,10 +91,13 @@ export const RoomDetailPage: React.FC = () => {
     setImageErrorMap((prev) => ({ ...prev, [imgId]: true }));
   };
 
-  const isMaintenance = room?.status === 'MAINTENANCE';
+  const activeRoom = !loading && !errorCode && room?.id === id ? room : null;
+  usePageTitle(activeRoom?.name ?? 'Chi tiết phòng');
+
+  const isMaintenance = activeRoom?.status === 'MAINTENANCE';
   // Admins see a notice instead of a form, and maintenance rooms take no bookings: no CTA then.
   const showMobileBar =
-    !loading && Boolean(room) && isMobile && !isMaintenance && principal?.role !== 'ADMIN';
+    Boolean(activeRoom) && isMobile && !isMaintenance && principal?.role !== 'ADMIN';
 
   return (
     <div
@@ -163,22 +168,26 @@ export const RoomDetailPage: React.FC = () => {
         </section>
       )}
 
-      {!loading && room && (
+      {activeRoom && (
         <article className="mt-4 md:mt-6">
           <header className="flex flex-col gap-4 border-b pb-6 sm:flex-row sm:items-end sm:justify-between">
             <div className="grid min-w-0 gap-3">
               <p className="eyebrow">Không gian làm việc</p>
               <SplitReveal
-                key={room.id}
+                key={activeRoom.id}
                 as="h1"
                 by="chars"
                 trigger="mount"
                 className="text-display-lg font-bold"
               >
-                {room.name}
+                {activeRoom.name}
               </SplitReveal>
             </div>
-            <StatusBadge kind="room" status={room.status} className="self-start sm:self-end" />
+            <StatusBadge
+              kind="room"
+              status={activeRoom.status}
+              className="self-start sm:self-end"
+            />
           </header>
 
           {isMaintenance && (
@@ -196,7 +205,7 @@ export const RoomDetailPage: React.FC = () => {
                 </p>
                 <Link
                   to={backUrl}
-                  className="mt-1 text-sm font-semibold text-status-maintenance underline underline-offset-4"
+                  className="inline-flex min-h-9 items-center justify-self-start rounded-sm text-sm font-semibold text-status-maintenance underline underline-offset-4 focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
                 >
                   Xem phòng khác
                 </Link>
@@ -207,8 +216,8 @@ export const RoomDetailPage: React.FC = () => {
           <div className={cn('mt-6 grid gap-12 md:mt-8 lg:items-start', LAYOUT_COLUMNS)}>
             <div className="min-w-0">
               <RoomGallery
-                roomName={room.name}
-                images={room.images ?? []}
+                roomName={activeRoom.name}
+                images={activeRoom.images ?? []}
                 activeIndex={activeImageIndex}
                 onSelect={setActiveImageIndex}
                 failedImageIds={imageErrorMap}
@@ -217,8 +226,8 @@ export const RoomDetailPage: React.FC = () => {
 
               <dl className="mt-10 grid grid-cols-2 border-t md:grid-cols-4">
                 {[
-                  { label: 'Giá thuê theo giờ', value: formatVnd(room.pricePerHour) },
-                  { label: 'Sức chứa tối đa', value: `${room.capacity} người` },
+                  { label: 'Giá thuê theo giờ', value: formatVnd(activeRoom.pricePerHour) },
+                  { label: 'Sức chứa tối đa', value: `${activeRoom.capacity} người` },
                   { label: 'Thời lượng mỗi lượt', value: '1 – 8 giờ' },
                   { label: 'Bước đặt', value: '30 phút' },
                 ].map((spec) => (
@@ -234,7 +243,9 @@ export const RoomDetailPage: React.FC = () => {
                   Mô tả phòng
                 </h2>
                 <p className="max-w-[65ch] text-[1.0625rem] leading-relaxed text-foreground">
-                  {room.description ? room.description : 'Chưa có mô tả chi tiết cho phòng này.'}
+                  {activeRoom.description
+                    ? activeRoom.description
+                    : 'Chưa có mô tả chi tiết cho phòng này.'}
                 </p>
               </section>
 
@@ -242,12 +253,12 @@ export const RoomDetailPage: React.FC = () => {
                 <h2 id="room-amenities" className="text-h3 font-bold">
                   Tiện ích sẵn có{' '}
                   <span className="font-medium text-muted-foreground tabular-nums">
-                    ({room.amenities.length})
+                    ({activeRoom.amenities.length})
                   </span>
                 </h2>
-                {room.amenities.length > 0 ? (
+                {activeRoom.amenities.length > 0 ? (
                   <ul className="grid gap-3 sm:grid-cols-2">
-                    {room.amenities.map((amenity) => (
+                    {activeRoom.amenities.map((amenity) => (
                       <li
                         key={amenity.id}
                         className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3.5 rounded-xl border bg-card p-4"
@@ -300,10 +311,10 @@ export const RoomDetailPage: React.FC = () => {
               className="min-w-0 scroll-mt-24 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-ring lg:sticky lg:top-24 lg:max-h-[calc(100dvh-7rem)] lg:overflow-y-auto lg:overscroll-contain"
             >
               <BookingForm
-                roomId={room.id}
-                roomName={room.name}
-                roomStatus={room.status}
-                pricePerHour={room.pricePerHour}
+                roomId={activeRoom.id}
+                roomName={activeRoom.name}
+                roomStatus={activeRoom.status}
+                pricePerHour={activeRoom.pricePerHour}
                 isAuthenticated={isAuthenticated}
                 userRole={principal?.role}
                 userId={principal?.id}
@@ -312,7 +323,7 @@ export const RoomDetailPage: React.FC = () => {
           </div>
 
           {showMobileBar && (
-            <MobileBookingBar pricePerHour={room.pricePerHour} targetId={BOOKING_PANEL_ID} />
+            <MobileBookingBar pricePerHour={activeRoom.pricePerHour} targetId={BOOKING_PANEL_ID} />
           )}
         </article>
       )}

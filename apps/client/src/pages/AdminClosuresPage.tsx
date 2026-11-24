@@ -48,6 +48,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../hooks/useToast';
 import { adminClosureApi } from '../services/admin-closure.api';
 import { adminRoomApi } from '../services/admin-room.api';
@@ -74,6 +75,7 @@ const formatDisplayTime = (isoString: string): string => {
 };
 
 export const AdminClosuresPage: React.FC = () => {
+  usePageTitle('Quản lý khung đóng cửa');
   const { showToast } = useToast();
   const [closures, setClosures] = useState<ClosureItem[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta | null>(null);
@@ -396,9 +398,10 @@ export const AdminClosuresPage: React.FC = () => {
               </NativeSelect>
             </Field>
 
-            <div className="flex items-center gap-2 pb-2">
+            <div className="flex min-h-10 items-center gap-2.5 sm:pb-1">
               <Checkbox
                 id={filterUpcomingId}
+                className="size-6"
                 checked={upcomingOnly}
                 onChange={(e) => {
                   setUpcomingOnly(e.target.checked);

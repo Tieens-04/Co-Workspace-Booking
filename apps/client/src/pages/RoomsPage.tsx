@@ -36,6 +36,7 @@ import {
   GetRoomsParams,
 } from '../types/room';
 import { useDebounce } from '../hooks/useDebounce';
+import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../hooks/useToast';
 import {
   normalizeRoomSearchParams,
@@ -47,6 +48,7 @@ import { DEFAULT_MAX_ADVANCE_DAYS } from '../utils/bookingTime';
 const PAGE_LIMIT = 10;
 
 export const RoomsPage: React.FC = () => {
+  usePageTitle('Danh sách phòng');
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const isMobile = useMediaQuery(MOBILE_FILTERS_QUERY);
@@ -647,14 +649,14 @@ export const RoomsPage: React.FC = () => {
               value={qInput}
               maxLength={100}
               onChange={(e) => setQInput(e.target.value)}
-              className="h-10 pl-10 pr-9 text-sm"
+              className="h-10 pl-10 pr-11 text-sm"
             />
             {qInput && (
               <button
                 type="button"
                 onClick={() => setQInput('')}
                 aria-label="Xóa từ khóa tìm kiếm"
-                className="absolute top-1/2 right-3 -translate-y-1/2 text-muted-foreground transition-colors hover:text-foreground"
+                className="absolute top-1/2 right-1 inline-flex size-9 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
               >
                 <X aria-hidden="true" className="size-4" />
               </button>
