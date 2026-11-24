@@ -1668,4 +1668,79 @@ describe('BookingDetailPage', () => {
       expect(screen.queryByTestId('reschedule-rooms-error')).not.toBeInTheDocument();
     });
   });
+
+  describe('Route title and page-level h1 (CWB-95)', () => {
+    it('sets booking code title when loaded and falls back with single h1 on 404 and server error', async () => {
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
+
+      const first = renderComponent();
+      expect(await screen.findByTestId('booking-detail-card')).toBeInTheDocument();
+      expect(document.title).toBe(`Chi tiết đặt phòng ${mockDetailData.bookingCode} · Co-Space`);
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      first.unmount();
+
+      vi.mocked(bookingApi.getBookingById).mockRejectedValueOnce({
+        response: { status: 404, data: { code: 'BOOKING_NOT_FOUND' } },
+      });
+      const second = renderComponent();
+      expect(
+        await screen.findByRole('heading', {
+          level: 1,
+          name: 'Không tìm thấy thông tin đặt phòng',
+        }),
+      ).toBeInTheDocument();
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(document.title).toBe('Chi tiết đặt phòng · Co-Space');
+      second.unmount();
+
+      vi.mocked(bookingApi.getBookingById).mockRejectedValueOnce(new Error('Lỗi kết nối'));
+      renderComponent();
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Lỗi kết nối máy chủ' }),
+      ).toBeInTheDocument();
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(document.title).toBe('Chi tiết đặt phòng · Co-Space');
+    });
+
+    it('drops stale booking code from title when navigating to an invalid booking ID', async () => {
+      const user = userEvent.setup();
+      vi.mocked(bookingApi.getBookingById).mockResolvedValueOnce(
+        mockDetailResponse(mockDetailData),
+      );
+
+      function Switcher() {
+        const navigate = useNavigate();
+        return (
+          <button type="button" onClick={() => navigate('/bookings/not-a-uuid')}>
+            Sang đơn lỗi
+          </button>
+        );
+      }
+
+      render(
+        <MemoryRouter initialEntries={[`/bookings/${validBookingId}`]}>
+          <AuthProvider>
+            <Switcher />
+            <Routes>
+              <Route path="/bookings/:id" element={<BookingDetailPage />} />
+            </Routes>
+          </AuthProvider>
+        </MemoryRouter>,
+      );
+
+      expect(await screen.findByTestId('booking-detail-card')).toBeInTheDocument();
+      expect(document.title).toBe(`Chi tiết đặt phòng ${mockDetailData.bookingCode} · Co-Space`);
+
+      await user.click(screen.getByRole('button', { name: 'Sang đơn lỗi' }));
+      expect(
+        await screen.findByRole('heading', {
+          level: 1,
+          name: 'Không tìm thấy thông tin đặt phòng',
+        }),
+      ).toBeInTheDocument();
+      expect(document.title).toBe('Chi tiết đặt phòng · Co-Space');
+    });
+  });
 });

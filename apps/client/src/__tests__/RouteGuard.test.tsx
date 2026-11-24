@@ -464,5 +464,23 @@ describe('RouteGuard and Navigation', () => {
         apiClient.defaults.adapter = originalAdapter;
       }
     });
+
+    it('sets page title and single h1 on 403 forbidden and 404 not-found screens', () => {
+      const customerToken = createMockJwt({ sub: 'c-1', role: 'CUSTOMER' });
+      localStorage.setItem(TOKEN_STORAGE_KEY, customerToken);
+
+      const forbidden = renderWithRoutes('/admin');
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(
+        screen.getByRole('heading', { level: 1, name: '403 - Không có quyền truy cập' }),
+      ).toBeInTheDocument();
+      expect(document.title).toBe('Không có quyền truy cập · Co-Space');
+      forbidden.unmount();
+
+      renderWithRoutes('/khong-ton-tai');
+      expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
+      expect(screen.getByRole('heading', { level: 1, name: '404' })).toBeInTheDocument();
+      expect(document.title).toBe('Không tìm thấy trang · Co-Space');
+    });
   });
 });
