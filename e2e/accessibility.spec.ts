@@ -12,12 +12,18 @@ async function expectSingleH1(page: Page, name?: string | RegExp) {
   }
 }
 
+// Chromium's CDP serializes quad vertices as IEEE-754 float32 (gfx::PointF), so
+// `bottom - top` across a binary exponent boundary (e.g. y = 1024) loses 1 ULP (~0.000061px).
+const FLOAT32_EPSILON = 0.01;
+
 async function expectMinTarget(locator: Locator, minSize = 24) {
   await expect(locator).toBeVisible();
-  const box = await locator.boundingBox();
-  expect(box).not.toBeNull();
-  expect(box!.width).toBeGreaterThanOrEqual(minSize);
-  expect(box!.height).toBeGreaterThanOrEqual(minSize);
+  await expect
+    .poll(async () => {
+      const box = await locator.boundingBox();
+      return box ? Math.min(box.width, box.height) : 0;
+    })
+    .toBeGreaterThanOrEqual(minSize - FLOAT32_EPSILON);
 }
 
 test('public room discovery, detail, and not-found routes set titles, keep a single h1, and meet touch target sizes', async ({
@@ -50,8 +56,12 @@ test('public room discovery, detail, and not-found routes set titles, keep a sin
   await noOverflow(page);
 
   const searchInput = page.getByRole('searchbox', { name: 'Tìm kiếm phòng theo tên' });
+  const filteredRoomsResponse = page.waitForResponse(
+    (res) => res.url().includes('/api/v1/rooms') && res.url().includes('q=') && res.ok(),
+  );
   await searchInput.fill(scenario.room.name);
   await expect(page).toHaveURL(new RegExp(`q=${encodeURIComponent(scenario.room.name)}`));
+  await filteredRoomsResponse;
 
   const detailLink = page.getByRole('link', { name: `Xem chi tiết ${scenario.room.name}` });
   await expectMinTarget(detailLink, 44);
