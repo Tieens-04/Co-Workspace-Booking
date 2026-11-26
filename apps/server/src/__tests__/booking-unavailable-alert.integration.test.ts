@@ -561,8 +561,10 @@ describe('Unavailable Booking Alerts & Handling (CWB-91, real MySQL)', () => {
   });
 
   it('R01: excludes ended checked-in CONFIRMED bookings from roomUnavailable, needsAttention=true, closure enqueue, and outbox delivery', async () => {
-    const pastStart = new Date(Date.now() - 4 * HOUR);
-    const pastEnd = new Date(Date.now() - 2 * HOUR);
+    const slotFloor = Math.floor(Date.now() / (30 * 60 * 1000)) * 30 * 60 * 1000;
+    const pastStart = new Date(slotFloor - 4 * HOUR);
+    const pastEnd = new Date(slotFloor - 2 * HOUR);
+    const ongoingClosureEnd = new Date(slotFloor + 2 * HOUR);
 
     const pastCheckedIn = await createBookingRecord({
       roomId: roomAId,
@@ -578,7 +580,7 @@ describe('Unavailable Booking Alerts & Handling (CWB-91, real MySQL)', () => {
       .send({
         roomId: roomAId,
         startTime: pastStart.toISOString(),
-        endTime: pastEnd.toISOString(),
+        endTime: ongoingClosureEnd.toISOString(),
         reason: 'Sửa chữa sau khi khách check-in kết thúc',
         acknowledgeConflictingBookings: true,
       });

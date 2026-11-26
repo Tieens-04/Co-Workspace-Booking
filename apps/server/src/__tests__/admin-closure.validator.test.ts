@@ -79,6 +79,87 @@ describe('Admin Closure Validators', () => {
       const result = createClosureSchema.safeParse(input);
       expect(result.success).toBe(false);
     });
+
+    it('accepts :00 and :30 bounds across ISO offsets (Z, +07:00, -05:00)', () => {
+      for (const [startTime, endTime] of [
+        ['2026-12-01T08:00:00.000Z', '2026-12-01T12:30:00.000Z'],
+        ['2026-12-01T08:30:00+07:00', '2026-12-01T12:00:00+07:00'],
+        ['2026-12-01T08:00:00.000-05:00', '2026-12-01T10:30:00.000-05:00'],
+      ]) {
+        const result = createClosureSchema.safeParse({
+          startTime,
+          endTime,
+          reason: 'Bảo trì định kỳ',
+        });
+        expect(result.success).toBe(true);
+      }
+    });
+
+    it('rejects misaligned minutes (10:07, 11:13) on startTime alone, endTime alone, and both', () => {
+      const badStart = createClosureSchema.safeParse({
+        startTime: '2026-12-01T10:07:00.000+07:00',
+        endTime: '2026-12-01T11:30:00.000+07:00',
+        reason: 'Bảo trì',
+      });
+      expect(badStart.success).toBe(false);
+      if (!badStart.success) {
+        expect(badStart.error.issues.map((i) => i.path)).toEqual([['startTime']]);
+      }
+
+      const badEnd = createClosureSchema.safeParse({
+        startTime: '2026-12-01T10:00:00.000+07:00',
+        endTime: '2026-12-01T11:13:00.000+07:00',
+        reason: 'Bảo trì',
+      });
+      expect(badEnd.success).toBe(false);
+      if (!badEnd.success) {
+        expect(badEnd.error.issues.map((i) => i.path)).toEqual([['endTime']]);
+      }
+
+      const badBoth = createClosureSchema.safeParse({
+        startTime: '2026-12-01T10:07:00.000+07:00',
+        endTime: '2026-12-01T11:13:00.000+07:00',
+        reason: 'Bảo trì',
+      });
+      expect(badBoth.success).toBe(false);
+      if (!badBoth.success) {
+        expect(badBoth.error.issues.map((i) => i.path)).toEqual([['startTime'], ['endTime']]);
+      }
+    });
+
+    it('rejects non-zero seconds and non-zero milliseconds', () => {
+      const badSeconds = createClosureSchema.safeParse({
+        startTime: '2026-12-01T08:00:01.000Z',
+        endTime: '2026-12-01T12:00:00.000Z',
+        reason: 'Bảo trì',
+      });
+      expect(badSeconds.success).toBe(false);
+      if (!badSeconds.success) {
+        expect(badSeconds.error.issues.map((i) => i.path)).toEqual([['startTime']]);
+      }
+
+      const badMs = createClosureSchema.safeParse({
+        startTime: '2026-12-01T08:00:00.000Z',
+        endTime: '2026-12-01T12:30:00.500Z',
+        reason: 'Bảo trì',
+      });
+      expect(badMs.success).toBe(false);
+      if (!badMs.success) {
+        expect(badMs.error.issues.map((i) => i.path)).toEqual([['endTime']]);
+      }
+    });
+
+    it('keeps endTime <= startTime rejection on aligned bounds with endTime path', () => {
+      const result = createClosureSchema.safeParse({
+        startTime: '2026-12-01T12:00:00.000Z',
+        endTime: '2026-12-01T12:00:00.000Z',
+        reason: 'Bảo trì',
+      });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues.map((i) => i.path)).toEqual([['endTime']]);
+      }
+    });
   });
 
   describe('updateClosureSchema', () => {
@@ -86,6 +167,20 @@ describe('Admin Closure Validators', () => {
       const input = { reason: 'Cập nhật lý do' };
       const result = updateClosureSchema.safeParse(input);
       expect(result.success).toBe(true);
+    });
+
+    it('accepts legacy misaligned ISO timestamps so repository can allow reason-only edits after lock', () => {
+      const result = updateClosureSchema.safeParse({
+        startTime: '2024-01-01T10:07:00.000+07:00',
+        endTime: '2024-01-01T11:13:00.000+07:00',
+        reason: 'Cập nhật ghi chú lịch sử',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('rejects malformed ISO timestamps in update payload', () => {
+      expect(updateClosureSchema.safeParse({ startTime: 'not-iso' }).success).toBe(false);
+      expect(updateClosureSchema.safeParse({ endTime: '2026-12-01T10:00:00' }).success).toBe(false);
     });
 
     it('rejects update if endTime <= startTime when both provided', () => {

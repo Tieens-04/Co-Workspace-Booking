@@ -1,9 +1,15 @@
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import request from 'supertest';
 import { randomUUID } from 'node:crypto';
 import { Role, RoomStatus, BookingStatus, PaymentStatus, Prisma } from '@prisma/client';
 import app from '../app.js';
 import prisma from '../utils/prisma.util.js';
+import { generateToken } from '../utils/jwt.util.js';
+import {
+  CLOSURE_ENDED_MESSAGE,
+  CLOSURE_RANGE_ORDER_MESSAGE,
+  CLOSURE_SLOT_ALIGNMENT_MESSAGES,
+} from '../validators/admin-closure.validator.js';
 import { TestAccounts } from './support/test-accounts.js';
 import { testBookingCode } from './support/test-booking-code.js';
 
@@ -129,18 +135,23 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
   });
 
   afterAll(async () => {
+    const cwb96Rooms = await prisma.room.findMany({
+      where: { name: { startsWith: `${testPrefix}_cwb96_` } },
+      select: { id: true },
+    });
+    const allTestRoomIds = [testRoomAId, testRoomBId, ...cwb96Rooms.map((r) => r.id)];
     await prisma.closure.deleteMany({
       where: {
-        OR: [{ roomId: { in: [testRoomAId, testRoomBId] } }, { reason: { contains: testPrefix } }],
+        OR: [{ roomId: { in: allTestRoomIds } }, { reason: { contains: testPrefix } }],
       },
     });
     await prisma.booking.deleteMany({
       where: {
-        roomId: { in: [testRoomAId, testRoomBId] },
+        roomId: { in: allTestRoomIds },
       },
     });
     await prisma.room.deleteMany({
-      where: { id: { in: [testRoomAId, testRoomBId] } },
+      where: { id: { in: allTestRoomIds } },
     });
     await prisma.user.deleteMany({
       where: { id: testUserId },
@@ -1781,6 +1792,497 @@ describe('Admin Closure API & Availability/Booking Blocking Integration Tests (M
       expect(plan.query_block.ordering_operation.using_filesort).toBe(false);
       expect(plan.query_block.ordering_operation.table.key).toBe('PRIMARY');
       expect(plan.query_block.ordering_operation.table.possible_keys).toBeUndefined();
+    });
+  });
+
+  describe('12. Closure Time & Slot Validation (CWB-96)', () => {
+    const slotFloorMs = () => Math.floor(Date.now() / (30 * 60 * 1000)) * 30 * 60 * 1000;
+    const createIsolatedRoom = (suffix: string, status: RoomStatus = RoomStatus.AVAILABLE) =>
+      prisma.room.create({
+        data: {
+          name: `${testPrefix}_cwb96_${suffix}_${randomUUID().slice(0, 6)}`,
+          capacity: 6,
+          pricePerHour: new Prisma.Decimal('150.00'),
+          status,
+        },
+      });
+
+    it('rejects POST completely in the past with 400 CLOSURE_ENDED before conflict check, creating 0 closures or audits', async () => {
+      const room = await createIsolatedRoom('past_post');
+      const floor = slotFloorMs();
+      const pastStart = new Date(floor - 48 * 60 * 60 * 1000);
+      const pastEnd = new Date(floor - 47 * 60 * 60 * 1000);
+
+      try {
+        await prisma.booking.create({
+          data: {
+            bookingCode: testBookingCode(pastStart.toISOString().slice(0, 10).replace(/-/g, '')),
+            userId: testUserId,
+            roomId: room.id,
+            startTime: pastStart,
+            endTime: pastEnd,
+            totalAmount: new Prisma.Decimal('150.00'),
+            status: BookingStatus.CONFIRMED,
+            paymentStatus: PaymentStatus.UNPAID,
+          },
+        });
+
+        const beforeAudits = await prisma.auditEvent.count({
+          where: { entityType: 'CLOSURE', action: 'CLOSURE_CREATED', actorId: adminUserId },
+        });
+
+        const res = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: room.id,
+            startTime: pastStart.toISOString(),
+            endTime: pastEnd.toISOString(),
+            reason: `${testPrefix} Past closure`,
+          });
+
+        expect(res.status).toBe(400);
+        expect(res.body.code).toBe('CLOSURE_ENDED');
+        expect(res.body.details).toEqual([{ field: 'endTime', message: CLOSURE_ENDED_MESSAGE }]);
+        expect(await prisma.closure.count({ where: { roomId: room.id } })).toBe(0);
+        expect(
+          await prisma.auditEvent.count({
+            where: { entityType: 'CLOSURE', action: 'CLOSURE_CREATED', actorId: adminUserId },
+          }),
+        ).toBe(beforeAudits);
+      } finally {
+        await prisma.closure.deleteMany({ where: { roomId: room.id } });
+        await prisma.booking.deleteMany({ where: { roomId: room.id } });
+        await prisma.room.deleteMany({ where: { id: room.id } });
+      }
+    });
+
+    it('allows POST for an ongoing slot-aligned closure (startTime < now < endTime) and records audit', async () => {
+      const room = await createIsolatedRoom('ongoing_post');
+      const floor = slotFloorMs();
+      const start = new Date(floor - 60 * 60 * 1000);
+      const end = new Date(floor + 2 * 60 * 60 * 1000);
+
+      try {
+        const res = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: room.id,
+            startTime: start.toISOString(),
+            endTime: end.toISOString(),
+            reason: `${testPrefix} Ongoing closure`,
+          });
+
+        expect(res.status).toBe(201);
+        const closureId = res.body.data.id as string;
+        const audit = await prisma.auditEvent.findFirst({
+          where: { entityType: 'CLOSURE', entityId: closureId, action: 'CLOSURE_CREATED' },
+        });
+        expect(audit).not.toBeNull();
+      } finally {
+        await prisma.closure.deleteMany({ where: { roomId: room.id } });
+        await prisma.room.deleteMany({ where: { id: room.id } });
+      }
+    });
+
+    it('enforces endTime === now rejection, endTime - 1ms acceptance, and post-lock clock expiry on POST', async () => {
+      const room = await createIsolatedRoom('clock_post');
+      const start = new Date('2030-06-10T02:00:00.000Z');
+      const end = new Date('2030-06-10T04:00:00.000Z');
+      const endMs = end.getTime();
+      let releaseBlocker: (() => void) | undefined;
+      const pending: Array<Promise<unknown>> = [];
+
+      try {
+        vi.useFakeTimers({ toFake: ['Date'] });
+
+        // 1. Exactly at endTime -> 400 CLOSURE_ENDED
+        vi.setSystemTime(endMs);
+        const exactToken = generateToken({ sub: adminUserId, role: Role.ADMIN });
+        const beforeExactAudits = await prisma.auditEvent.count({
+          where: { entityType: 'CLOSURE', action: 'CLOSURE_CREATED', actorId: adminUserId },
+        });
+        const exactRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${exactToken}`)
+          .send({
+            roomId: room.id,
+            startTime: start.toISOString(),
+            endTime: end.toISOString(),
+            reason: `${testPrefix} Exact end boundary`,
+          });
+        expect(exactRes.status).toBe(400);
+        expect(exactRes.body.code).toBe('CLOSURE_ENDED');
+        expect(exactRes.body.details).toEqual([
+          { field: 'endTime', message: CLOSURE_ENDED_MESSAGE },
+        ]);
+        expect(await prisma.closure.count({ where: { roomId: room.id } })).toBe(0);
+        expect(
+          await prisma.auditEvent.count({
+            where: { entityType: 'CLOSURE', action: 'CLOSURE_CREATED', actorId: adminUserId },
+          }),
+        ).toBe(beforeExactAudits);
+
+        // 2. Crosses endTime while waiting on room FOR UPDATE lock -> 400 CLOSURE_ENDED
+        vi.setSystemTime(endMs - 1000);
+        const lockWaitToken = generateToken({ sub: adminUserId, role: Role.ADMIN });
+        const gate = new Promise<void>((resolve) => {
+          releaseBlocker = resolve;
+        });
+        let markArmed!: () => void;
+        const armed = new Promise<void>((resolve) => {
+          markArmed = resolve;
+        });
+
+        const blockerTx = prisma.$transaction(
+          async (tx) => {
+            await tx.$queryRaw(Prisma.sql`SELECT id FROM rooms WHERE id = ${room.id} FOR UPDATE`);
+            markArmed();
+            await gate;
+          },
+          { timeout: 10000 },
+        );
+        void blockerTx.catch(() => {});
+        pending.push(blockerTx);
+        await Promise.race([armed, blockerTx]);
+
+        const postPromise = request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${lockWaitToken}`)
+          .send({
+            roomId: room.id,
+            startTime: start.toISOString(),
+            endTime: end.toISOString(),
+            reason: `${testPrefix} Crosses endTime under lock`,
+          })
+          .then((res) => res);
+        void postPromise.catch(() => {});
+        pending.push(postPromise);
+
+        await waitForBlockedMysqlQueries(
+          (info) => info.includes('from rooms') && info.includes('for update'),
+          1,
+          'POST closure blocked on room lock',
+        );
+
+        vi.setSystemTime(endMs);
+        releaseBlocker?.();
+        const [, lockedRes] = await Promise.all([blockerTx, postPromise]);
+        expect(lockedRes.status).toBe(400);
+        expect(lockedRes.body.code).toBe('CLOSURE_ENDED');
+        expect(await prisma.closure.count({ where: { roomId: room.id } })).toBe(0);
+        expect(
+          await prisma.auditEvent.count({
+            where: { entityType: 'CLOSURE', action: 'CLOSURE_CREATED', actorId: adminUserId },
+          }),
+        ).toBe(beforeExactAudits);
+
+        // 3. 1ms before endTime -> 201 Created
+        vi.setSystemTime(endMs - 1);
+        const beforeEndToken = generateToken({ sub: adminUserId, role: Role.ADMIN });
+        const validRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${beforeEndToken}`)
+          .send({
+            roomId: room.id,
+            startTime: start.toISOString(),
+            endTime: end.toISOString(),
+            reason: `${testPrefix} Valid 1ms before end`,
+          });
+        expect(validRes.status).toBe(201);
+        expect(await prisma.closure.count({ where: { roomId: room.id } })).toBe(1);
+      } finally {
+        releaseBlocker?.();
+        await Promise.allSettled(pending);
+        vi.useRealTimers();
+        await prisma.closure.deleteMany({ where: { roomId: room.id } });
+        await prisma.room.deleteMany({ where: { id: room.id } });
+      }
+    });
+
+    it('rejects misaligned POST timestamps (10:07-11:13 VN, nonzero seconds/ms) with 400 VALIDATION_ERROR and exact field details', async () => {
+      const room = await createIsolatedRoom('misaligned_post');
+      const futureDay = vnFutureDate(38);
+
+      try {
+        const badMinutesRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: room.id,
+            startTime: `${futureDay}T10:07:00.000+07:00`,
+            endTime: `${futureDay}T11:13:00.000+07:00`,
+            reason: `${testPrefix} Misaligned minutes`,
+          });
+        expect(badMinutesRes.status).toBe(400);
+        expect(badMinutesRes.body.code).toBe('VALIDATION_ERROR');
+        expect(badMinutesRes.body.details).toEqual([
+          { field: 'startTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.startTime },
+          { field: 'endTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.endTime },
+        ]);
+
+        const badSecondsRes = await request(app)
+          .post('/api/v1/admin/closures')
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: room.id,
+            startTime: `${futureDay}T10:00:01.000+07:00`,
+            endTime: `${futureDay}T11:30:00.500+07:00`,
+            reason: `${testPrefix} Nonzero seconds and ms`,
+          });
+        expect(badSecondsRes.status).toBe(400);
+        expect(badSecondsRes.body.code).toBe('VALIDATION_ERROR');
+        expect(badSecondsRes.body.details).toEqual([
+          { field: 'startTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.startTime },
+          { field: 'endTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.endTime },
+        ]);
+        expect(await prisma.closure.count({ where: { roomId: room.id } })).toBe(0);
+      } finally {
+        await prisma.closure.deleteMany({ where: { roomId: room.id } });
+        await prisma.room.deleteMany({ where: { id: room.id } });
+      }
+    });
+
+    it('allows reason-only PATCH on historical misaligned closures and archived-room closures while preserving timestamps verbatim', async () => {
+      const room = await createIsolatedRoom('hist_reason');
+      const archivedRoom = await createIsolatedRoom('hist_archived', RoomStatus.ARCHIVED);
+      const legacyStart = new Date('2025-03-10T03:07:12.345Z'); // 10:07:12.345 VN
+      const legacyEnd = new Date('2025-03-10T04:13:45.678Z'); // 11:13:45.678 VN
+
+      try {
+        const legacyClosure = await prisma.closure.create({
+          data: {
+            roomId: room.id,
+            startTime: legacyStart,
+            endTime: legacyEnd,
+            reason: `${testPrefix} Historical initial`,
+            createdById: adminUserId,
+          },
+        });
+        const archivedClosure = await prisma.closure.create({
+          data: {
+            roomId: archivedRoom.id,
+            startTime: legacyStart,
+            endTime: legacyEnd,
+            reason: `${testPrefix} Archived initial`,
+            createdById: adminUserId,
+          },
+        });
+
+        // 1. Reason-only payload
+        const reasonOnlyRes = await request(app)
+          .patch(`/api/v1/admin/closures/${legacyClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ reason: `${testPrefix} Historical updated reason` });
+        expect(reasonOnlyRes.status).toBe(200);
+        expect(reasonOnlyRes.body.data.startTime).toBe(legacyStart.toISOString());
+        expect(reasonOnlyRes.body.data.endTime).toBe(legacyEnd.toISOString());
+        expect(reasonOnlyRes.body.data.reason).toBe(`${testPrefix} Historical updated reason`);
+
+        // 2. Echoing unchanged legacy roomId/startTime/endTime + new reason
+        const echoRes = await request(app)
+          .patch(`/api/v1/admin/closures/${legacyClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            roomId: room.id,
+            startTime: legacyStart.toISOString(),
+            endTime: legacyEnd.toISOString(),
+            reason: `${testPrefix} Historical echoed reason`,
+          });
+        expect(echoRes.status).toBe(200);
+        expect(echoRes.body.data.startTime).toBe(legacyStart.toISOString());
+        expect(echoRes.body.data.endTime).toBe(legacyEnd.toISOString());
+        expect(echoRes.body.data.reason).toBe(`${testPrefix} Historical echoed reason`);
+
+        // 3. Reason-only on ARCHIVED room historical closure
+        const archivedRes = await request(app)
+          .patch(`/api/v1/admin/closures/${archivedClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ reason: `${testPrefix} Archived updated reason` });
+        expect(archivedRes.status).toBe(200);
+        expect(archivedRes.body.data.startTime).toBe(legacyStart.toISOString());
+        expect(archivedRes.body.data.endTime).toBe(legacyEnd.toISOString());
+
+        const persistedLegacy = await prisma.closure.findUniqueOrThrow({
+          where: { id: legacyClosure.id },
+        });
+        expect(persistedLegacy.startTime.toISOString()).toBe(legacyStart.toISOString());
+        expect(persistedLegacy.endTime.toISOString()).toBe(legacyEnd.toISOString());
+
+        const legacyAudits = await prisma.auditEvent.count({
+          where: { entityType: 'CLOSURE', entityId: legacyClosure.id, action: 'CLOSURE_UPDATED' },
+        });
+        expect(legacyAudits).toBe(2);
+      } finally {
+        await prisma.closure.deleteMany({ where: { roomId: { in: [room.id, archivedRoom.id] } } });
+        await prisma.room.deleteMany({ where: { id: { in: [room.id, archivedRoom.id] } } });
+      }
+    });
+
+    it('enforces endTime > now and both-bound slot alignment whenever PATCH changes schedule or scope', async () => {
+      const room = await createIsolatedRoom('patch_rules');
+      const otherRoom = await createIsolatedRoom('patch_other');
+      const floor = slotFloorMs();
+      const futureStart = new Date(floor + 24 * 60 * 60 * 1000);
+      const futureEnd = new Date(floor + 26 * 60 * 60 * 1000);
+      const pastStart = new Date(floor - 48 * 60 * 60 * 1000);
+      const pastEnd = new Date(floor - 46 * 60 * 60 * 1000);
+      const legacyStart = new Date(floor + 48 * 60 * 60 * 1000 + 7 * 60 * 1000);
+      const legacyEnd = new Date(floor + 48 * 60 * 60 * 1000 + 73 * 60 * 1000);
+
+      try {
+        const futureClosure = await prisma.closure.create({
+          data: {
+            roomId: room.id,
+            startTime: futureStart,
+            endTime: futureEnd,
+            reason: `${testPrefix} Future aligned`,
+            createdById: adminUserId,
+          },
+        });
+        const endedAlignedClosure = await prisma.closure.create({
+          data: {
+            roomId: room.id,
+            startTime: pastStart,
+            endTime: pastEnd,
+            reason: `${testPrefix} Ended aligned`,
+            createdById: adminUserId,
+          },
+        });
+        const futureLegacyClosure = await prisma.closure.create({
+          data: {
+            roomId: room.id,
+            startTime: legacyStart,
+            endTime: legacyEnd,
+            reason: `${testPrefix} Future legacy misaligned`,
+            createdById: adminUserId,
+          },
+        });
+
+        // 1. Moving future closure's endTime into past -> 400 CLOSURE_ENDED
+        const movePastRes = await request(app)
+          .patch(`/api/v1/admin/closures/${futureClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            startTime: pastStart.toISOString(),
+            endTime: pastEnd.toISOString(),
+          });
+        expect(movePastRes.status).toBe(400);
+        expect(movePastRes.body.code).toBe('CLOSURE_ENDED');
+        expect(movePastRes.body.details).toEqual([
+          { field: 'endTime', message: CLOSURE_ENDED_MESSAGE },
+        ]);
+
+        // 2. Partial startTime change or roomId scope change on ended aligned closure (effective endTime <= now) -> 400 CLOSURE_ENDED
+        const partialStartEnded = await request(app)
+          .patch(`/api/v1/admin/closures/${endedAlignedClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ startTime: new Date(pastStart.getTime() + 30 * 60 * 1000).toISOString() });
+        expect(partialStartEnded.status).toBe(400);
+        expect(partialStartEnded.body.code).toBe('CLOSURE_ENDED');
+        expect(partialStartEnded.body.details).toEqual([
+          { field: 'endTime', message: CLOSURE_ENDED_MESSAGE },
+        ]);
+
+        const scopeChangeEnded = await request(app)
+          .patch(`/api/v1/admin/closures/${endedAlignedClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ roomId: otherRoom.id });
+        expect(scopeChangeEnded.status).toBe(400);
+        expect(scopeChangeEnded.body.code).toBe('CLOSURE_ENDED');
+        expect(scopeChangeEnded.body.details).toEqual([
+          { field: 'endTime', message: CLOSURE_ENDED_MESSAGE },
+        ]);
+
+        // 3. Partial PATCH changing only endTime on legacy misaligned closure catches retained misaligned startTime
+        const alignedFutureEnd = new Date(
+          Math.ceil((legacyEnd.getTime() + 60 * 60 * 1000) / (30 * 60 * 1000)) * 30 * 60 * 1000,
+        );
+        const partialLegacyRes = await request(app)
+          .patch(`/api/v1/admin/closures/${futureLegacyClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ endTime: alignedFutureEnd.toISOString() });
+        expect(partialLegacyRes.status).toBe(400);
+        expect(partialLegacyRes.body.code).toBe('VALIDATION_ERROR');
+        expect(partialLegacyRes.body.details).toEqual([
+          { field: 'startTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.startTime },
+        ]);
+
+        // 4. Scope change on future legacy misaligned closure catches BOTH misaligned bounds
+        const scopeLegacyRes = await request(app)
+          .patch(`/api/v1/admin/closures/${futureLegacyClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ roomId: otherRoom.id });
+        expect(scopeLegacyRes.status).toBe(400);
+        expect(scopeLegacyRes.body.code).toBe('VALIDATION_ERROR');
+        expect(scopeLegacyRes.body.details).toEqual([
+          { field: 'startTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.startTime },
+          { field: 'endTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.endTime },
+        ]);
+
+        // 5. Changing future closure to misaligned startTime / endTime -> 400 VALIDATION_ERROR
+        const misalignedPatchRes = await request(app)
+          .patch(`/api/v1/admin/closures/${futureClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({
+            startTime: new Date(futureStart.getTime() + 7 * 60 * 1000).toISOString(),
+            endTime: new Date(futureEnd.getTime() + 13 * 60 * 1000).toISOString(),
+          });
+        expect(misalignedPatchRes.status).toBe(400);
+        expect(misalignedPatchRes.body.code).toBe('VALIDATION_ERROR');
+        expect(misalignedPatchRes.body.details).toEqual([
+          { field: 'startTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.startTime },
+          { field: 'endTime', message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.endTime },
+        ]);
+
+        // 6. Single-bound order violation on PATCH preserves VALIDATION_ERROR message
+        const badOrderRes = await request(app)
+          .patch(`/api/v1/admin/closures/${futureClosure.id}`)
+          .set('Authorization', `Bearer ${adminToken}`)
+          .send({ endTime: new Date(futureStart.getTime() - 30 * 60 * 1000).toISOString() });
+        expect(badOrderRes.status).toBe(400);
+        expect(badOrderRes.body.code).toBe('VALIDATION_ERROR');
+        expect(badOrderRes.body.details).toEqual([
+          { field: 'endTime', message: CLOSURE_RANGE_ORDER_MESSAGE },
+        ]);
+
+        // Verify 0 CLOSURE_UPDATED audits & untouched DB rows across all rejected PATCHes
+        expect(
+          await prisma.auditEvent.count({
+            where: {
+              entityType: 'CLOSURE',
+              entityId: { in: [futureClosure.id, endedAlignedClosure.id, futureLegacyClosure.id] },
+              action: 'CLOSURE_UPDATED',
+            },
+          }),
+        ).toBe(0);
+        const reloadedFuture = await prisma.closure.findUniqueOrThrow({
+          where: { id: futureClosure.id },
+        });
+        expect(reloadedFuture.startTime.toISOString()).toBe(futureStart.toISOString());
+        expect(reloadedFuture.endTime.toISOString()).toBe(futureEnd.toISOString());
+
+        // 7. Controlled fake clock: PATCH setting endTime === now -> 400 CLOSURE_ENDED
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(futureEnd.getTime());
+        const frozenToken = generateToken({ sub: adminUserId, role: Role.ADMIN });
+        const exactBoundaryPatch = await request(app)
+          .patch(`/api/v1/admin/closures/${futureClosure.id}`)
+          .set('Authorization', `Bearer ${frozenToken}`)
+          .send({ roomId: null });
+        expect(exactBoundaryPatch.status).toBe(400);
+        expect(exactBoundaryPatch.body.code).toBe('CLOSURE_ENDED');
+        expect(exactBoundaryPatch.body.details).toEqual([
+          { field: 'endTime', message: CLOSURE_ENDED_MESSAGE },
+        ]);
+      } finally {
+        vi.useRealTimers();
+        await prisma.closure.deleteMany({
+          where: { roomId: { in: [room.id, otherRoom.id] } },
+        });
+        await prisma.room.deleteMany({ where: { id: { in: [room.id, otherRoom.id] } } });
+      }
     });
   });
 });
