@@ -5,6 +5,7 @@ import {
   formatVnTime,
   formatVnDateTimeLocal,
   parseVnDateTimeLocalToUtc,
+  isSlotAligned,
   isValidVnCalendarDate,
   getCoveredVnDates,
   parsePriceToCents,
@@ -31,10 +32,25 @@ describe('bookingTime utility', () => {
       expect(formatVnDateTimeLocal(date)).toBe('2026-10-25T10:30');
     });
 
-    it('parses Vietnam datetime-local string to UTC Date correctly', () => {
+    it('parses Vietnam datetime-local string to UTC Date correctly (with optional seconds/ms)', () => {
       const parsed = parseVnDateTimeLocalToUtc('2026-10-25T10:30');
       expect(parsed).not.toBeNull();
       expect(parsed!.toISOString()).toBe('2026-10-25T03:30:00.000Z');
+
+      const withZeroSec = parseVnDateTimeLocalToUtc('2026-12-01T10:00:00');
+      expect(withZeroSec).not.toBeNull();
+      expect(withZeroSec!.toISOString()).toBe('2026-12-01T03:00:00.000Z');
+      expect(isSlotAligned(withZeroSec!)).toBe(true);
+
+      const withSec = parseVnDateTimeLocalToUtc('2026-12-01T10:00:15');
+      expect(withSec).not.toBeNull();
+      expect(withSec!.toISOString()).toBe('2026-12-01T03:00:15.000Z');
+      expect(isSlotAligned(withSec!)).toBe(false);
+
+      const withMs = parseVnDateTimeLocalToUtc('2026-12-01T10:00:00.500');
+      expect(withMs).not.toBeNull();
+      expect(withMs!.toISOString()).toBe('2026-12-01T03:00:00.500Z');
+      expect(isSlotAligned(withMs!)).toBe(false);
     });
 
     it('rejects invalid or impossible dates', () => {
@@ -42,11 +58,13 @@ describe('bookingTime utility', () => {
       expect(parseVnDateTimeLocalToUtc('invalid')).toBeNull();
       // Feb 31 does not exist
       expect(parseVnDateTimeLocalToUtc('2026-02-31T10:00')).toBeNull();
+      expect(parseVnDateTimeLocalToUtc('2026-02-31T10:00:00')).toBeNull();
       // Apr 31 does not exist
       expect(parseVnDateTimeLocalToUtc('2026-04-31T10:00')).toBeNull();
-      // Invalid hour / minute
+      // Invalid hour / minute / second
       expect(parseVnDateTimeLocalToUtc('2026-10-25T24:00')).toBeNull();
       expect(parseVnDateTimeLocalToUtc('2026-10-25T10:60')).toBeNull();
+      expect(parseVnDateTimeLocalToUtc('2026-10-25T10:00:60')).toBeNull();
     });
   });
 
@@ -318,6 +336,18 @@ describe('bookingTime utility', () => {
       expect(isValidVnCalendarDate('2026-04-31')).toBe(false);
       expect(isValidVnCalendarDate('2026-13-01')).toBe(false);
       expect(isValidVnCalendarDate('2026/11/25')).toBe(false);
+    });
+  });
+
+  describe('isSlotAligned (CWB-96)', () => {
+    it('accepts :00 and :30 bounds with zero seconds/ms and rejects misaligned or invalid dates', () => {
+      expect(isSlotAligned(new Date('2026-12-01T08:00:00.000+07:00'))).toBe(true);
+      expect(isSlotAligned(new Date('2026-12-01T08:30:00.000+07:00'))).toBe(true);
+      expect(isSlotAligned(new Date('2026-12-01T10:07:00.000+07:00'))).toBe(false);
+      expect(isSlotAligned(new Date('2026-12-01T11:13:00.000+07:00'))).toBe(false);
+      expect(isSlotAligned(new Date('2026-12-01T10:00:01.000Z'))).toBe(false);
+      expect(isSlotAligned(new Date('2026-12-01T10:00:00.500Z'))).toBe(false);
+      expect(isSlotAligned(new Date('invalid'))).toBe(false);
     });
   });
 });

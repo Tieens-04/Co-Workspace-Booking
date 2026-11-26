@@ -121,26 +121,32 @@ export function formatVnDateTimeLocal(utcDate: Date): string {
 }
 
 /**
- * Parses a Vietnam wall-clock datetime-local string YYYY-MM-DDTHH:mm to a UTC Date object.
- * Returns null if invalid or impossible date (e.g. Feb 31).
+ * Parses a Vietnam wall-clock datetime-local string (YYYY-MM-DDTHH:mm, optionally with :ss or :ss.SSS)
+ * to a UTC Date object. Returns null if invalid or impossible date (e.g. Feb 31).
  */
 export function parseVnDateTimeLocalToUtc(val: string): Date | null {
   if (!val || typeof val !== 'string') return null;
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(val.trim());
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?$/.exec(
+    val.trim(),
+  );
   if (!match) return null;
-  const [, yStr, mStr, dStr, hStr, minStr] = match;
+  const [, yStr, mStr, dStr, hStr, minStr, rawSec, rawMs] = match;
+  const secStr = rawSec ?? '00';
+  const msStr = (rawMs ?? '').padEnd(3, '0');
   const y = parseInt(yStr, 10);
   const m = parseInt(mStr, 10);
   const d = parseInt(dStr, 10);
   const h = parseInt(hStr, 10);
   const min = parseInt(minStr, 10);
+  const sec = parseInt(secStr, 10);
+  const ms = parseInt(msStr, 10);
 
-  if (m < 1 || m > 12 || d < 1 || d > 31 || h < 0 || h > 23 || min < 0 || min > 59) {
+  if (m < 1 || m > 12 || d < 1 || d > 31 || h < 0 || h > 23 || min < 0 || min > 59 || sec > 59) {
     return null;
   }
 
   // Explicit ISO with +07:00 offset ensures timezone independence across browsers/environments
-  const isoString = `${yStr}-${mStr}-${dStr}T${hStr}:${minStr}:00.000+07:00`;
+  const isoString = `${yStr}-${mStr}-${dStr}T${hStr}:${minStr}:${secStr}.${msStr}+07:00`;
   const parsed = new Date(isoString);
   if (Number.isNaN(parsed.getTime())) return null;
 
@@ -151,7 +157,9 @@ export function parseVnDateTimeLocalToUtc(val: string): Date | null {
     vnCheck.getUTCMonth() + 1 !== m ||
     vnCheck.getUTCDate() !== d ||
     vnCheck.getUTCHours() !== h ||
-    vnCheck.getUTCMinutes() !== min
+    vnCheck.getUTCMinutes() !== min ||
+    vnCheck.getUTCSeconds() !== sec ||
+    vnCheck.getUTCMilliseconds() !== ms
   ) {
     return null;
   }
@@ -224,6 +232,16 @@ export function calculateEstimatedTotal(
   return `${dollars}.${String(cents).padStart(2, '0')}`;
 }
 
+/** Checks whether a Date falls on a 30-minute boundary with zero seconds and milliseconds. */
+export function isSlotAligned(date: Date): boolean {
+  if (Number.isNaN(date.getTime())) {
+    return false;
+  }
+  return (
+    date.getUTCMinutes() % 30 === 0 && date.getUTCSeconds() === 0 && date.getUTCMilliseconds() === 0
+  );
+}
+
 /**
  * Validates booking selection against all business time rules.
  */
@@ -244,18 +262,10 @@ export function validateBookingSelection(
   }
 
   if (startUtc && endUtc) {
-    if (
-      startUtc.getUTCMinutes() % 30 !== 0 ||
-      startUtc.getUTCSeconds() !== 0 ||
-      startUtc.getUTCMilliseconds() !== 0
-    ) {
+    if (!isSlotAligned(startUtc)) {
       errors.startTime = 'Thời gian bắt đầu phải theo mốc 30 phút (ví dụ: 09:00, 09:30)';
     }
-    if (
-      endUtc.getUTCMinutes() % 30 !== 0 ||
-      endUtc.getUTCSeconds() !== 0 ||
-      endUtc.getUTCMilliseconds() !== 0
-    ) {
+    if (!isSlotAligned(endUtc)) {
       errors.endTime = 'Thời gian kết thúc phải theo mốc 30 phút (ví dụ: 10:00, 10:30)';
     }
 

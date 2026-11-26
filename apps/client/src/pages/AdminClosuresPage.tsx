@@ -52,21 +52,80 @@ import { usePageTitle } from '../hooks/usePageTitle';
 import { useToast } from '../hooks/useToast';
 import { adminClosureApi } from '../services/admin-closure.api';
 import { adminRoomApi } from '../services/admin-room.api';
-import { ClosureItem, ConflictingBooking, CreateClosurePayload } from '../types/closure';
+import {
+  ClosureItem,
+  ConflictingBooking,
+  CreateClosurePayload,
+  UpdateClosurePayload,
+} from '../types/closure';
 import { PaginationMeta, RoomListItem } from '../types/room';
 import {
   formatVnDate,
   formatVnDateTimeLocal,
   formatVnTime,
+  isSlotAligned,
   parseVnDateTimeLocalToUtc,
 } from '../utils/bookingTime';
 
 const PAGE_SIZE = 10;
+const CLOSURE_DATETIME_MIN = '1970-01-01T00:00';
+const CLOSURE_SLOT_ALIGNED_STEP_SECONDS = 1800;
 
 interface ConflictData {
   count: number;
   bookings: ConflictingBooking[];
 }
+
+interface ClosureFieldErrors {
+  roomId?: string;
+  startTime?: string;
+  endTime?: string;
+  reason?: string;
+}
+
+type PendingClosureSubmission =
+  | { mode: 'create'; payload: CreateClosurePayload }
+  | { mode: 'edit'; id: string; payload: UpdateClosurePayload };
+
+interface ServerErrorPayload {
+  code?: string;
+  message?: string;
+  details?:
+    | { conflictingBookingCount?: number; bookings?: ConflictingBooking[] }
+    | Array<{ field?: string; message?: string }>;
+}
+
+const CLOSURE_TIME_FIELD_LABELS = {
+  startTime: { lower: 'thời gian bắt đầu', capitalized: 'Thời gian bắt đầu' },
+  endTime: { lower: 'thời gian kết thúc', capitalized: 'Thời gian kết thúc' },
+} as const;
+const CLOSURE_RANGE_ORDER_ERROR = 'Thời gian kết thúc phải sau thời gian bắt đầu.';
+
+function validateClosureTimeBound(
+  field: 'startTime' | 'endTime',
+  rawValue: string,
+): { date: Date | null; error?: string } {
+  const { lower, capitalized } = CLOSURE_TIME_FIELD_LABELS[field];
+  if (!rawValue) {
+    return { date: null, error: `Vui lòng chọn ${lower}.` };
+  }
+  const date = parseVnDateTimeLocalToUtc(rawValue);
+  if (!date) {
+    return { date: null, error: `Định dạng ${lower} không hợp lệ.` };
+  }
+  if (!isSlotAligned(date)) {
+    return {
+      date,
+      error: `${capitalized} phải đúng mốc 30 phút (ví dụ: 09:00, 09:30) với giây bằng 0.`,
+    };
+  }
+  return { date };
+}
+
+const formatInputFromIso = (iso: string): string => {
+  const parsed = new Date(iso);
+  return Number.isNaN(parsed.getTime()) ? '' : formatVnDateTimeLocal(parsed);
+};
 
 const formatDisplayTime = (isoString: string): string => {
   const date = new Date(isoString);
@@ -96,12 +155,13 @@ export const AdminClosuresPage: React.FC = () => {
   const [formStartTime, setFormStartTime] = useState<string>('');
   const [formEndTime, setFormEndTime] = useState<string>('');
   const [formReason, setFormReason] = useState<string>('');
+  const [fieldErrors, setFieldErrors] = useState<ClosureFieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
   // Conflict warning modal state
   const [conflictData, setConflictData] = useState<ConflictData | null>(null);
-  const [pendingPayload, setPendingPayload] = useState<CreateClosurePayload | null>(null);
+  const [pendingSubmission, setPendingSubmission] = useState<PendingClosureSubmission | null>(null);
   const [isConfirmingConflict, setIsConfirmingConflict] = useState(false);
 
   // Delete modal state
@@ -204,7 +264,10 @@ export const AdminClosuresPage: React.FC = () => {
     setFormStartTime(`${dateStr}T08:00`);
     setFormEndTime(`${dateStr}T12:00`);
     setFormReason('');
+    setFieldErrors({});
     setFormError(null);
+    setConflictData(null);
+    setPendingSubmission(null);
     setIsFormOpen(true);
   };
 
@@ -212,96 +275,169 @@ export const AdminClosuresPage: React.FC = () => {
     setEditingClosure(closure);
     setFormScope(closure.roomId ? 'ROOM' : 'FACILITY');
     setFormRoomId(closure.roomId || '');
-    const startDate = new Date(closure.startTime);
-    const endDate = new Date(closure.endTime);
-    setFormStartTime(isNaN(startDate.getTime()) ? '' : formatVnDateTimeLocal(startDate));
-    setFormEndTime(isNaN(endDate.getTime()) ? '' : formatVnDateTimeLocal(endDate));
+    setFormStartTime(formatInputFromIso(closure.startTime));
+    setFormEndTime(formatInputFromIso(closure.endTime));
     setFormReason(closure.reason);
+    setFieldErrors({});
     setFormError(null);
+    setConflictData(null);
+    setPendingSubmission(null);
     setIsFormOpen(true);
+  };
+
+  const applyServerError = (
+    resp: { status?: number; data?: ServerErrorPayload } | undefined,
+    fallbackMessage: string,
+  ): boolean => {
+    const code = resp?.data?.code;
+    const details = resp?.data?.details;
+    const nextFieldErrors: ClosureFieldErrors = {};
+
+    if ((code === 'VALIDATION_ERROR' || code === 'CLOSURE_ENDED') && Array.isArray(details)) {
+      for (const item of details) {
+        if (!item.message) continue;
+        if (item.field === 'roomId') nextFieldErrors.roomId = item.message;
+        else if (item.field === 'startTime') nextFieldErrors.startTime = item.message;
+        else if (item.field === 'endTime') nextFieldErrors.endTime = item.message;
+        else if (item.field === 'reason') nextFieldErrors.reason = item.message;
+      }
+    }
+
+    if (code === 'CLOSURE_ENDED' && !nextFieldErrors.endTime) {
+      nextFieldErrors.endTime =
+        resp?.data?.message || 'Thời gian kết thúc khung đóng cửa phải ở trong tương lai.';
+    }
+
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      setFormError(null);
+      return true;
+    }
+
+    setFieldErrors({});
+    setFormError(resp?.data?.message || fallbackMessage);
+    return false;
   };
 
   const handleFormSubmit = async (e?: React.FormEvent, acknowledge = false) => {
     if (e) e.preventDefault();
     if (isSaving) return;
 
+    const nextErrors: ClosureFieldErrors = {};
+    const targetRoomId = formScope === 'ROOM' ? formRoomId : null;
+    const trimmedReason = formReason.trim();
+
     if (formScope === 'ROOM' && !formRoomId) {
-      setFormError('Vui lòng chọn phòng cần đóng cửa.');
-      return;
+      nextErrors.roomId = 'Vui lòng chọn phòng cần đóng cửa.';
     }
-    if (!formStartTime || !formEndTime) {
-      setFormError('Vui lòng chọn thời gian bắt đầu và kết thúc.');
-      return;
+    if (!trimmedReason) {
+      nextErrors.reason = 'Lý do đóng cửa không được để trống.';
     }
 
-    const startDate = parseVnDateTimeLocalToUtc(formStartTime);
-    const endDate = parseVnDateTimeLocalToUtc(formEndTime);
+    const initialStartInput = editingClosure ? formatInputFromIso(editingClosure.startTime) : '';
+    const initialEndInput = editingClosure ? formatInputFromIso(editingClosure.endTime) : '';
+    const roomChanged = editingClosure ? targetRoomId !== (editingClosure.roomId ?? null) : true;
+    const rawStartChanged = editingClosure ? formStartTime !== initialStartInput : true;
+    const rawEndChanged = editingClosure ? formEndTime !== initialEndInput : true;
+    const scheduleOrScopeChanged =
+      !editingClosure || roomChanged || rawStartChanged || rawEndChanged;
 
-    if (!startDate || !endDate) {
-      setFormError('Định dạng thời gian không hợp lệ.');
+    let resolvedStartIso = '';
+    let resolvedEndIso = '';
+
+    if (scheduleOrScopeChanged) {
+      const startCheck = validateClosureTimeBound('startTime', formStartTime);
+      const endCheck = validateClosureTimeBound('endTime', formEndTime);
+
+      if (startCheck.error) nextErrors.startTime = startCheck.error;
+      if (endCheck.error) nextErrors.endTime = endCheck.error;
+
+      if (startCheck.date && endCheck.date && !nextErrors.endTime) {
+        if (endCheck.date.getTime() <= startCheck.date.getTime()) {
+          nextErrors.endTime = CLOSURE_RANGE_ORDER_ERROR;
+        } else if (endCheck.date.getTime() <= Date.now()) {
+          nextErrors.endTime = 'Thời gian kết thúc khung đóng cửa phải ở trong tương lai.';
+        }
+      }
+
+      if (startCheck.date) resolvedStartIso = startCheck.date.toISOString();
+      if (endCheck.date) resolvedEndIso = endCheck.date.toISOString();
+    }
+
+    if (Object.keys(nextErrors).length > 0) {
+      setFieldErrors(nextErrors);
+      setFormError(null);
       return;
     }
 
-    const startIso = startDate.toISOString();
-    const endIso = endDate.toISOString();
-
-    if (endDate.getTime() <= startDate.getTime()) {
-      setFormError('Thời gian kết thúc phải sau thời gian bắt đầu.');
-      return;
+    let submission: PendingClosureSubmission;
+    if (editingClosure) {
+      const updatePayload: UpdateClosurePayload = {};
+      if (roomChanged) updatePayload.roomId = targetRoomId;
+      if (
+        scheduleOrScopeChanged &&
+        resolvedStartIso &&
+        resolvedStartIso !== new Date(editingClosure.startTime).toISOString()
+      ) {
+        updatePayload.startTime = resolvedStartIso;
+      }
+      if (
+        scheduleOrScopeChanged &&
+        resolvedEndIso &&
+        resolvedEndIso !== new Date(editingClosure.endTime).toISOString()
+      ) {
+        updatePayload.endTime = resolvedEndIso;
+      }
+      if (trimmedReason !== editingClosure.reason || Object.keys(updatePayload).length === 0) {
+        updatePayload.reason = trimmedReason;
+      }
+      if (scheduleOrScopeChanged) {
+        updatePayload.acknowledgeConflictingBookings = acknowledge;
+      }
+      submission = { mode: 'edit', id: editingClosure.id, payload: updatePayload };
+    } else {
+      submission = {
+        mode: 'create',
+        payload: {
+          roomId: targetRoomId,
+          startTime: resolvedStartIso,
+          endTime: resolvedEndIso,
+          reason: trimmedReason,
+          acknowledgeConflictingBookings: acknowledge,
+        },
+      };
     }
 
-    if (!formReason.trim()) {
-      setFormError('Lý do đóng cửa không được để trống.');
-      return;
-    }
-
+    setFieldErrors({});
     setFormError(null);
     setIsSaving(true);
 
-    const payload: CreateClosurePayload = {
-      roomId: formScope === 'ROOM' ? formRoomId : null,
-      startTime: startIso,
-      endTime: endIso,
-      reason: formReason.trim(),
-      acknowledgeConflictingBookings: acknowledge,
-    };
-
     try {
-      if (editingClosure) {
-        await adminClosureApi.update(editingClosure.id, payload);
+      if (submission.mode === 'edit') {
+        await adminClosureApi.update(submission.id, submission.payload);
         showToast('Cập nhật khung đóng cửa thành công', 'success');
       } else {
-        await adminClosureApi.create(payload);
+        await adminClosureApi.create(submission.payload);
         showToast('Tạo khung đóng cửa thành công', 'success');
       }
 
       setIsFormOpen(false);
       setConflictData(null);
-      setPendingPayload(null);
+      setPendingSubmission(null);
       await loadClosures();
     } catch (err: unknown) {
-      const resp = (
-        err as {
-          response?: {
-            status?: number;
-            data?: {
-              code?: string;
-              message?: string;
-              details?: { conflictingBookingCount?: number; bookings?: ConflictingBooking[] };
-            };
-          };
-        }
-      ).response;
+      const resp = (err as { response?: { status?: number; data?: ServerErrorPayload } }).response;
 
       if (resp?.data?.code === 'CLOSURE_HAS_CONFLICTING_BOOKINGS') {
-        const details = resp.data.details;
+        const conflictDetails =
+          resp.data.details && !Array.isArray(resp.data.details) ? resp.data.details : undefined;
         setConflictData({
-          count: details?.conflictingBookingCount || details?.bookings?.length || 0,
-          bookings: details?.bookings || [],
+          count: conflictDetails?.conflictingBookingCount || conflictDetails?.bookings?.length || 0,
+          bookings: conflictDetails?.bookings || [],
         });
-        setPendingPayload(payload);
+        setPendingSubmission(submission);
       } else {
-        setFormError(resp?.data?.message || 'Không thể lưu khung đóng cửa. Vui lòng kiểm tra lại.');
+        applyServerError(resp, 'Không thể lưu khung đóng cửa. Vui lòng kiểm tra lại.');
       }
     } finally {
       setIsSaving(false);
@@ -309,28 +445,43 @@ export const AdminClosuresPage: React.FC = () => {
   };
 
   const handleConfirmConflict = async () => {
-    if (!pendingPayload || isConfirmingConflict) return;
+    if (!pendingSubmission || isConfirmingConflict) return;
     setIsConfirmingConflict(true);
 
     try {
-      const payloadWithAck = { ...pendingPayload, acknowledgeConflictingBookings: true };
-      if (editingClosure) {
-        await adminClosureApi.update(editingClosure.id, payloadWithAck);
+      if (pendingSubmission.mode === 'edit') {
+        await adminClosureApi.update(pendingSubmission.id, {
+          ...pendingSubmission.payload,
+          acknowledgeConflictingBookings: true,
+        });
         showToast('Đã cập nhật khung đóng cửa (đã xác nhận các lịch trùng)', 'success');
       } else {
-        await adminClosureApi.create(payloadWithAck);
+        await adminClosureApi.create({
+          ...pendingSubmission.payload,
+          acknowledgeConflictingBookings: true,
+        });
         showToast('Đã tạo khung đóng cửa (đã xác nhận các lịch trùng)', 'success');
       }
 
       setConflictData(null);
-      setPendingPayload(null);
+      setPendingSubmission(null);
       setIsFormOpen(false);
       await loadClosures();
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string } } }).response?.data?.message ||
-        'Không thể lưu khung đóng cửa sau khi xác nhận.';
-      showToast(msg, 'error');
+      const resp = (err as { response?: { status?: number; data?: ServerErrorPayload } }).response;
+      const mappedToField = applyServerError(
+        resp,
+        'Không thể lưu khung đóng cửa sau khi xác nhận.',
+      );
+      const isTerminalClientError =
+        typeof resp?.status === 'number' && resp.status >= 400 && resp.status < 500;
+      if (mappedToField || isTerminalClientError) {
+        setConflictData(null);
+        setPendingSubmission(null);
+      }
+      if (!mappedToField) {
+        showToast(resp?.data?.message || 'Không thể lưu khung đóng cửa sau khi xác nhận.', 'error');
+      }
     } finally {
       setIsConfirmingConflict(false);
     }
@@ -584,12 +735,29 @@ export const AdminClosuresPage: React.FC = () => {
             </DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={(e) => void handleFormSubmit(e)} className="grid gap-4 py-2">
+          <form onSubmit={(e) => void handleFormSubmit(e)} noValidate className="grid gap-4 py-2">
             <Field id="closure-scope" label="Phạm vi áp dụng">
               <NativeSelect
                 id="closure-scope"
                 value={formScope}
-                onChange={(e) => setFormScope(e.target.value as 'FACILITY' | 'ROOM')}
+                onChange={(e) => {
+                  const nextScope = e.target.value as 'FACILITY' | 'ROOM';
+                  const nextRoomId = nextScope === 'ROOM' ? formRoomId : null;
+                  const revertedToInitialScheduleAndScope =
+                    editingClosure !== null &&
+                    nextRoomId === (editingClosure.roomId ?? null) &&
+                    formStartTime === formatInputFromIso(editingClosure.startTime) &&
+                    formEndTime === formatInputFromIso(editingClosure.endTime);
+                  setFormScope(nextScope);
+                  setFieldErrors((prev) => ({
+                    ...prev,
+                    ...(nextScope === 'FACILITY' ? { roomId: undefined } : {}),
+                    ...(revertedToInitialScheduleAndScope
+                      ? { startTime: undefined, endTime: undefined }
+                      : {}),
+                  }));
+                  setFormError(null);
+                }}
                 data-testid="closure-scope-select"
               >
                 <option value="FACILITY">Toàn bộ cơ sở (tất cả các phòng)</option>
@@ -598,11 +766,32 @@ export const AdminClosuresPage: React.FC = () => {
             </Field>
 
             {formScope === 'ROOM' && (
-              <Field id="closure-room-id" label="Chọn phòng">
+              <Field
+                id="closure-room-id"
+                label="Chọn phòng"
+                error={fieldErrors.roomId}
+                errorTestId="closure-room-id-error"
+              >
                 <NativeSelect
                   id="closure-room-id"
                   value={formRoomId}
-                  onChange={(e) => setFormRoomId(e.target.value)}
+                  onChange={(e) => {
+                    const nextRoomId = e.target.value;
+                    const revertedToInitialScheduleAndScope =
+                      editingClosure !== null &&
+                      (nextRoomId || null) === (editingClosure.roomId ?? null) &&
+                      formStartTime === formatInputFromIso(editingClosure.startTime) &&
+                      formEndTime === formatInputFromIso(editingClosure.endTime);
+                    setFormRoomId(nextRoomId);
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      roomId: undefined,
+                      ...(revertedToInitialScheduleAndScope
+                        ? { startTime: undefined, endTime: undefined }
+                        : {}),
+                    }));
+                    setFormError(null);
+                  }}
                   data-testid="closure-room-select"
                 >
                   <option value="">-- Chọn phòng --</option>
@@ -624,22 +813,50 @@ export const AdminClosuresPage: React.FC = () => {
             )}
 
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field id="closure-start-time" label="Thời gian bắt đầu">
+              <Field
+                id="closure-start-time"
+                label="Thời gian bắt đầu"
+                error={fieldErrors.startTime}
+                errorTestId="closure-start-time-error"
+              >
                 <Input
                   id="closure-start-time"
                   type="datetime-local"
+                  step={CLOSURE_SLOT_ALIGNED_STEP_SECONDS}
+                  min={CLOSURE_DATETIME_MIN}
+                  className="tabular-nums"
                   value={formStartTime}
-                  onChange={(e) => setFormStartTime(e.target.value)}
+                  onChange={(e) => {
+                    setFormStartTime(e.target.value);
+                    setFieldErrors((prev) => ({
+                      ...prev,
+                      startTime: undefined,
+                      ...(prev.endTime === CLOSURE_RANGE_ORDER_ERROR ? { endTime: undefined } : {}),
+                    }));
+                    setFormError(null);
+                  }}
                   data-testid="closure-start-time"
                 />
               </Field>
 
-              <Field id="closure-end-time" label="Thời gian kết thúc">
+              <Field
+                id="closure-end-time"
+                label="Thời gian kết thúc"
+                error={fieldErrors.endTime}
+                errorTestId="closure-end-time-error"
+              >
                 <Input
                   id="closure-end-time"
                   type="datetime-local"
+                  step={CLOSURE_SLOT_ALIGNED_STEP_SECONDS}
+                  min={CLOSURE_DATETIME_MIN}
+                  className="tabular-nums"
                   value={formEndTime}
-                  onChange={(e) => setFormEndTime(e.target.value)}
+                  onChange={(e) => {
+                    setFormEndTime(e.target.value);
+                    setFieldErrors((prev) => ({ ...prev, endTime: undefined }));
+                    setFormError(null);
+                  }}
                   data-testid="closure-end-time"
                 />
               </Field>
@@ -649,13 +866,19 @@ export const AdminClosuresPage: React.FC = () => {
               id="closure-reason"
               label="Lý do đóng cửa"
               hint="Ví dụ: Nghỉ Tết Dương lịch, Sửa chữa hệ thống điện..."
+              error={fieldErrors.reason}
+              errorTestId="closure-reason-error"
             >
               <Textarea
                 id="closure-reason"
                 rows={3}
                 maxLength={500}
                 value={formReason}
-                onChange={(e) => setFormReason(e.target.value)}
+                onChange={(e) => {
+                  setFormReason(e.target.value);
+                  setFieldErrors((prev) => ({ ...prev, reason: undefined }));
+                  setFormError(null);
+                }}
                 placeholder="Nhập lý do đóng cửa..."
                 data-testid="closure-reason"
               />
@@ -695,7 +918,7 @@ export const AdminClosuresPage: React.FC = () => {
         onOpenChange={(open) => {
           if (!open) {
             setConflictData(null);
-            setPendingPayload(null);
+            setPendingSubmission(null);
           }
         }}
       >
@@ -763,7 +986,9 @@ export const AdminClosuresPage: React.FC = () => {
               {isConfirmingConflict && (
                 <Loader2 aria-hidden="true" className="size-4 animate-spin" />
               )}
-              Tôi hiểu và tiếp tục tạo
+              {pendingSubmission?.mode === 'edit'
+                ? 'Tôi hiểu và tiếp tục lưu'
+                : 'Tôi hiểu và tiếp tục tạo'}
             </Button>
           </AlertDialogFooter>
         </AlertDialogContent>
