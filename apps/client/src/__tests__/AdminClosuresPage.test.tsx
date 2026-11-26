@@ -490,6 +490,16 @@ describe('AdminClosuresPage (CWB-86)', () => {
 
     it('keeps minimal PATCH payload when confirming 409 conflicting bookings on partial edit', async () => {
       const user = userEvent.setup();
+      const initialDay = formatVnDate(new Date(Date.now() + 14 * 24 * 60 * 60 * 1000));
+      const futureDay = formatVnDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+      const editableClosure: ClosureItem = {
+        ...mockClosureRoom,
+        id: 'closure-2',
+        startTime: new Date(`${initialDay}T08:00:00.000+07:00`).toISOString(),
+        endTime: new Date(`${initialDay}T11:00:00.000+07:00`).toISOString(),
+      };
+      const expectedStart = new Date(`${futureDay}T09:30:00.000+07:00`).toISOString();
+      const expectedEnd = new Date(`${futureDay}T12:00:00.000+07:00`).toISOString();
       const conflictError = {
         response: {
           status: 409,
@@ -503,8 +513,8 @@ describe('AdminClosuresPage (CWB-86)', () => {
                   bookingCode: 'CS-20261226-CONF',
                   roomId: 'room-1',
                   roomName: 'Phòng Hội Thảo A',
-                  startTime: '2026-12-26T02:00:00.000Z',
-                  endTime: '2026-12-26T04:00:00.000Z',
+                  startTime: expectedStart,
+                  endTime: expectedEnd,
                   guestName: 'Khách B',
                   userEmail: null,
                 },
@@ -513,16 +523,24 @@ describe('AdminClosuresPage (CWB-86)', () => {
           },
         },
       };
+      vi.mocked(adminClosureApi.list).mockResolvedValue(
+        okResponse({
+          items: [editableClosure],
+          total: 1,
+          page: 1,
+          limit: 10,
+          totalPages: 1,
+        }),
+      );
       vi.mocked(adminClosureApi.update).mockRejectedValueOnce(conflictError);
-      vi.mocked(adminClosureApi.update).mockResolvedValueOnce(okResponse(mockClosureRoom));
+      vi.mocked(adminClosureApi.update).mockResolvedValueOnce(okResponse(editableClosure));
 
       render(<AdminClosuresPage />);
       await screen.findByTestId('closure-row-closure-2');
 
       await user.click(screen.getByTestId('btn-edit-closure-closure-2'));
-      const futureDay = formatVnDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
       fireEvent.change(screen.getByTestId('closure-start-time'), {
-        target: { value: `${futureDay}T09:00` },
+        target: { value: `${futureDay}T09:30` },
       });
       fireEvent.change(screen.getByTestId('closure-end-time'), {
         target: { value: `${futureDay}T12:00` },
@@ -531,9 +549,6 @@ describe('AdminClosuresPage (CWB-86)', () => {
 
       await screen.findByText('Cảnh báo xung đột đặt phòng');
       await user.click(screen.getByTestId('btn-confirm-conflict-closure'));
-
-      const expectedStart = new Date(`${futureDay}T09:00:00.000+07:00`).toISOString();
-      const expectedEnd = new Date(`${futureDay}T12:00:00.000+07:00`).toISOString();
 
       await waitFor(() => {
         expect(adminClosureApi.update).toHaveBeenCalledTimes(2);
@@ -606,11 +621,16 @@ describe('AdminClosuresPage (CWB-86)', () => {
 
     it('allows saving edit when legacy closure has non-zero seconds on :00 minute and normalizes startTime in PATCH (R1-01)', async () => {
       const user = userEvent.setup();
+      const futureDay = formatVnDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000));
+      const legacyStartWithSec = new Date(`${futureDay}T10:00:12.000+07:00`).toISOString();
+      const normalizedStartIso = new Date(`${futureDay}T10:00:00.000+07:00`).toISOString();
+      const initialEndIso = new Date(`${futureDay}T12:00:00.000+07:00`).toISOString();
+      const updatedEndIso = new Date(`${futureDay}T13:00:00.000+07:00`).toISOString();
       const legacySecondsClosure: ClosureItem = {
         ...mockClosureRoom,
         id: 'closure-legacy-seconds',
-        startTime: '2027-03-10T03:00:12.000Z', // 10:00:12 VN
-        endTime: '2027-03-10T05:00:00.000Z', // 12:00:00 VN
+        startTime: legacyStartWithSec,
+        endTime: initialEndIso,
         reason: 'Bảo trì giây lẻ',
       };
       vi.mocked(adminClosureApi.list).mockResolvedValue(
@@ -625,8 +645,8 @@ describe('AdminClosuresPage (CWB-86)', () => {
       vi.mocked(adminClosureApi.update).mockResolvedValue(
         okResponse({
           ...legacySecondsClosure,
-          startTime: '2027-03-10T03:00:00.000Z',
-          endTime: '2027-03-10T06:00:00.000Z',
+          startTime: normalizedStartIso,
+          endTime: updatedEndIso,
         }),
       );
 
@@ -635,14 +655,14 @@ describe('AdminClosuresPage (CWB-86)', () => {
 
       await user.click(screen.getByTestId('btn-edit-closure-closure-legacy-seconds'));
       fireEvent.change(screen.getByTestId('closure-end-time'), {
-        target: { value: '2027-03-10T13:00' },
+        target: { value: `${futureDay}T13:00` },
       });
       await user.click(screen.getByTestId('btn-submit-closure'));
 
       await waitFor(() => {
         expect(adminClosureApi.update).toHaveBeenCalledWith('closure-legacy-seconds', {
-          startTime: '2027-03-10T03:00:00.000Z',
-          endTime: '2027-03-10T06:00:00.000Z',
+          startTime: normalizedStartIso,
+          endTime: updatedEndIso,
           acknowledgeConflictingBookings: false,
         });
       });
