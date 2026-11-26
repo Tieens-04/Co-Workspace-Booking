@@ -214,3 +214,87 @@ test('closure acknowledgement alerts affected booking in admin & customer UI and
     await customerContext.close();
   }
 });
+
+test('admin closure modal blocks off-slot and past times per field, then saves valid 30m slots (CWB-96)', async ({
+  page,
+  scenario,
+}) => {
+  await login(page, scenario.admin);
+  await page.goto('/admin/closures');
+  await expect(page.getByRole('heading', { name: 'Quản lý khung đóng cửa' })).toBeVisible();
+
+  await page.getByTestId('btn-add-closure').click();
+  await expect(page.getByText('Thêm khung đóng cửa mới')).toBeVisible();
+
+  await page.getByTestId('closure-scope-select').selectOption('ROOM');
+  await page.getByTestId('closure-room-select').selectOption(scenario.room.id);
+
+  const tomorrowDateStr = localInput(tomorrowAt(9)).slice(0, 10);
+  await page.getByTestId('closure-start-time').fill(`${tomorrowDateStr}T10:07`);
+  await page.getByTestId('closure-end-time').fill(`${tomorrowDateStr}T11:13`);
+  await page.getByTestId('closure-reason').fill('Đóng cửa lệch mốc E2E');
+  await page.getByTestId('btn-submit-closure').click();
+
+  await expect(page.getByTestId('closure-start-time-error')).toContainText('30 phút');
+  await expect(page.getByTestId('closure-end-time-error')).toContainText('30 phút');
+  await expect(page.getByTestId('closure-start-time')).toHaveAttribute('aria-invalid', 'true');
+  await expect(page.getByTestId('closure-end-time')).toHaveAttribute('aria-invalid', 'true');
+
+  const pastDateStr = localInput(new Date(Date.now() - 48 * HOUR)).slice(0, 10);
+  await page.getByTestId('closure-start-time').fill(`${pastDateStr}T09:00`);
+  await page.getByTestId('closure-end-time').fill(`${pastDateStr}T11:00`);
+  await page.getByTestId('btn-submit-closure').click();
+
+  await expect(page.getByTestId('closure-end-time-error')).toContainText('tương lai');
+  await expect(page.getByTestId('closure-end-time')).toHaveAttribute('aria-invalid', 'true');
+
+  await page.getByTestId('closure-start-time').fill(`${tomorrowDateStr}T09:30`);
+  await page.getByTestId('closure-end-time').fill(`${tomorrowDateStr}T11:00`);
+  await page.getByTestId('btn-submit-closure').click();
+
+  await expect(page.getByText('Thêm khung đóng cửa mới')).toBeHidden();
+  const table = page.getByTestId('closures-table');
+  await expect(table).toContainText(scenario.room.name);
+  await expect(table).toContainText('Đóng cửa lệch mốc E2E');
+  await noOverflow(page);
+});
+
+test('admin can update only reason on a historical misaligned closure while preserving original times (CWB-96)', async ({
+  page,
+  scenario,
+}) => {
+  const pastDateStr = localInput(new Date(Date.now() - 48 * HOUR)).slice(0, 10);
+  const legacyStart = new Date(`${pastDateStr}T10:07:00.000+07:00`);
+  const legacyEnd = new Date(`${pastDateStr}T11:13:00.000+07:00`);
+
+  const seeded = await scenario.db.closure.create({
+    data: {
+      roomId: scenario.room.id,
+      startTime: legacyStart,
+      endTime: legacyEnd,
+      reason: 'Lý do lịch sử ban đầu E2E',
+      createdById: scenario.admin.id,
+    },
+  });
+
+  await login(page, scenario.admin);
+  await page.goto('/admin/closures');
+  await expect(page.getByTestId(`closure-row-${seeded.id}`)).toBeVisible();
+
+  await page.getByTestId(`btn-edit-closure-${seeded.id}`).click();
+  await expect(page.getByText('Chỉnh sửa khung đóng cửa')).toBeVisible();
+
+  await page.getByTestId('closure-reason').fill('Lý do lịch sử đã cập nhật E2E');
+  await page.getByTestId('btn-submit-closure').click();
+
+  await expect(page.getByText('Chỉnh sửa khung đóng cửa')).toBeHidden();
+  await expect(page.getByTestId('closures-table')).toContainText('Lý do lịch sử đã cập nhật E2E');
+  await noOverflow(page);
+
+  const reloaded = await scenario.db.closure.findUniqueOrThrow({
+    where: { id: seeded.id },
+  });
+  expect(reloaded.reason).toBe('Lý do lịch sử đã cập nhật E2E');
+  expect(reloaded.startTime.getTime()).toBe(legacyStart.getTime());
+  expect(reloaded.endTime.getTime()).toBe(legacyEnd.getTime());
+});

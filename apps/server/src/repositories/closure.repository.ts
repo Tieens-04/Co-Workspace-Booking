@@ -6,7 +6,13 @@ import {
   requeueClosureUnavailableEmails,
 } from './email-outbox.repository.js';
 import { BLOCKING_BOOKING_STATUSES } from '../types/booking.type.js';
+import { isSlotAligned } from '../utils/booking-time.util.js';
 import { AppError } from '../utils/error.util.js';
+import {
+  CLOSURE_ENDED_MESSAGE,
+  CLOSURE_RANGE_ORDER_MESSAGE,
+  CLOSURE_SLOT_ALIGNMENT_MESSAGES,
+} from '../validators/admin-closure.validator.js';
 import {
   ClosureDto,
   ClosureFilterParams,
@@ -44,6 +50,45 @@ type LockedClosureRow = {
 
 function closureNotFoundError(): AppError {
   return new AppError('CLOSURE_NOT_FOUND', 'Không tìm thấy khung đóng cửa', 404);
+}
+
+function closureEndedError(): AppError {
+  return new AppError('CLOSURE_ENDED', CLOSURE_ENDED_MESSAGE, 400, [
+    { field: 'endTime', message: CLOSURE_ENDED_MESSAGE },
+  ]);
+}
+
+function assertValidClosureRange(startTime: Date, endTime: Date): void {
+  if (endTime.getTime() <= startTime.getTime()) {
+    throw new AppError('VALIDATION_ERROR', CLOSURE_RANGE_ORDER_MESSAGE, 400, [
+      { field: 'endTime', message: CLOSURE_RANGE_ORDER_MESSAGE },
+    ]);
+  }
+
+  const slotIssues: Array<{ field: 'startTime' | 'endTime'; message: string }> = [];
+  if (!isSlotAligned(startTime)) {
+    slotIssues.push({
+      field: 'startTime',
+      message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.startTime,
+    });
+  }
+  if (!isSlotAligned(endTime)) {
+    slotIssues.push({
+      field: 'endTime',
+      message: CLOSURE_SLOT_ALIGNMENT_MESSAGES.endTime,
+    });
+  }
+
+  if (slotIssues.length > 0) {
+    throw new AppError(
+      'VALIDATION_ERROR',
+      slotIssues.length === 1
+        ? slotIssues[0].message
+        : 'Thời gian bắt đầu và kết thúc phải đúng mốc 30 phút (ví dụ: 09:00, 09:30) với giây bằng 0',
+      400,
+      slotIssues,
+    );
+  }
 }
 
 function toClosureDto(record: PrismaClosureWithRelations): ClosureDto {
@@ -225,11 +270,16 @@ export class ClosureRepository {
   }
 
   async create(data: CreateClosureInput, actor: AuditActor): Promise<ClosureDto> {
-    return prisma.$transaction(async (tx) => {
-      const startDate = new Date(data.startTime);
-      const endDate = new Date(data.endTime);
+    const startDate = new Date(data.startTime);
+    const endDate = new Date(data.endTime);
+    assertValidClosureRange(startDate, endDate);
 
+    return prisma.$transaction(async (tx) => {
       await this.lockTargetRooms(tx, data.roomId);
+      const now = new Date();
+      if (endDate.getTime() <= now.getTime()) {
+        throw closureEndedError();
+      }
       const conflictingBookings = await this.assertNoUnacknowledgedBookings(
         tx,
         data.roomId,
@@ -264,7 +314,6 @@ export class ClosureRepository {
       });
 
       if (data.acknowledgeConflictingBookings) {
-        const now = new Date();
         const affectedUserBookingIds = conflictingBookings
           .filter(
             (b): b is typeof b & { userId: string } =>
@@ -302,24 +351,20 @@ export class ClosureRepository {
       const targetStartTime = data.startTime ? new Date(data.startTime) : existing.startTime;
       const targetEndTime = data.endTime ? new Date(data.endTime) : existing.endTime;
 
-      if (targetEndTime.getTime() <= targetStartTime.getTime()) {
-        throw new AppError(
-          'VALIDATION_ERROR',
-          'Thời gian kết thúc phải sau thời gian bắt đầu',
-          400,
-          [{ field: 'endTime', message: 'Thời gian kết thúc phải sau thời gian bắt đầu' }],
-        );
-      }
-
-      await this.lockTargetRooms(tx, targetRoomId, existing.roomId);
-
       const isTimeOrRoomChanged =
         targetRoomId !== existing.roomId ||
         targetStartTime.getTime() !== existing.startTime.getTime() ||
         targetEndTime.getTime() !== existing.endTime.getTime();
 
+      let now: Date | undefined;
       let conflictingBookings: Awaited<ReturnType<typeof this.findConflictingBookings>> = [];
       if (isTimeOrRoomChanged) {
+        assertValidClosureRange(targetStartTime, targetEndTime);
+        await this.lockTargetRooms(tx, targetRoomId, existing.roomId);
+        now = new Date();
+        if (targetEndTime.getTime() <= now.getTime()) {
+          throw closureEndedError();
+        }
         conflictingBookings = await this.assertNoUnacknowledgedBookings(
           tx,
           targetRoomId,
@@ -343,9 +388,9 @@ export class ClosureRepository {
       const updated = await tx.closure.update({
         where: { id },
         data: {
-          ...(data.roomId !== undefined ? { roomId: data.roomId } : {}),
-          ...(data.startTime ? { startTime: targetStartTime } : {}),
-          ...(data.endTime ? { endTime: targetEndTime } : {}),
+          ...(isTimeOrRoomChanged && data.roomId !== undefined ? { roomId: data.roomId } : {}),
+          ...(isTimeOrRoomChanged && data.startTime ? { startTime: targetStartTime } : {}),
+          ...(isTimeOrRoomChanged && data.endTime ? { endTime: targetEndTime } : {}),
           ...(data.reason !== undefined ? { reason: trimmedReason } : {}),
         },
         include: closureInclude,
@@ -371,8 +416,7 @@ export class ClosureRepository {
         },
       });
 
-      if (isTimeOrRoomChanged && data.acknowledgeConflictingBookings) {
-        const now = new Date();
+      if (isTimeOrRoomChanged && data.acknowledgeConflictingBookings && now) {
         const activeUserBookings = conflictingBookings.filter(
           (b): b is typeof b & { userId: string } =>
             typeof b.userId === 'string' && b.endTime.getTime() > now.getTime(),
