@@ -1001,21 +1001,21 @@ npm run test --workspace=apps/client -- src/__tests__/AdminUsersPage.test.tsx
 - **API ADMIN** (`/api/v1/admin/closures`, yêu cầu `ADMIN`; thiếu token → `401`, `CUSTOMER` → `403`):
   - `GET /api/v1/admin/closures?page=&limit=&roomId=&from=&to=&upcoming=`: phân trang có giới hạn (`page >= 1`, `limit` 1–100, kiểm tra tràn offset MySQL `INT`), `roomId` là UUID phòng (lọc các khung đóng cửa của phòng đó **kèm** các khung đóng cửa toàn cơ sở `roomId = null`), `from`/`to` là chuỗi ISO 8601 (`from < to`), `upcoming=true|false` lọc các khung có `endTime >= now` (kết hợp an toàn với `from` theo mốc lớn hơn).
   - `GET /api/v1/admin/closures/:id`: lấy chi tiết khung đóng cửa theo UUID; không tồn tại → `404 CLOSURE_NOT_FOUND`.
-  - `POST /api/v1/admin/closures`: body `{ roomId?: string | null, startTime, endTime, reason, acknowledgeConflictingBookings?: boolean }`. Kiểm tra `endTime > startTime`, `reason` 1–500 ký tự (sau trim), phòng tồn tại và chưa bị `ARCHIVED`.
-  - `PATCH /api/v1/admin/closures/:id`: cập nhật một phần (`roomId`, `startTime`, `endTime`, `reason`, `acknowledgeConflictingBookings`); từ chối body rỗng `{}` với `400 VALIDATION_ERROR`. Khóa dòng `closures` và các dòng `rooms` liên quan bằng `SELECT ... FOR UPDATE`. Nếu dữ liệu thực tế không đổi thì không ghi audit event thừa.
+  - `POST /api/v1/admin/closures`: body `{ roomId?: string | null, startTime, endTime, reason, acknowledgeConflictingBookings?: boolean }`. Kiểm tra `endTime > startTime`, cả hai mốc đúng slot 30 phút (`isSlotAligned`, giây/ms = `0`; từ chối `400 VALIDATION_ERROR` kèm `details` theo trường, không tự làm tròn), `endTime > now` sau khi khóa hàng phòng (`endTime <= now` → `400 CLOSURE_ENDED` kèm `details` cho `endTime`; cho phép khung đang diễn ra `startTime <= now < endTime`), `reason` 1–500 ký tự (sau trim), phòng tồn tại và chưa bị `ARCHIVED`.
+  - `PATCH /api/v1/admin/closures/:id`: cập nhật một phần (`roomId`, `startTime`, `endTime`, `reason`, `acknowledgeConflictingBookings`); từ chối body rỗng `{}` với `400 VALIDATION_ERROR`. Khóa dòng `closures` (`SELECT ... FOR UPDATE`) trước; nếu dữ liệu thực tế không đổi thì không ghi audit event thừa. Nếu chỉ cập nhật `reason` (không đổi lịch hay `roomId`), cho phép sửa cả khung lịch sử đã kết thúc hoặc dữ liệu cũ lệch phút/trên phòng `ARCHIVED` và giữ nguyên `startTime`/`endTime` gốc. Nếu đổi lịch hoặc đổi `roomId`, khóa các dòng `rooms` liên quan rồi kiểm tra `targetEndTime > targetStartTime`, cả hai biên hiệu lực đúng mốc 30 phút (`400 VALIDATION_ERROR`), và `targetEndTime > now` (`400 CLOSURE_ENDED` trước kiểm tra xung đột).
   - `DELETE /api/v1/admin/closures/:id`: khóa dòng `closures` bằng `SELECT ... FOR UPDATE`, xóa khung đóng cửa (`deleteMany`) và ghi `AuditEvent` `CLOSURE_DELETED` trong cùng transaction; nếu khung đóng cửa không tồn tại hoặc bị xóa đồng thời thì trả `404 CLOSURE_NOT_FOUND`.
 - **Cảnh báo xung đột & Bảo toàn booking**:
   - Khi tạo/sửa `Closure`, hệ thống khóa dòng phòng mục tiêu (hoặc tất cả phòng chưa lưu trữ theo thứ tự `PRIMARY` bằng `FORCE INDEX (PRIMARY) ... ORDER BY id ASC FOR UPDATE` nếu `roomId = null` để bảo toàn thứ tự khóa `PRIMARY -> secondary`, tránh deadlock `1213` với luồng cập nhật phòng) rồi kiểm tra các booking `CONFIRMED` giao với `[startTime, endTime)`.
   - Nếu có booking trùng và `acknowledgeConflictingBookings !== true`, trả về `409 CLOSURE_HAS_CONFLICTING_BOOKINGS` kèm `{ conflictingBookingCount, bookings }`.
   - Khi `acknowledgeConflictingBookings === true`, lưu `Closure` thành công, giữ nguyên trạng thái `CONFIRMED` của các booking hiện có và ghi nhận cờ xác nhận vào `AuditEvent` (`CLOSURE_CREATED` / `CLOSURE_UPDATED`).
 - **Giao diện**:
-  - `/admin/closures`: bảng danh sách khung đóng cửa, lọc theo phòng và khung sắp tới, modal tạo/sửa (hỗ trợ cả phòng đã lưu trữ khi sửa), hộp thoại cảnh báo danh sách booking trùng khi nhận `409 CLOSURE_HAS_CONFLICTING_BOOKINGS`, và hộp thoại xác nhận xóa.
+  - `/admin/closures`: bảng danh sách khung đóng cửa, lọc theo phòng và khung sắp tới, modal tạo/sửa (hỗ trợ cả phòng đã lưu trữ khi sửa, input giờ VN bước 30 phút `step=1800` neo từ `:00`, kiểm tra `isSlotAligned` và `endTime > now` khi tạo hoặc khi đổi lịch/phạm vi, hiển thị lỗi theo từng `Field` qua ARIA, gửi `PATCH` tối thiểu chỉ gồm trường thay đổi, cho phép sửa riêng `reason` cho khung lịch sử), hộp thoại cảnh báo danh sách booking trùng khi nhận `409 CLOSURE_HAS_CONFLICTING_BOOKINGS`, và hộp thoại xác nhận xóa.
   - `TimeGrid` (đặt phòng khách hàng, đặt phòng khách vãng lai, hộp thoại dời lịch) và `RoomOverviewGrid` trên Dashboard hiển thị rõ các slot `CLOSED` kèm lý do đóng cửa.
 
 ```bash
-npm run test --workspace=apps/server -- src/__tests__/admin-closure.validator.test.ts src/__tests__/closure.service.test.ts
+npm run test --workspace=apps/server -- src/__tests__/admin-closure.validator.test.ts
 npm run test:integration --workspace=apps/server -- src/__tests__/closure.integration.test.ts
-npm run test --workspace=apps/client -- src/__tests__/AdminClosuresPage.test.tsx
+npm run test --workspace=apps/client -- src/__tests__/AdminClosuresPage.test.tsx src/__tests__/bookingTime.test.ts
 ```
 
 ---
