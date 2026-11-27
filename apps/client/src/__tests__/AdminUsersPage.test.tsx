@@ -17,6 +17,7 @@ const user = (overrides: Partial<AdminUserItem>): AdminUserItem => ({
   phoneNumber: '0901234567',
   role: 'CUSTOMER',
   status: 'ACTIVE',
+  emailVerified: true,
   lockedAt: null,
   lockReason: null,
   createdAt: '2026-11-01T03:00:00.000Z',
