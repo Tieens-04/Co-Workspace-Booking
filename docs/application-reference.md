@@ -713,10 +713,7 @@ Hệ thống cung cấp tính năng theo dõi lịch sử và mở xem chi tiế
   - Xử lý đầy đủ các trạng thái loading (skeleton), lỗi mạng (kèm nút thử lại), và lỗi không tìm thấy (404/IDOR) với các liên kết quay lại lịch sử và danh sách phòng.
   - Hiển thị banner chi tiết hủy (`cancellation-info-banner`): Khi đơn ở trạng thái `CANCELLED`, hiển thị banner notice tông lỗi (`tone="error"`) ghi rõ bên hủy ("Đã hủy bởi Co-Space" / "Bạn đã hủy"), thời điểm hủy theo giờ Việt Nam, và lý do hủy nếu do Co-Space hủy (nội dung lý do được render dạng text an toàn chống XSS, hỗ trợ ngắt dòng text dài).
   - Hiển thị banner cảnh báo gián đoạn (`room-unavailable-banner`, CWB-91): Khi đơn `CONFIRMED` có `roomUnavailable = true`, hiển thị banner cảnh báo nêu rõ nguyên nhân (đóng cửa / bảo trì / lưu trữ) kèm hướng dẫn đổi sang phòng/khung giờ khác trên `RescheduleBookingDialog` (nếu `UNPAID`) hoặc liên hệ quầy lễ tân (nếu `PAID`).
-- **API Đổi lịch đặt phòng (`PATCH /api/v1/bookings/:id`, CWB-81, cập nhật CWB-120)**:
-  - Cho phép chủ đơn (`CUSTOMER`) đổi phòng (`roomId?`), khung giờ (`startTime`, `endTime`) và/hoặc ghi chú (`note?`) của đơn `CONFIRMED` + `UNPAID` còn ≥ 1 giờ trước giờ bắt đầu cũ.
-  - Khóa lần lượt `users → bookings → rooms` (`FOR UPDATE`), đọc thời điểm đánh giá `now` **sau** khi nhận khóa phòng đích để chống lệch thời gian chờ khóa, kiểm tra rule thời gian/closure/overlap và tính lại `totalAmount` theo đơn giá phòng đích.
-  - Phản hồi trả kèm `paymentInstructions` (tính theo `totalAmount` mới nếu đã cấu hình tài khoản ngân hàng). Nếu `roomId`, `startTime` và `endTime` không đổi (no-op hoặc chỉ đổi `note`), server vẫn kiểm tra trạng thái phòng, quy tắc thời gian và lịch đóng cửa hiệu lực (`409 ROOM_NOT_AVAILABLE` / `409 ROOM_CLOSED`), sau đó bỏ qua việc ghi `AuditEvent` `BOOKING_RESCHEDULED`, không xóa `BOOKING_REMINDER` cũ và không xếp hàng/gửi lại email đổi lịch.
+- **Đổi lịch đặt phòng (`PATCH /api/v1/bookings/:id`, CWB-81, CWB-120)**: Chủ đơn có thể đổi phòng, khung giờ hoặc ghi chú từ trang chi tiết (`/bookings/:id`) qua `RescheduleBookingDialog`; xem đặc tả API đầy đủ tại mục **6. Chính Sách & Quy Trình Đổi Lịch Đặt Phòng Phía Khách Hàng**.
 
 ### 5. Chính Sách & Quy Trình Hủy Đặt Phòng Phía Khách Hàng (CWB-26)
 
@@ -850,7 +847,127 @@ npm run test --workspace=apps/client -- src/__tests__/BookingHistoryPage.test.ts
 
 ---
 
-### 6. Quản Trị Đặt Chỗ & Đặt Phòng Cho Khách Vãng Lai (CWB-27)
+### 6. Chính Sách & Quy Trình Đổi Lịch Đặt Phòng Phía Khách Hàng (CWB-81, cập nhật CWB-120)
+
+Hệ thống cho phép khách hàng (`CUSTOMER`) tự đổi phòng, khung giờ hoặc ghi chú cho đơn đặt phòng của chính mình qua `PATCH /api/v1/bookings/:id` với đầy đủ khóa đồng thời và ràng buộc nghiệp vụ:
+
+- **Quyền truy cập & Rate Limit**:
+  - Yêu cầu xác thực JWT với vai trò `CUSTOMER`. Thiếu, sai hoặc đã thu hồi token trả `401 UNAUTHORIZED`; vai trò `ADMIN` trả `403 FORBIDDEN`.
+  - **Dùng chung rate limit với tạo booking (`createBookingRateLimiter`)**: giới hạn **20 request / 15 phút cho mỗi tài khoản đã xác thực** (theo `sub` của JWT, không theo IP), tính gộp cả `POST /api/v1/bookings` và `PATCH /api/v1/bookings/:id` cho mọi request (kể cả lỗi validation); vượt ngưỡng trả `429 TOO_MANY_REQUESTS` kèm header `RateLimit-*`.
+  - **Không hỗ trợ `Idempotency-Key`** và **không kiểm tra lại `ACTIVE_BOOKING_LIMIT`** (vì đổi lịch cập nhật đơn hiện có, không tạo đơn mới).
+- **Tham số & Payload Request (`application/json`)**:
+  - Path param `:id` (bắt buộc): UUID hợp lệ của đơn đặt phòng.
+  - Query params: không chấp nhận tham số truy vấn (`.strict()`, có query lạ → `400 VALIDATION_ERROR`).
+  - Body (`.strict()`, chặn mass assignment mọi trường hệ thống như `status`, `totalAmount`, `paymentStatus`, `bookingCode`, `userId`):
+    - `startTime` (bắt buộc): Chuỗi ISO 8601 có offset (ví dụ: `2026-11-08T06:00:00.000Z`).
+    - `endTime` (bắt buộc): Chuỗi ISO 8601 có offset.
+    - `roomId` (tùy chọn): UUID phòng đích; nếu bỏ qua, giữ nguyên phòng hiện tại của đơn.
+    - `note` (tùy chọn): Chuỗi ≤ 500 ký tự (sau trim) hoặc `null`; chuỗi rỗng hoặc chỉ khoảng trắng chuẩn hóa thành `null`; nếu bỏ qua (`undefined`), giữ nguyên `note` hiện tại.
+  ```json
+  {
+    "roomId": "22222222-2222-4222-8222-222222222222",
+    "startTime": "2026-11-08T06:00:00.000Z",
+    "endTime": "2026-11-08T08:00:00.000Z",
+    "note": "Đổi sang giờ chiều"
+  }
+  ```
+- **Thứ tự khóa dữ liệu, Kiểm tra nghiệp vụ & Thứ tự lỗi (`booking.repository.ts:rescheduleBooking`)**:
+  - Toàn bộ thao tác chạy trong `prisma.$transaction` với thứ tự khóa hàng cố định **`users → bookings → rooms`** (`SELECT ... FOR UPDATE`) để tránh deadlock:
+    1. **Khóa `users` (`lockBookableCustomer`)**: tài khoản không tồn tại hoặc đã xóa (`deleted_at IS NOT NULL`) → `401 UNAUTHORIZED`; tài khoản bị khóa (`locked_at IS NOT NULL`) → `403 ACCOUNT_LOCKED`; chưa xác thực email (`email_verified_at IS NULL`) → `403 EMAIL_NOT_VERIFIED`.
+    2. **Khóa `bookings` theo `(id, user_id)`**: không tồn tại hoặc thuộc khách hàng khác → `404 BOOKING_NOT_FOUND` (chống IDOR); `status !== CONFIRMED` → `409 BOOKING_STATE_CONFLICT`; `payment_status === PAID` → `409 PAID_BOOKING_CANNOT_RESCHEDULE` (các trạng thái hoàn tiền chỉ tồn tại ở đơn `CANCELLED` nên bị chặn ở bước `CONFIRMED`).
+    3. **Khóa phòng đích `rooms` (`lockRoomRow`, `input.roomId ?? lockedBooking.room_id`)**: phòng không tồn tại → `404 ROOM_NOT_FOUND`. Ngay **sau** khi giữ khóa phòng đích, server mới đọc mốc giờ `now` (`evaluationTime`, cùng nguyên tắc `CWB-51`) để thời gian chờ khóa không che khuất hạn đổi lịch 1 giờ hoặc hạn đặt trước 30 phút.
+    4. **Chính sách 1 giờ trên giờ bắt đầu cũ (`validateCustomerRescheduleTime`)**: yêu cầu `existingStartTime - now >= 60 phút` (`RESCHEDULE_MIN_LEAD_MINUTES = 60`). Đúng 60 phút hợp lệ; dưới 60 phút trả `400 RESCHEDULE_POLICY_VIOLATION`.
+    5. **Trạng thái phòng đích & Policy thời gian mới**: phòng đích phải `AVAILABLE` (`MAINTENANCE`/`ARCHIVED` → `409 ROOM_NOT_AVAILABLE`); khung giờ mới phải đạt toàn bộ quy tắc `validateBookingTime` (slot 30 phút, 1–8 giờ, không quá khứ, đặt trước ≥ 30 phút, trong `BOOKING_MAX_ADVANCE_DAYS`, giờ hoạt động 07:00–22:00 giờ VN); và không giao `Closure` của phòng đích hoặc toàn cơ sở (`409 ROOM_CLOSED` kèm `details: { reason }`).
+  - **Nhánh No-op / chỉ đổi `note` (CWB-120)**: Khi `roomId`, `startTime` và `endTime` không đổi, các bước kiểm tra phòng đích, policy thời gian và `Closure` ở trên vẫn chạy để không bao giờ trả `200` trên slot đang `CLOSED` hoặc phòng `MAINTENANCE`/`ARCHIVED`. Nếu hợp lệ, server chỉ cập nhật `note` (khi đổi) và **bỏ qua** kiểm tra overlap, tính lại giá, ghi `AuditEvent` `BOOKING_RESCHEDULED`, xóa `BOOKING_REMINDER` và xếp hàng/kích hoạt email.
+  - **Overlap, Tính lại giá & Giữ nguyên `bookingCode`**:
+    - Kiểm tra trùng lịch trên phòng đích với booking `CONFIRMED` thỏa `existing.startTime < newEndTime AND existing.endTime > newStartTime`, **loại trừ chính đơn hiện tại** (`id != booking.id`); trùng trả `409 BOOKING_CONFLICT`.
+    - Tính lại `totalAmount` theo đơn giá `price_per_hour` hiện hành của **phòng đích** × thời lượng mới (`Prisma.Decimal`, làm tròn `ROUND_HALF_UP` 2 chữ số thập phân).
+    - **Giữ nguyên `bookingCode`** ban đầu (kể cả phần ngày `YYYYMMDD` gốc dù đổi sang ngày khác).
+  - **Audit & Email Outbox (khi lịch thực sự đổi)**:
+    - Ghi `AuditEvent` (`action = BOOKING_RESCHEDULED`, `entityType = BOOKING`, `actor = CUSTOMER`, `before`/`after` chứa `bookingCode`, `roomId`, `startTime`, `endTime`, `totalAmount`) trong cùng transaction.
+    - Xóa bản ghi `BOOKING_REMINDER` cũ của booking để worker quét lại theo lịch mới, đồng thời `upsert` `EmailOutbox` (`kind = BOOKING_RESCHEDULED`, `eventKey = ''`) reset về `QUEUED`, `attempts = 0`, `lastError = null`, `sentAt = null` (đổi lịch nhiều lần mỗi lần gửi lại 1 email mới); sau commit gọi `emailOutbox.kick()`. Lỗi SMTP không làm rollback thao tác đổi lịch.
+- **Phản hồi `200 OK`**:
+  - Trả về `BookingResponseDto` đầy đủ kèm `paymentInstructions` (tính theo `totalAmount` mới nếu đã cấu hình tài khoản ngân hàng); cờ nội bộ `isRescheduled` không xuất ra JSON.
+  ```json
+  {
+    "success": true,
+    "message": "Đổi lịch đặt phòng thành công",
+    "data": {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "bookingCode": "CS-20261108-ABCD",
+      "room": {
+        "id": "22222222-2222-4222-8222-222222222222",
+        "name": "Creative Studio"
+      },
+      "startTime": "2026-11-08T06:00:00.000Z",
+      "endTime": "2026-11-08T08:00:00.000Z",
+      "checkedInAt": null,
+      "attendanceTrackingEnabled": true,
+      "totalAmount": "600000.00",
+      "note": "Đổi sang giờ chiều",
+      "status": "CONFIRMED",
+      "paymentStatus": "UNPAID",
+      "paymentMethod": null,
+      "paidAt": null,
+      "cancellationReason": null,
+      "cancelledAt": null,
+      "cancelledBy": null,
+      "refundedAmount": "0.00",
+      "roomUnavailable": false,
+      "roomUnavailableReason": null,
+      "roomUnavailableCause": null,
+      "isOngoing": false,
+      "paymentInstructions": null
+    }
+  }
+  ```
+- **Bảng mã lỗi**:
+
+  | HTTP  | Code                             | Điều kiện kích hoạt                                                                         |
+  | ----- | -------------------------------- | ------------------------------------------------------------------------------------------- |
+  | `401` | `UNAUTHORIZED`                   | Thiếu, sai, hết hạn/thu hồi JWT, hoặc tài khoản không tồn tại / đã bị xóa                   |
+  | `403` | `FORBIDDEN`                      | Vai trò không phải `CUSTOMER` (ví dụ `ADMIN`)                                               |
+  | `429` | `TOO_MANY_REQUESTS`              | Vượt 20 request / 15 phút theo tài khoản (dùng chung với `POST /api/v1/bookings`)           |
+  | `400` | `VALIDATION_ERROR`               | `:id` không phải UUID, có query param lạ, sai ISO 8601, có field lạ hoặc `note > 500` ký tự |
+  | `403` | `ACCOUNT_LOCKED`                 | Tài khoản khách hàng đang bị khóa (`locked_at IS NOT NULL`)                                 |
+  | `403` | `EMAIL_NOT_VERIFIED`             | Tài khoản khách hàng chưa xác thực email (`email_verified_at IS NULL`)                      |
+  | `404` | `BOOKING_NOT_FOUND`              | Đơn không tồn tại hoặc thuộc khách hàng khác (IDOR)                                         |
+  | `409` | `BOOKING_STATE_CONFLICT`         | Đơn không ở trạng thái `CONFIRMED` (`CANCELLED`, `COMPLETED`, `NO_SHOW`)                    |
+  | `409` | `PAID_BOOKING_CANNOT_RESCHEDULE` | Đơn đã thanh toán (`paymentStatus = PAID`), cần liên hệ quầy lễ tân                         |
+  | `404` | `ROOM_NOT_FOUND`                 | Phòng đích `roomId` không tồn tại                                                           |
+  | `400` | `RESCHEDULE_POLICY_VIOLATION`    | Thời gian bắt đầu **cũ** còn ít hơn 1 giờ (`< 60` phút) hoặc đã qua                         |
+  | `409` | `ROOM_NOT_AVAILABLE`             | Phòng đích ở trạng thái `MAINTENANCE` hoặc `ARCHIVED`                                       |
+  | `400` | `INVALID_SLOT`                   | Khung giờ mới không đúng mốc 30 phút (`:00`/`:30`, giây/ms = 0) hoặc `endTime <= startTime` |
+  | `400` | `MIN_DURATION`                   | Thời lượng mới nhỏ hơn 1 giờ (60 phút)                                                      |
+  | `400` | `MAX_DURATION`                   | Thời lượng mới lớn hơn 8 giờ (480 phút)                                                     |
+  | `400` | `PAST_TIME`                      | Giờ bắt đầu mới ở trong quá khứ (`newStartTime <= now`)                                     |
+  | `400` | `ADVANCE_NOTICE`                 | Giờ bắt đầu mới cách hiện tại dưới 30 phút                                                  |
+  | `400` | `BOOKING_HORIZON`                | Giờ bắt đầu mới vượt quá `BOOKING_MAX_ADVANCE_DAYS` ngày                                    |
+  | `400` | `OUTSIDE_OPERATING_HOURS`        | Khung giờ mới ngoài 07:00–22:00 hoặc không cùng một ngày (giờ VN)                           |
+  | `409` | `ROOM_CLOSED`                    | Khung giờ mới giao với `Closure` của phòng đích hoặc toàn cơ sở (`details.reason`)          |
+  | `409` | `BOOKING_CONFLICT`               | Khung giờ mới trùng với booking `CONFIRMED` khác trên phòng đích                            |
+  | `500` | `INTERNAL_SERVER_ERROR`          | Lỗi hạ tầng ngoài dự kiến                                                                   |
+
+- **Giao diện Đổi lịch phía Client (`RescheduleBookingDialog`)**:
+  - Mở từ `/bookings/:id` khi đơn `CONFIRMED` + `UNPAID` (đơn `PAID` không tự đổi trực tuyến, hướng dẫn liên hệ quầy lễ tân). Cho chọn phòng `AVAILABLE`, ngày xem lịch và slot trên `TimeGrid` (giờ VN), hiển thị tạm tính giá mới, gửi `PATCH /api/v1/bookings/:id` với `AbortController` và hiển thị thông báo lỗi server trong `Notice` (`role="alert"`).
+
+#### Kiểm thử Đổi lịch đặt phòng (CWB-81, CWB-120)
+
+```bash
+# Unit & API tests (RBAC, strict validation, error mapping, outbox kick, no-op & paymentInstructions)
+npm run test --workspace=apps/server -- src/__tests__/booking-reschedule.test.ts src/__tests__/booking-notification.test.ts
+
+# Integration tests (MySQL thật, khóa users->bookings->rooms, biên 1h, tính lại giá, giữ bookingCode, closure & email outbox)
+npm run test:integration --workspace=apps/server -- src/__tests__/booking-reschedule.integration.test.ts src/__tests__/closure.integration.test.ts src/__tests__/email-outbox.integration.test.ts
+
+# Frontend & E2E tests (RescheduleBookingDialog, cảnh báo gián đoạn & luồng đổi lịch trên trình duyệt)
+npm run test --workspace=apps/client -- src/__tests__/BookingDetailPage.test.tsx
+npm run test:e2e:headed -- e2e/closure.spec.ts
+```
+
+---
+
+### 7. Quản Trị Đặt Chỗ & Đặt Phòng Cho Khách Vãng Lai (CWB-27)
 
 Hệ thống cung cấp năng lực quản trị tập trung toàn bộ đơn đặt phòng và hỗ trợ nhân viên/quản trị viên (`ADMIN`) tạo đơn trực tiếp tại quầy cho khách vãng lai mà không cần đăng ký tài khoản trước:
 
@@ -942,13 +1059,13 @@ npm run test:integration --workspace=apps/server -- src/__tests__/booking-check-
 npm run test --workspace=apps/client -- src/__tests__/AdminBookingsPage.test.tsx src/__tests__/AdminGuestBookingForm.test.tsx src/__tests__/AdminPage.test.tsx src/__tests__/RouteGuard.test.tsx
 ```
 
-### 7. Nhật Ký Thao Tác Quản Trị (Audit Log, CWB-67)
+### 8. Nhật Ký Thao Tác Quản Trị (Audit Log, CWB-67)
 
 - **Ghi nhận**: bảng `audit_events` (append-only, không FK để sự kiện vẫn còn khi bản ghi gốc bị xóa). Mỗi sự kiện được ghi **trong cùng transaction** với thay đổi nghiệp vụ: rollback thì không có sự kiện.
 - **Các thao tác được ghi**: `BOOKING_GUEST_CREATED`, `BOOKING_PAYMENT_CONFIRMED`, `BOOKING_CANCELLED_BY_ADMIN`, `BOOKING_CHECKED_IN`, `BOOKING_COMPLETED`, `BOOKING_MARKED_NO_SHOW`, `BOOKING_RESCHEDULED`, `BOOKING_REFUNDED`, `ROOM_STATUS_CHANGED` (chỉ khi trạng thái phòng thực sự đổi), `ROOM_ARCHIVED`, `ROOM_RESTORED`, `USER_LOCKED`, `USER_UNLOCKED` (CWB-79, `entityType = USER`, `after` chứa trạng thái mới và lý do), `CLOSURE_CREATED`, `CLOSURE_UPDATED`, `CLOSURE_DELETED` (CWB-86, `entityType = CLOSURE`, lưu `roomId`, `startTime`, `endTime`, `reason` và `acknowledgeConflictingBookings`).
 - **Người thực hiện** lấy từ JWT đã xác thực (`sub`, `role`), không bao giờ lấy từ body.
 - **Không ghi trùng**: retry idempotent (đã PAID, đã CANCELLED, đã check-in, replay `Idempotency-Key`), cập nhật không làm thay đổi trường nào và request bị từ chối (`400/401/403/404/409`) không tạo sự kiện. Các xác nhận thanh toán đồng thời chỉ tạo 1 sự kiện nhờ khóa dòng.
-- **Dữ liệu**: `before`/`after` chỉ chứa trường trạng thái (mã đơn, status, paymentStatus, paymentMethod, checkedInAt, cancellationReason; với phòng là status; với khung đóng cửa là roomId, startTime, endTime, reason). Sự kiện tạo đơn khách vãng lai **không** lưu tên/SĐT khách.
+- **Dữ liệu**: `before`/`after` chỉ chứa trường trạng thái (mã đơn, status, paymentStatus, paymentMethod, checkedInAt, cancellationReason; với đổi lịch `BOOKING_RESCHEDULED` (`CUSTOMER`) là `bookingCode`, `roomId`, `startTime`, `endTime`, `totalAmount`; với phòng là status; với khung đóng cửa là roomId, startTime, endTime, reason). Sự kiện tạo đơn khách vãng lai **không** lưu tên/SĐT khách.
 - **Thứ tự**: cột `sequence` (AUTO_INCREMENT) quyết định thứ tự đọc, tránh trùng mili-giây của `created_at`.
 - **Đọc**: `GET /api/v1/admin/audit-events?page=&limit=&entityType=&entityId=&action=` (chỉ ADMIN; thiếu token `401`, CUSTOMER `403`). `limit` 1–100 (mặc định 20), `entityType` ∈ `BOOKING|ROOM|USER|CLOSURE`, `action` thuộc danh sách trên, trường lạ → `400`. Trả `{ items, pagination }`, mới nhất trước.
 - **Lưu trữ (retention)**: chưa có job tự xóa. Đề xuất vận hành định kỳ xóa sự kiện cũ hơn khoảng thời gian chính sách quy định (ví dụ 12 tháng) bằng `DELETE FROM audit_events WHERE created_at < ?` (có index `created_at`).
@@ -958,9 +1075,9 @@ npm run test:integration --workspace=apps/server -- src/__tests__/audit-log.inte
 npm run test --workspace=apps/client -- src/__tests__/AdminAuditPage.test.tsx
 ```
 
-### 8. Hàng Đợi Email Bền Vững (Email Outbox, CWB-68)
+### 9. Hàng Đợi Email Bền Vững (Email Outbox, CWB-68)
 
-- **Ghi hàng đợi**: tạo booking của CUSTOMER, khách tự hủy và admin hủy booking của tài khoản đã đăng ký ghi một dòng `email_outbox` **trong cùng transaction** với thay đổi booking. Rollback booking thì không có email; email lỗi không bao giờ hoàn tác booking/hủy booking. Booking khách vãng lai không có email nên không ghi hàng đợi.
+- **Ghi hàng đợi**: tạo booking của CUSTOMER, đổi lịch, khách tự hủy và admin hủy booking của tài khoản đã đăng ký ghi một dòng `email_outbox` **trong cùng transaction** với thay đổi booking. Rollback booking thì không có email; email lỗi không bao giờ hoàn tác booking/hủy/đổi lịch booking. Booking khách vãng lai không có email nên không ghi hàng đợi.
 - **Không gửi lặp theo sự kiện**: khóa duy nhất `(kind, booking_id, event_key)` (mặc định `event_key = ''`, riêng cảnh báo gián đoạn CWB-91 dùng `closure:<closureId>` hoặc `room_status:<STATUS>:<effectiveAt>`) nên mỗi sự kiện chỉ tạo tối đa 1 hàng đợi cho mỗi booking; hủy lặp lại (khách/admin) hoặc retry `Idempotency-Key` không tạo email mới.
 - **Không lưu dữ liệu nhạy cảm**: hàng đợi chỉ lưu loại email, `booking_id` và `event_key`; người nhận và nội dung được dựng từ booking lúc gửi. Email đặt lại mật khẩu vẫn gửi trực tiếp, token không bao giờ vào hàng đợi. Log chỉ ghi mã booking và mã lỗi an toàn.
 - **Worker**: chạy trong backend (`server.ts`), quét mỗi 15 giây và ngay sau mỗi booking/hủy/đổi lịch/đóng cửa/bảo trì. Mỗi lượt lấy tối đa 5 email đến hạn bằng `SELECT ... FOR UPDATE SKIP LOCKED` rồi đẩy hạn thử tiếp (lease 2 phút, đủ cho ước lượng thời gian gửi cả lô) trước khi gửi, nên nhiều worker/instance không lấy trùng một email. Kết quả gửi chỉ được ghi khi dòng vẫn thuộc đúng lượt claim (`attempts` và hạn lease khớp), nên đổi lịch lần 2 hoặc worker khác nhận lại sau khi hết lease trong lúc đang gửi sẽ không bị ghi đè hay nuốt mất email mới (nếu lô gửi vượt quá lease thì chỉ có thể gửi lặp theo cam kết at-least-once, không mất hay ghi đè trạng thái).
@@ -974,13 +1091,14 @@ npm run test --workspace=apps/client -- src/__tests__/AdminAuditPage.test.tsx
 - **Email biên nhận thanh toán (CWB-89)**: loại `PAYMENT_RECEIPT`. `PATCH /admin/bookings/:id/payment` (lần đầu chuyển `UNPAID → PAID`) ghi `paid_at = now` và xếp hàng biên nhận trong cùng transaction, chỉ cho booking của tài khoản đã đăng ký (khách vãng lai không có email); gọi lại khi đã `PAID` là idempotent (không đổi `paid_at`, không thêm email nhờ khóa duy nhất `(kind, booking_id, event_key)`). Nội dung: mã đơn, phòng, thời gian, số tiền, phương thức (`Tiền mặt`/`Chuyển khoản / QR`), thời điểm thanh toán; mọi giá trị được escape HTML. Mỗi lần gửi đều kiểm tra lại: booking không còn `PAID` → `SKIPPED` `BOOKING_NOT_PAID`. Lỗi SMTP chỉ retry dòng outbox, không đổi trạng thái thanh toán. Booking đã `PAID` trước CWB-89 có `paid_at = NULL`.
 - **Email nhắc lịch (CWB-80, cập nhật CWB-91)**: loại `BOOKING_REMINDER`. Mỗi lượt worker (15 giây) trước khi gửi sẽ quét booking `CONFIRMED` của tài khoản đã đăng ký có giờ bắt đầu trong `(now, now + BOOKING_REMINDER_HOURS]` (env 1–48, mặc định **2** giờ) và ghi hàng đợi bằng `createMany skipDuplicates` trên khóa duy nhất `(kind, booking_id, event_key)`, nên chạy lại hoặc nhiều instance cùng quét cũng chỉ có tối đa 1 email nhắc cho mỗi booking. Booking tạo khi đã ở trong cửa sổ nhắc (đặt sát giờ) không được nhắc vì email xác nhận vừa gửi. Booking khách vãng lai không có email nên không được nhắc. Mỗi lần gửi (kể cả gửi lại thủ công) đều kiểm tra lại: booking đã hủy → `SKIPPED` `BOOKING_CANCELLED`; trạng thái khác `CONFIRMED` → `SKIPPED` `BOOKING_NOT_ACTIVE`; đã qua giờ bắt đầu → `SKIPPED` `REMINDER_EXPIRED`; phòng không khả dụng hoặc giao `Closure` → `SKIPPED` `ROOM_UNAVAILABLE` (đánh giá trước `SMTP_DISABLED`). Nội dung gồm mã đơn, phòng, giờ theo `Asia/Ho_Chi_Minh`, hướng dẫn check-in và thanh toán tại quầy; mọi dữ liệu người dùng được escape HTML. Lỗi SMTP chỉ ảnh hưởng dòng outbox (retry/`FAILED`), không đổi trạng thái booking.
 - **Email cảnh báo phòng không khả dụng (CWB-91)**: loại `BOOKING_ROOM_UNAVAILABLE`. Khi Admin tạo/sửa `Closure` kèm `acknowledgeConflictingBookings: true` hoặc chuyển phòng sang `MAINTENANCE`/`ARCHIVED` kèm `acknowledgeFutureBookings: true`, server xếp hàng `BOOKING_ROOM_UNAVAILABLE` trong cùng transaction cho các booking `CONFIRMED` bị ảnh hưởng của tài khoản đã đăng ký (`userId != null`) với `eventKey` theo đợt sự kiện (`closure:<id>` hoặc `room_status:<STATUS>:<effectiveAt>`). Khi gửi, nếu phòng đã trở lại `AVAILABLE` và không còn giao khung đóng cửa nào → `SKIPPED` `BOOKING_NOT_AFFECTED`. Nội dung nêu lý do gián đoạn và hướng dẫn đổi lịch/phòng (nếu `UNPAID`) hoặc liên hệ quầy lễ tân (nếu `PAID`).
+- **Email xác nhận đổi lịch (CWB-81, cập nhật CWB-110, CWB-120)**: loại `BOOKING_RESCHEDULED`. Khi `PATCH /api/v1/bookings/:id` thay đổi phòng hoặc khung giờ, transaction xóa `BOOKING_REMINDER` cũ của đơn và `upsert` `BOOKING_RESCHEDULED` (`eventKey = ''`, reset `status = QUEUED`, `attempts = 0`, `lastError = null`, `sentAt = null`) để mỗi lần đổi lịch gửi lại email mới; no-op hoặc chỉ đổi `note` không xóa reminder và không xếp hàng lại. Khi gửi, nếu không có email (`NO_RECIPIENT`), tài khoản đã xóa (`ACCOUNT_DELETED`), đơn đã hủy (`BOOKING_CANCELLED`) hoặc chưa bật SMTP (`SMTP_DISABLED`) thì chuyển `SKIPPED`.
 
 ```bash
 npm run test:integration --workspace=apps/server -- src/__tests__/email-outbox.integration.test.ts
 npm run test --workspace=apps/client -- src/__tests__/AdminEmailsPage.test.tsx
 ```
 
-### 9. Quản Lý Khách Hàng (CWB-79, cập nhật CWB-112)
+### 10. Quản Lý Khách Hàng (CWB-79, cập nhật CWB-112)
 
 - **Dữ liệu**: `users.locked_at` (`NULL` = đang hoạt động) và `users.lock_reason` (tối đa 500 ký tự), migration `20261106100000_cwb79_user_lock` chỉ thêm cột nullable nên tài khoản hiện có vẫn hoạt động. Các tài khoản đã xóa/ẩn danh (`deleted_at IS NOT NULL`) được loại trừ khỏi danh sách và thao tác khóa/mở khóa.
 - **API ADMIN** (thiếu token `401`, CUSTOMER `403`):
@@ -995,7 +1113,7 @@ npm run test:integration --workspace=apps/server -- src/__tests__/admin-users.in
 npm run test --workspace=apps/client -- src/__tests__/AdminUsersPage.test.tsx
 ```
 
-### 10. Quản Lý Ngày Nghỉ Lễ & Khung Đóng Cửa (Closures, CWB-86)
+### 11. Quản Lý Ngày Nghỉ Lễ & Khung Đóng Cửa (Closures, CWB-86)
 
 - **Dữ liệu**: bảng `closures` (`id`, `room_id` nullable FK tới `rooms`, `start_time`, `end_time`, `reason` tối đa 500 ký tự, `created_by` FK tới `users`, `created_at`, `updated_at`), có index `(room_id, start_time, end_time)` và `(start_time, end_time)`. `room_id = NULL` biểu thị đóng cửa **toàn bộ cơ sở**.
 - **API ADMIN** (`/api/v1/admin/closures`, yêu cầu `ADMIN`; thiếu token → `401`, `CUSTOMER` → `403`):
