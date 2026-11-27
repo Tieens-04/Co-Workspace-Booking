@@ -19,6 +19,7 @@ const adminUserSelect = {
   fullName: true,
   phoneNumber: true,
   role: true,
+  emailVerifiedAt: true,
   lockedAt: true,
   lockReason: true,
   createdAt: true,
@@ -40,11 +41,15 @@ const emptyStats: BookingStats = {
   lastBookingAt: null,
 };
 
-const toAdminUser = (record: AdminUserRecord, stats: BookingStats = emptyStats): AdminUserDto => ({
-  ...record,
-  status: record.lockedAt ? 'LOCKED' : 'ACTIVE',
-  ...stats,
-});
+const toAdminUser = (record: AdminUserRecord, stats: BookingStats = emptyStats): AdminUserDto => {
+  const { emailVerifiedAt, ...rest } = record;
+  return {
+    ...rest,
+    emailVerified: Boolean(emailVerifiedAt),
+    status: record.lockedAt ? 'LOCKED' : 'ACTIVE',
+    ...stats,
+  };
+};
 
 export class AdminUserRepository {
   constructor(

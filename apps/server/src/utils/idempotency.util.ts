@@ -32,6 +32,7 @@ export function hashBookingIntent(intent: {
   startTime: string;
   endTime: string;
   note?: string | null;
+  customerId?: string | null;
   guestName?: string | null;
   guestPhone?: string | null;
 }): string {
@@ -40,6 +41,7 @@ export function hashBookingIntent(intent: {
     startTime: new Date(intent.startTime).toISOString(),
     endTime: new Date(intent.endTime).toISOString(),
     note: intent.note?.trim() || null,
+    customerId: intent.customerId ?? null,
     guestName: intent.guestName?.trim() || null,
     guestPhone: intent.guestPhone?.trim() || null,
   };

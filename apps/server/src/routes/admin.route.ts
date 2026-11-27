@@ -15,6 +15,7 @@ import { getAdminRoomsQuerySchema, getRoomByIdParamsSchema } from '../validators
 import { createRoomSchema, updateRoomSchema } from '../validators/admin-room.validator.js';
 import {
   getAdminBookingsQuerySchema,
+  createAdminCustomerBookingSchema,
   createGuestBookingSchema,
   confirmPaymentParamsSchema,
   confirmPaymentBodySchema,
@@ -83,6 +84,11 @@ router.get(
   '/bookings',
   validateQuery(getAdminBookingsQuerySchema),
   adminBookingController.getBookings,
+);
+router.post(
+  '/bookings',
+  validateBody(createAdminCustomerBookingSchema),
+  adminBookingController.createCustomerBooking,
 );
 router.post(
   '/bookings/guest',

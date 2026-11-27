@@ -14,9 +14,14 @@ import {
   RevenuePeriodFilter,
   AdminRevenueResponseDto,
 } from '../types/admin-booking.type.js';
-import { CreateGuestBookingInput } from '../validators/admin-booking.validator.js';
+import {
+  CreateAdminCustomerBookingInput,
+  CreateGuestBookingInput,
+} from '../validators/admin-booking.validator.js';
 import { emailOutboxService, EmailOutboxService } from './email-outbox.service.js';
 import { resolveRevenuePeriod } from '../utils/revenue-period.util.js';
+import { hashBookingIntent } from '../utils/idempotency.util.js';
+import { runBookingCodeRetries } from '../utils/booking-code-retry.util.js';
 
 export class AdminBookingService {
   constructor(
@@ -46,6 +51,40 @@ export class AdminBookingService {
         totalPages,
       },
     };
+  }
+
+  async createCustomerBooking(
+    input: CreateAdminCustomerBookingInput,
+    now = new Date(),
+    retry?: { adminId: string; idempotencyKey: string },
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto & { idempotentReplay?: boolean }> {
+    const idempotency = retry
+      ? {
+          scope: `admin:${retry.adminId}`,
+          key: retry.idempotencyKey,
+          hash: hashBookingIntent(input),
+        }
+      : undefined;
+    const booking = await runBookingCodeRetries(
+      input,
+      now,
+      idempotency,
+      (candidateCode, startDate, endDate, durationMinutes) =>
+        this.adminBookingRepo.createAdminCustomerBooking({
+          userId: input.customerId,
+          roomId: input.roomId,
+          bookingCode: candidateCode,
+          startDate,
+          endDate,
+          durationMinutes,
+          note: input.note,
+          idempotency,
+          ...(actor ? { auditActor: actor } : {}),
+        }),
+    );
+    if (!booking.idempotentReplay) this.emailOutbox.kick();
+    return booking;
   }
 
   async createGuestBooking(

@@ -55,24 +55,46 @@ export type BookingGuestIdentity = {
 
 export type BookingIdentity = BookingUserIdentity | BookingGuestIdentity;
 
+type CustomerLockMode = 'SELF' | 'ADMIN_FOR_CUSTOMER';
+
 export const emailNotVerifiedError = (): AppError =>
   new AppError('EMAIL_NOT_VERIFIED', 'Vui lòng xác thực email trước khi đặt phòng', 403);
 
+const customerNotFoundError = (): AppError =>
+  new AppError('CUSTOMER_NOT_FOUND', 'Không tìm thấy tài khoản khách hàng', 404);
+
+const invalidCustomerRoleError = (): AppError =>
+  new AppError(
+    'INVALID_CUSTOMER_ROLE',
+    'Chỉ có thể đặt phòng hộ cho tài khoản có vai trò CUSTOMER',
+    400,
+  );
+
 /**
- * CWB-78, CWB-87, CWB-88, CWB-112: locks the customer's `users` row first (users -> bookings ->
- * rooms) and enforces lifecycle guards inside the booking transaction.
+ * CWB-78, CWB-87, CWB-88, CWB-112, CWB-99: locks the customer's `users` row first (before
+ * rooms/bookings) and enforces lifecycle guards inside the booking transaction.
  */
-async function lockBookableCustomer(tx: Prisma.TransactionClient, userId: string): Promise<void> {
+async function lockBookableCustomer(
+  tx: Prisma.TransactionClient,
+  userId: string,
+  mode: CustomerLockMode = 'SELF',
+): Promise<void> {
   const [account] = await tx.$queryRaw<
     Array<{
+      role?: Role;
       locked_at: Date | null;
       email_verified_at: Date | null;
       deleted_at: Date | null;
     }>
   >(
-    Prisma.sql`SELECT locked_at, email_verified_at, deleted_at FROM users WHERE id = ${userId} FOR UPDATE`,
+    Prisma.sql`SELECT role, locked_at, email_verified_at, deleted_at FROM users WHERE id = ${userId} FOR UPDATE`,
   );
-  if (!account || account.deleted_at) throw accountDeletedError();
+  if (!account || account.deleted_at) {
+    throw mode === 'ADMIN_FOR_CUSTOMER' ? customerNotFoundError() : accountDeletedError();
+  }
+  if (mode === 'ADMIN_FOR_CUSTOMER' && account.role !== Role.CUSTOMER) {
+    throw invalidCustomerRoleError();
+  }
   if (account.locked_at) throw accountLockedError();
   if (!account.email_verified_at) throw emailNotVerifiedError();
 }
@@ -123,7 +145,7 @@ export type CreateBookingRepoInput = {
   endDate: Date;
   durationMinutes: number;
   note?: string | null;
-  /** Admin who created a walk-in booking; audited inside the create transaction. */
+  /** Admin who created the booking (walk-in or on behalf of a customer); audited inside the create transaction. */
   auditActor?: AuditActor;
   idempotency?: BookingIdempotency;
 } & BookingIdentity;
@@ -598,6 +620,9 @@ export interface RescheduleBookingRepoInput {
 }
 
 export interface AdminBookingRepositoryContract {
+  createAdminCustomerBooking(
+    data: CreateBookingRepoInput,
+  ): Promise<AdminBookingResponseDto & { idempotentReplay?: boolean }>;
   findManyAndCountForAdmin(
     filter: FindAdminBookingsFilter,
     now?: Date,
@@ -651,13 +676,27 @@ export interface AdminBookingRepositoryContract {
 export class BookingRepository
   implements BookingRepositoryContract, AdminBookingRepositoryContract
 {
-  async createBooking(data: CreateBookingRepoInput): Promise<CreatedBookingResult> {
+  private async executeCreateBooking<T>(
+    data: CreateBookingRepoInput,
+    options: {
+      customerLockMode: CustomerLockMode;
+      onReplay: (tx: Prisma.TransactionClient, previousId: string, replayNow: Date) => Promise<T>;
+      onCreate: (
+        tx: Prisma.TransactionClient,
+        createData: Prisma.BookingUncheckedCreateInput,
+        txNow: Date,
+      ) => Promise<{
+        id: string;
+        result: T;
+      }>;
+    },
+  ): Promise<T> {
     assertValidBookingIdentity(data);
     return prisma.$transaction(async (tx) => {
-      // 0. CWB-78, CWB-87: lock the customer's row first (always user -> room, no path locks the reverse)
-      // so one customer's concurrent requests for different rooms serialize on the booking cap.
+      // 0. CWB-78, CWB-87, CWB-99: lock the customer's row first (always user -> room, no path
+      // locks the reverse) so one customer's concurrent requests for different rooms serialize.
       if (data.userId) {
-        await lockBookableCustomer(tx, data.userId);
+        await lockBookableCustomer(tx, data.userId, options.customerLockMode);
       }
 
       // 1. Lock room row in MySQL with FOR UPDATE
@@ -677,17 +716,7 @@ export class BookingRepository
         );
         if (previous) {
           if (previous.idempotency_hash !== data.idempotency.hash) throw idempotencyKeyReused();
-          const replayNow = new Date();
-          const original = await tx.booking.findUniqueOrThrow({
-            where: { id: previous.id },
-            include: { room: { select: { id: true, name: true, status: true } } },
-          });
-          const closures = await loadOverlappingClosuresForConfirmed(tx, [original], replayNow);
-          return {
-            ...toBookingResponse(original),
-            ...resolveBookingRoomUnavailability(original, closures, undefined, replayNow),
-            idempotentReplay: true,
-          };
+          return options.onReplay(tx, previous.id, new Date());
         }
         // CWB-111: pre-transaction time validation was skipped so replays above could succeed;
         // validate new keys now before room/capacity/closure/overlap queries and pricing.
@@ -697,8 +726,7 @@ export class BookingRepository
       // 2. Reject if room is currently in MAINTENANCE or ARCHIVED
       assertRoomBookable(lockedRoom);
 
-      // 2b. Upcoming-booking cap per customer (CWB-78); admin guest bookings are exempt.
-      // After the idempotency replay above, so retrying an already created booking still succeeds.
+      // 2b. Upcoming-booking cap per customer (CWB-78, CWB-99); admin guest bookings are exempt.
       if (data.userId) {
         await assertActiveBookingCapacity(
           tx,
@@ -736,11 +764,12 @@ export class BookingRepository
       const totalAmount = calculateBookingTotal(lockedRoom.pricePerHour, data.durationMinutes);
 
       // Lock waits, overlap queries, and code-collision retries can exhaust the lead time.
-      validateBookingTime(data.startDate, data.endDate, new Date());
+      const txNow = new Date();
+      validateBookingTime(data.startDate, data.endDate, txNow);
 
-      // 5. Insert booking with initial CONFIRMED and UNPAID status
-      const createdBooking = await tx.booking.create({
-        data: {
+      const created = await options.onCreate(
+        tx,
+        {
           bookingCode: data.bookingCode,
           userId: data.userId ?? null,
           guestName: data.userId ? null : data.guestName,
@@ -757,34 +786,92 @@ export class BookingRepository
           idempotencyKey: data.idempotency?.key ?? null,
           idempotencyHash: data.idempotency?.hash ?? null,
         },
-        include: createdBookingInclude,
-      });
+        txNow,
+      );
 
       if (data.auditActor) {
-        // Guest PII stays out of the audit trail; the booking row remains the source for it.
+        // Customer/guest PII stays out of the audit trail; customerId UUID is kept for admin-created user bookings.
         await recordAuditEvent(tx, {
           actor: data.auditActor,
-          action: 'BOOKING_GUEST_CREATED',
+          action: data.userId ? 'BOOKING_CREATED_BY_ADMIN' : 'BOOKING_GUEST_CREATED',
           entityType: 'BOOKING',
-          entityId: createdBooking.id,
+          entityId: created.id,
           before: null,
           after: {
-            bookingCode: createdBooking.bookingCode,
-            roomId: createdBooking.roomId,
-            startTime: createdBooking.startTime,
-            endTime: createdBooking.endTime,
-            totalAmount: createdBooking.totalAmount.toFixed(2),
-            status: createdBooking.status,
-            paymentStatus: createdBooking.paymentStatus,
+            ...(data.userId ? { customerId: data.userId } : {}),
+            bookingCode: data.bookingCode,
+            roomId: data.roomId,
+            startTime: data.startDate,
+            endTime: data.endDate,
+            totalAmount: totalAmount.toFixed(2),
+            status: BookingStatus.CONFIRMED,
+            paymentStatus: PaymentStatus.UNPAID,
           },
         });
       }
 
       if (data.userId) {
-        await enqueueBookingEmail(tx, 'BOOKING_CONFIRMATION', createdBooking.id);
+        await enqueueBookingEmail(tx, 'BOOKING_CONFIRMATION', created.id);
       }
 
-      return toBookingResponse(createdBooking);
+      return created.result;
+    });
+  }
+
+  async createBooking(data: CreateBookingRepoInput): Promise<CreatedBookingResult> {
+    return this.executeCreateBooking(data, {
+      customerLockMode: 'SELF',
+      onReplay: async (tx, previousId, replayNow) => {
+        const original = await tx.booking.findUniqueOrThrow({
+          where: { id: previousId },
+          include: { room: { select: { id: true, name: true, status: true } } },
+        });
+        const closures = await loadOverlappingClosuresForConfirmed(tx, [original], replayNow);
+        return {
+          ...toBookingResponse(original),
+          ...resolveBookingRoomUnavailability(original, closures, undefined, replayNow),
+          idempotentReplay: true,
+        };
+      },
+      onCreate: async (tx, createData) => {
+        const createdBooking = await tx.booking.create({
+          data: createData,
+          include: createdBookingInclude,
+        });
+        return {
+          id: createdBooking.id,
+          result: toBookingResponse(createdBooking),
+        };
+      },
+    });
+  }
+
+  async createAdminCustomerBooking(
+    data: CreateBookingRepoInput,
+  ): Promise<AdminBookingResponseDto & { idempotentReplay?: boolean }> {
+    return this.executeCreateBooking(data, {
+      customerLockMode: 'ADMIN_FOR_CUSTOMER',
+      onReplay: async (tx, previousId, replayNow) => {
+        const original = await tx.booking.findUniqueOrThrow({
+          where: { id: previousId },
+          select: adminBookingReadSelect,
+        });
+        const closures = await loadOverlappingClosuresForConfirmed(tx, [original], replayNow);
+        return {
+          ...mapAdminBookingRecordToDto(original, closures, replayNow),
+          idempotentReplay: true,
+        };
+      },
+      onCreate: async (tx, createData, txNow) => {
+        const createdBooking = await tx.booking.create({
+          data: createData,
+          select: adminBookingReadSelect,
+        });
+        return {
+          id: createdBooking.id,
+          result: mapAdminBookingRecordToDto(createdBooking, [], txNow),
+        };
+      },
     });
   }
 
