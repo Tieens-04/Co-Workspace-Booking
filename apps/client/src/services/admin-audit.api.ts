@@ -4,6 +4,7 @@ import { ApiResponse, PaginationMeta } from '../types/room';
 export const AUDIT_ACTION_LABELS = {
   BOOKING_RESCHEDULED: 'Đổi lịch đặt phòng',
   BOOKING_GUEST_CREATED: 'Tạo đặt phòng khách vãng lai',
+  BOOKING_CREATED_BY_ADMIN: 'Đặt phòng hộ khách có tài khoản',
   BOOKING_PAYMENT_CONFIRMED: 'Xác nhận thanh toán',
   BOOKING_CANCELLED_BY_ADMIN: 'Hủy đặt phòng',
   BOOKING_CHECKED_IN: 'Check-in',

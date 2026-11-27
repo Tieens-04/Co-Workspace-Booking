@@ -12,6 +12,7 @@ export interface AdminUserItem {
   phoneNumber: string | null;
   role: AccountRole;
   status: AccountStatus;
+  emailVerified: boolean;
   lockedAt: string | null;
   lockReason: string | null;
   createdAt: string;

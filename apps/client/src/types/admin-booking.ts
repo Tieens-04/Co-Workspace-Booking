@@ -62,6 +62,14 @@ export interface CreateGuestBookingPayload {
   note?: string | null;
 }
 
+export interface CreateAdminCustomerBookingPayload {
+  customerId: string;
+  roomId: string;
+  startTime: string;
+  endTime: string;
+  note?: string | null;
+}
+
 export interface ConfirmPaymentPayload {
   paymentMethod: 'CASH' | 'QR';
 }

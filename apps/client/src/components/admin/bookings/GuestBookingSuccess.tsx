@@ -8,8 +8,10 @@ interface GuestBookingSuccessProps {
   onCreateAnother: () => void;
 }
 
-/** Confirmation shown after a walk-in booking is created. */
+/** Confirmation shown after an admin-created (walk-in or customer) booking. */
 export function GuestBookingSuccess({ booking, onCreateAnother }: GuestBookingSuccessProps) {
+  const isRegisteredCustomer = booking.customer.kind === 'USER';
+
   return (
     <div
       role="status"
@@ -19,12 +21,30 @@ export function GuestBookingSuccess({ booking, onCreateAnother }: GuestBookingSu
       <div className="grid gap-1 text-status-success">
         <h3 className="flex items-center gap-2 text-h3">
           <CircleCheck aria-hidden="true" className="size-5 shrink-0" />
-          Đặt phòng cho khách vãng lai thành công!
+          {isRegisteredCustomer
+            ? 'Đặt phòng hộ khách có tài khoản thành công!'
+            : 'Đặt phòng cho khách vãng lai thành công!'}
         </h3>
         <p className="text-sm">
-          Khách hàng: <strong className="font-semibold">{booking.customer.name}</strong> (
-          <span className="tabular-nums">{booking.customer.phone}</span>)
+          Khách hàng: <strong className="font-semibold">{booking.customer.name}</strong>
+          {booking.customer.email && (
+            <>
+              {' '}
+              — <span>{booking.customer.email}</span>
+            </>
+          )}
+          {booking.customer.phone && (
+            <>
+              {' '}
+              (<span className="tabular-nums">{booking.customer.phone}</span>)
+            </>
+          )}
         </p>
+        {isRegisteredCustomer && (
+          <p className="text-xs text-muted-foreground">
+            Đơn đã gắn vào lịch sử đặt phòng của khách và email xác nhận đang được gửi qua hàng đợi.
+          </p>
+        )}
       </div>
       <div className="rounded-lg border bg-card p-4 text-card-foreground">
         <BookingSummary
@@ -53,7 +73,7 @@ export function GuestBookingSuccess({ booking, onCreateAnother }: GuestBookingSu
           data-testid="create-another-guest-booking-btn"
         >
           <Plus aria-hidden="true" />
-          Đặt đơn khác cho khách vãng lai
+          {isRegisteredCustomer ? 'Đặt đơn khác hộ khách hàng' : 'Đặt đơn khác cho khách vãng lai'}
         </Button>
       </div>
     </div>

@@ -2,6 +2,7 @@ import { apiClient } from './api';
 import {
   GetAdminBookingsParams,
   AdminBookingsApiResponse,
+  CreateAdminCustomerBookingPayload,
   CreateGuestBookingPayload,
   AdminGuestBookingApiResponse,
   ConfirmPaymentPayload,
@@ -38,6 +39,22 @@ export const adminBookingApi = {
       params,
       signal,
     });
+    return response.data;
+  },
+
+  createCustomerBooking: async (
+    payload: CreateAdminCustomerBookingPayload,
+    signal?: AbortSignal,
+    idempotencyKey?: string,
+  ): Promise<AdminGuestBookingApiResponse> => {
+    const response = await apiClient.post<AdminGuestBookingApiResponse>(
+      '/admin/bookings',
+      payload,
+      {
+        signal,
+        headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      },
+    );
     return response.data;
   },
 
