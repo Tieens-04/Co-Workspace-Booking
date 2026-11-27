@@ -19,6 +19,7 @@ import {
 import {
   AdminBookingCustomerDto,
   AdminBookingResponseDto,
+  AdminRescheduleBookingRepoInput,
   FindAdminBookingsFilter,
   RevenuePeriodFilter,
   AdminRevenueResponseDto,
@@ -632,6 +633,12 @@ export interface AdminBookingRepositoryContract {
     clock?: () => Date,
     actor?: AuditActor,
   ): Promise<AdminBookingResponseDto>;
+  rescheduleBookingForAdmin(
+    id: string,
+    input: AdminRescheduleBookingRepoInput,
+    actor?: AuditActor,
+    clock?: (() => Date) | Date,
+  ): Promise<AdminBookingResponseDto>;
   evaluateNoShowBookings(
     now?: Date,
     userId?: string,
@@ -1112,6 +1119,222 @@ export class BookingRepository
       const closures = await loadOverlappingClosuresForConfirmed(tx, [updated], evaluationTime);
       const dto = mapBookingRecordToDto(updated, closures, evaluationTime);
       return { ...dto, isRescheduled: true };
+    });
+  }
+
+  async rescheduleBookingForAdmin(
+    id: string,
+    input: AdminRescheduleBookingRepoInput,
+    actor?: AuditActor,
+    clock?: (() => Date) | Date,
+  ): Promise<AdminBookingResponseDto> {
+    return prisma.$transaction(async (tx) => {
+      // Lock order: bookings -> rooms (matches customer reschedule to avoid customer-vs-admin deadlocks on the same booking);
+      // skips lockBookableCustomer so admins can relocate bookings of locked accounts.
+      const rows = await tx.$queryRaw<
+        Array<{
+          id: string;
+          booking_code: string;
+          user_id: string | null;
+          room_id: string;
+          status: BookingStatus;
+          payment_status: PaymentStatus;
+          start_time: Date | string;
+          end_time: Date | string;
+          checked_in_at: Date | string | null;
+          total_amount: Prisma.Decimal | string | number;
+          note: string | null;
+        }>
+      >(
+        Prisma.sql`SELECT id, booking_code, user_id, room_id, status, payment_status, start_time, end_time, checked_in_at, total_amount, note FROM bookings WHERE id = ${id} FOR UPDATE`,
+      );
+
+      if (!rows || rows.length === 0) {
+        throw new AppError('BOOKING_NOT_FOUND', 'Không tìm thấy đặt phòng', 404);
+      }
+
+      const lockedBooking = rows[0];
+
+      if (lockedBooking.status !== BookingStatus.CONFIRMED) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Chỉ có thể đổi lịch đơn đặt phòng ở trạng thái đã xác nhận',
+          409,
+        );
+      }
+
+      if (lockedBooking.checked_in_at !== null) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể đổi lịch đơn đặt phòng đã check-in',
+          409,
+        );
+      }
+
+      if (
+        lockedBooking.payment_status !== PaymentStatus.UNPAID &&
+        lockedBooking.payment_status !== PaymentStatus.PAID
+      ) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Trạng thái thanh toán của đơn đặt phòng không hỗ trợ đổi lịch',
+          409,
+        );
+      }
+
+      const targetRoomId = input.roomId ?? lockedBooking.room_id;
+      const lockedRoom = await lockRoomRow(tx, targetRoomId);
+      const evaluationTime = typeof clock === 'function' ? clock() : (clock ?? new Date());
+
+      const existingStartDate = new Date(lockedBooking.start_time);
+      const existingEndDate = new Date(lockedBooking.end_time);
+      if (existingEndDate.getTime() <= evaluationTime.getTime()) {
+        throw new AppError(
+          'BOOKING_STATE_CONFLICT',
+          'Không thể đổi lịch đơn đặt phòng đã kết thúc',
+          409,
+        );
+      }
+
+      const newStartDate = new Date(input.startTime);
+      const newEndDate = new Date(input.endTime);
+
+      const isScheduleChanged =
+        targetRoomId !== lockedBooking.room_id ||
+        newStartDate.getTime() !== existingStartDate.getTime() ||
+        newEndDate.getTime() !== existingEndDate.getTime();
+      if (!isScheduleChanged) {
+        throw new AppError(
+          'NO_SCHEDULE_CHANGE',
+          'Khung giờ hoặc phòng mới phải khác lịch hiện tại',
+          400,
+        );
+      }
+
+      assertRoomBookable(lockedRoom);
+      validateBookingTime(newStartDate, newEndDate, evaluationTime, ENV.BOOKING_MAX_ADVANCE_DAYS, {
+        skipAdvanceNotice: true,
+      });
+      await assertRoomNotClosed(tx, targetRoomId, newStartDate, newEndDate);
+
+      const conflictingBookings = await tx.booking.findMany({
+        where: {
+          roomId: targetRoomId,
+          id: { not: id },
+          status: { in: [...BLOCKING_BOOKING_STATUSES] },
+          startTime: { lt: newEndDate },
+          endTime: { gt: newStartDate },
+        },
+        take: 1,
+        select: { id: true },
+      });
+
+      if (conflictingBookings.length > 0) {
+        throw new AppError(
+          'BOOKING_CONFLICT',
+          'Khung giờ này đã có người đặt, vui lòng chọn khung giờ khác',
+          409,
+        );
+      }
+
+      const durationMinutes = (newEndDate.getTime() - newStartDate.getTime()) / (60 * 1000);
+      const newTotalAmount = calculateBookingTotal(lockedRoom.pricePerHour, durationMinutes);
+      const oldTotalAmount = new Prisma.Decimal(lockedBooking.total_amount);
+      const priceDelta = newTotalAmount.sub(oldTotalAmount);
+      const isPaidWithDelta =
+        lockedBooking.payment_status === PaymentStatus.PAID && !priceDelta.isZero();
+
+      if (isPaidWithDelta && !input.acknowledgePriceDelta) {
+        throw new AppError(
+          'PAID_BOOKING_PRICE_MISMATCH',
+          'Tổng tiền mới khác số tiền đã thanh toán. Vui lòng xác nhận đã thu thêm hoặc hoàn chênh lệch tại quầy.',
+          409,
+          {
+            previousTotal: oldTotalAmount.toFixed(2),
+            newTotal: newTotalAmount.toFixed(2),
+            difference: priceDelta.toFixed(2),
+          },
+        );
+      }
+
+      const updated = await tx.booking.update({
+        where: { id },
+        data: {
+          roomId: targetRoomId,
+          startTime: newStartDate,
+          endTime: newEndDate,
+          totalAmount: newTotalAmount,
+          ...(input.note !== undefined ? { note: input.note } : {}),
+        },
+        select: adminBookingReadSelect,
+      });
+
+      if (actor) {
+        await recordAuditEvent(tx, {
+          actor,
+          action: 'BOOKING_RESCHEDULED',
+          entityType: 'BOOKING',
+          entityId: id,
+          before: {
+            bookingCode: lockedBooking.booking_code,
+            roomId: lockedBooking.room_id,
+            startTime: existingStartDate.toISOString(),
+            endTime: existingEndDate.toISOString(),
+            totalAmount: formatAmount(lockedBooking.total_amount),
+            ...(input.note !== undefined ? { note: lockedBooking.note } : {}),
+          },
+          after: {
+            bookingCode: updated.bookingCode,
+            roomId: updated.room.id,
+            startTime: updated.startTime.toISOString(),
+            endTime: updated.endTime.toISOString(),
+            totalAmount: formatAmount(updated.totalAmount),
+            reason: input.reason,
+            ...(input.note !== undefined ? { note: updated.note } : {}),
+            ...(isPaidWithDelta
+              ? {
+                  priceDelta: priceDelta.toFixed(2),
+                  acknowledgePriceDelta: true,
+                }
+              : {}),
+          },
+        });
+      }
+
+      if (lockedBooking.user_id) {
+        await tx.emailOutbox.deleteMany({
+          where: { bookingId: id, kind: 'BOOKING_REMINDER' },
+        });
+        await tx.emailOutbox.upsert({
+          where: {
+            kind_bookingId_eventKey: {
+              kind: 'BOOKING_RESCHEDULED',
+              bookingId: id,
+              eventKey: '',
+            },
+          },
+          create: {
+            kind: 'BOOKING_RESCHEDULED',
+            bookingId: id,
+            eventKey: '',
+            status: 'QUEUED',
+            attempts: 0,
+            nextAttemptAt: evaluationTime,
+            lastError: null,
+            sentAt: null,
+          },
+          update: {
+            status: 'QUEUED',
+            attempts: 0,
+            nextAttemptAt: evaluationTime,
+            lastError: null,
+            sentAt: null,
+          },
+        });
+      }
+
+      const closures = await loadOverlappingClosuresForConfirmed(tx, [updated], evaluationTime);
+      return mapAdminBookingRecordToDto(updated, closures, evaluationTime);
     });
   }
 

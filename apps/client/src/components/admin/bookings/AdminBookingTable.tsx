@@ -172,6 +172,7 @@ interface AdminBookingTableProps {
   onCancel: (booking: AdminBookingItem) => void;
   onCheckIn: (booking: AdminBookingItem) => void;
   onRefund?: (booking: AdminBookingItem) => void;
+  onReschedule?: (booking: AdminBookingItem) => void;
   pendingBookingId?: string | null;
 }
 
@@ -187,6 +188,7 @@ export function AdminBookingTable({
   onCancel,
   onCheckIn,
   onRefund,
+  onReschedule,
   pendingBookingId,
 }: AdminBookingTableProps) {
   const [now, setNow] = useState(Date.now);
@@ -241,6 +243,8 @@ export function AdminBookingTable({
                 !booking.checkedInAt &&
                 now >= new Date(booking.startTime).getTime() &&
                 now < new Date(booking.endTime).getTime();
+              const canReschedule =
+                isConfirmed && !booking.checkedInAt && now < new Date(booking.endTime).getTime();
               const isPending = pendingBookingId === booking.id;
               const totalNum = Number(booking.totalAmount || 0);
               const refundedNum = Number(booking.refundedAmount || 0);
@@ -432,6 +436,18 @@ export function AdminBookingTable({
                             onClick={() => onCheckIn(booking)}
                           >
                             {isPending ? 'Đang check-in…' : 'Check-in'}
+                          </Button>
+                        )}
+                        {canReschedule && onReschedule && (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            data-testid={`reschedule-booking-btn-${booking.id}`}
+                            onClick={() => onReschedule(booking)}
+                            disabled={isPending}
+                          >
+                            Đổi lịch
                           </Button>
                         )}
                         {canComplete && (

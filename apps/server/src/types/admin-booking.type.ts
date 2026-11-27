@@ -16,6 +16,15 @@ export interface RecordRefundRepoInput {
   reason: string;
 }
 
+export interface AdminRescheduleBookingRepoInput {
+  startTime: string;
+  endTime: string;
+  roomId?: string;
+  reason: string;
+  note?: string | null;
+  acknowledgePriceDelta?: boolean;
+}
+
 export type AdminCustomerKind = 'USER' | 'GUEST';
 
 // Public admin projection: USER includes account email/id; GUEST omits both.

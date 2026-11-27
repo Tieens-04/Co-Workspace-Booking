@@ -23,6 +23,7 @@ import {
   LifecycleConfirmDialog,
   LifecycleConfirmTarget,
 } from '../components/admin/bookings/LifecycleConfirmDialog';
+import { RescheduleBookingDialog } from '../components/booking/RescheduleBookingDialog';
 import { useToast } from '../hooks/useToast';
 import { CircleCheck, ClipboardList, RotateCw, X } from 'lucide-react';
 import { PageHeader } from '@/components/common/PageHeader';
@@ -174,6 +175,8 @@ export const AdminBookingsPage: React.FC = () => {
   const [refundModalTarget, setRefundModalTarget] = useState<AdminBookingItem | null>(null);
   const [isRefundSubmitting, setIsRefundSubmitting] = useState<boolean>(false);
   const [refundError, setRefundError] = useState<string | null>(null);
+  // Reschedule modal state (CWB-98)
+  const [rescheduleModalTarget, setRescheduleModalTarget] = useState<AdminBookingItem | null>(null);
 
   // Success message banner
   const [actionSuccessMessage, setActionSuccessMessage] = useState<string | null>(null);
@@ -258,6 +261,20 @@ export const AdminBookingsPage: React.FC = () => {
     if (isRefundSubmitting) return;
     setRefundModalTarget(null);
     setRefundError(null);
+  };
+
+  const handleOpenRescheduleModal = (booking: AdminBookingItem) => {
+    if (pendingActionRef.current) return;
+    setRescheduleModalTarget(booking);
+    setActionErrorMessage(null);
+  };
+
+  const handleRescheduleSuccess = (updatedBooking: AdminBookingItem) => {
+    const msg = `Đổi lịch thành công cho đơn ${updatedBooking.bookingCode}`;
+    showToast(msg, 'success');
+    setActionSuccessMessage(msg);
+    setRescheduleModalTarget(null);
+    fetchAdminBookings(true);
   };
 
   const handleSubmitRefund = async (data: RefundBookingSubmitData) => {
@@ -737,6 +754,7 @@ export const AdminBookingsPage: React.FC = () => {
               onCancel={handleOpenCancelModal}
               onCheckIn={handleCheckIn}
               onRefund={handleOpenRefundModal}
+              onReschedule={handleOpenRescheduleModal}
               pendingBookingId={pendingBookingId}
             />
 
@@ -797,6 +815,17 @@ export const AdminBookingsPage: React.FC = () => {
         isSubmitting={lifecycleTarget !== null && pendingBookingId === lifecycleTarget.booking.id}
         onConfirm={handleConfirmLifecycle}
         onClose={() => setLifecycleTarget(null)}
+      />
+
+      {/* Admin Reschedule Modal (CWB-98) */}
+      <RescheduleBookingDialog
+        mode="admin"
+        isOpen={rescheduleModalTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRescheduleModalTarget(null);
+        }}
+        booking={rescheduleModalTarget}
+        onSuccess={handleRescheduleSuccess}
       />
     </div>
   );

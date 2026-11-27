@@ -43,6 +43,7 @@ export function validateBookingTime(
   endDate: Date,
   now = new Date(),
   maxAdvanceDays = ENV.BOOKING_MAX_ADVANCE_DAYS,
+  options?: { skipAdvanceNotice?: boolean },
 ): void {
   if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
     throw new AppError('INVALID_SLOT', 'Thời gian bắt đầu hoặc kết thúc không hợp lệ', 400);
@@ -82,13 +83,15 @@ export function validateBookingTime(
     throw new AppError('PAST_TIME', 'Thời gian bắt đầu không được ở trong quá khứ', 400);
   }
 
-  const advanceNoticeMs = ADVANCE_NOTICE_MINUTES * 60 * 1000;
-  if (startDate.getTime() - now.getTime() < advanceNoticeMs) {
-    throw new AppError(
-      'ADVANCE_NOTICE',
-      `Phải đặt phòng trước thời gian bắt đầu ít nhất ${ADVANCE_NOTICE_MINUTES} phút`,
-      400,
-    );
+  if (!options?.skipAdvanceNotice) {
+    const advanceNoticeMs = ADVANCE_NOTICE_MINUTES * 60 * 1000;
+    if (startDate.getTime() - now.getTime() < advanceNoticeMs) {
+      throw new AppError(
+        'ADVANCE_NOTICE',
+        `Phải đặt phòng trước thời gian bắt đầu ít nhất ${ADVANCE_NOTICE_MINUTES} phút`,
+        400,
+      );
+    }
   }
 
   if (startDate.getTime() > getBookingHorizonEnd(now, maxAdvanceDays).getTime()) {

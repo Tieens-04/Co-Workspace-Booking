@@ -18,6 +18,10 @@ export interface BookingConfirmationEmailPayload extends BaseBookingEmailPayload
   totalAmount: string | number;
 }
 
+export interface BookingRescheduledEmailPayload extends BookingConfirmationEmailPayload {
+  reason?: string | null;
+}
+
 export interface BookingCancellationEmailPayload extends BaseBookingEmailPayload {
   reason?: string | null;
 }
@@ -425,7 +429,7 @@ Lý do hủy: ${reasonDisplay}
       return false;
     }
   }
-  async sendBookingRescheduled(payload: BookingConfirmationEmailPayload): Promise<boolean> {
+  async sendBookingRescheduled(payload: BookingRescheduledEmailPayload): Promise<boolean> {
     if (!this.transporter) {
       return false;
     }
@@ -434,6 +438,11 @@ Lý do hủy: ${reasonDisplay}
       const formattedAmount = formatVND(payload.totalAmount);
       const startFormatted = formatDate(payload.startTime);
       const endFormatted = formatDate(payload.endTime);
+      const reasonText = payload.reason?.trim() ? payload.reason.trim() : null;
+      const reasonHtml = reasonText
+        ? `<p style="margin: 6px 0;"><strong>Lý do đổi lịch:</strong> ${escapeHtml(reasonText)}</p>`
+        : '';
+      const reasonLine = reasonText ? `\nLý do đổi lịch: ${reasonText}` : '';
 
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
@@ -446,6 +455,7 @@ Lý do hủy: ${reasonDisplay}
             <p style="margin: 6px 0;"><strong>Thời gian bắt đầu mới:</strong> ${escapeHtml(startFormatted)}</p>
             <p style="margin: 6px 0;"><strong>Thời gian kết thúc mới:</strong> ${escapeHtml(endFormatted)}</p>
             <p style="margin: 6px 0;"><strong>Tổng tiền mới:</strong> ${escapeHtml(formattedAmount)}</p>
+            ${reasonHtml}
           </div>
           <p>Vui lòng đến đúng giờ để nhận phòng. Nếu bạn có bất kỳ câu hỏi nào, vui lòng liên hệ ban quản lý.</p>
           <hr style="border: none; border-top: 1px solid #edf2f7; margin: 20px 0;" />
@@ -458,7 +468,7 @@ Xác nhận đổi lịch đặt phòng thành công
 Xin chào ${payload.customerName},
 Đơn đặt phòng ${payload.bookingCode} tại ${payload.roomName} đã được đổi lịch thành công.
 Thời gian mới: ${startFormatted} - ${endFormatted}
-Tổng tiền mới: ${formattedAmount}
+Tổng tiền mới: ${formattedAmount}${reasonLine}
       `.trim();
 
       await this.transporter.sendMail({

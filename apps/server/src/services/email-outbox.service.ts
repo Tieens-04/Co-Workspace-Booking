@@ -227,11 +227,41 @@ export class EmailOutboxService {
           totalAmount: booking.totalAmount.toFixed(2),
           isPaid: booking.paymentStatus === 'PAID',
         });
-      case 'BOOKING_RESCHEDULED':
+      case 'BOOKING_RESCHEDULED': {
+        let reason: string | null = null;
+        if (row.bookingId && typeof this.db.auditEvent?.findFirst === 'function') {
+          const latestAudit = await this.db.auditEvent.findFirst({
+            where: {
+              entityType: 'BOOKING',
+              entityId: row.bookingId,
+              action: 'BOOKING_RESCHEDULED',
+            },
+            orderBy: { sequence: 'desc' },
+            select: { actorRole: true, after: true },
+          });
+          if (
+            latestAudit?.actorRole === 'ADMIN' &&
+            latestAudit.after &&
+            typeof latestAudit.after === 'object' &&
+            !Array.isArray(latestAudit.after)
+          ) {
+            const after = latestAudit.after as Record<string, unknown>;
+            const matchesSnapshot =
+              after.roomId === booking.room.id &&
+              after.startTime === booking.startTime.toISOString() &&
+              after.endTime === booking.endTime.toISOString();
+            if (matchesSnapshot && typeof after.reason === 'string') {
+              const rawReason = after.reason.trim();
+              if (rawReason.length > 0) reason = rawReason;
+            }
+          }
+        }
         return this.notification.sendBookingRescheduled({
           ...base,
           totalAmount: booking.totalAmount.toFixed(2),
+          ...(reason ? { reason } : {}),
         });
+      }
       case 'BOOKING_CANCELLATION':
         return this.notification.sendBookingCancellation({
           ...base,

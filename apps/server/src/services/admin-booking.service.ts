@@ -7,6 +7,7 @@ import {
 import { bookingService as defaultBookingService, BookingService } from './booking.service.js';
 import {
   AdminBookingListResponseData,
+  AdminRescheduleBookingRepoInput,
   RecordRefundRepoInput,
   AdminBookingResponseDto,
   FindAdminBookingsFilter,
@@ -109,6 +110,18 @@ export class AdminBookingService {
 
   async markNoShow(id: string, actor?: AuditActor): Promise<AdminBookingResponseDto> {
     return this.adminBookingRepo.markNoShowForAdmin(id, undefined, actor);
+  }
+
+  async rescheduleBooking(
+    id: string,
+    input: AdminRescheduleBookingRepoInput,
+    actor?: AuditActor,
+  ): Promise<AdminBookingResponseDto> {
+    const booking = await this.adminBookingRepo.rescheduleBookingForAdmin(id, input, actor);
+    if (booking.customer.kind === 'USER') {
+      this.emailOutbox.kick();
+    }
+    return booking;
   }
 
   async evaluateNoShowBookings(now = new Date()): Promise<number> {

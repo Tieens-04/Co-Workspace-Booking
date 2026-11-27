@@ -128,6 +128,33 @@ describe('TimeGrid component', () => {
       expect(availableBtn).not.toBeDisabled();
       expect(availableBtn).toHaveAttribute('data-slot-state', 'available');
     });
+
+    it('enables future slots under 30m lead time when minLeadTimeMs is 0 while keeping past slots disabled (CWB-98)', async () => {
+      const user = userEvent.setup();
+      const now = new Date('2026-10-25T09:15:00.000+07:00');
+      const slots = createMockDaySlots('2026-10-25');
+      const onSelectStart = vi.fn();
+
+      render(
+        <TimeGrid
+          {...defaultProps}
+          slots={slots}
+          now={now}
+          minLeadTimeMs={0}
+          onSelectStart={onSelectStart}
+        />,
+      );
+
+      const pastBtn = screen.getByTestId('time-slot-09:00');
+      expect(pastBtn).toBeDisabled();
+      expect(pastBtn).toHaveAttribute('data-slot-state', 'past');
+
+      const slot0930 = screen.getByTestId('time-slot-09:30');
+      expect(slot0930).toBeEnabled();
+      expect(slot0930).toHaveAttribute('data-slot-state', 'available');
+      await user.click(slot0930);
+      expect(onSelectStart).toHaveBeenCalledWith(slots[19].startTime);
+    });
   });
 
   describe('AC2: Click chọn slot cập nhật start/end time', () => {
