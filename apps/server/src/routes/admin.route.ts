@@ -28,6 +28,8 @@ import {
   checkInBookingBodySchema,
   markNoShowParamsSchema,
   markNoShowBodySchema,
+  adminRescheduleBookingParamsSchema,
+  adminRescheduleBookingBodySchema,
   adminBookingMutationQuerySchema,
   getRevenueQuerySchema,
   exportReportQuerySchema,
@@ -95,6 +97,13 @@ router.post(
   adminBookingController.recordRefund,
 );
 
+router.patch(
+  '/bookings/:id',
+  validateParams(adminRescheduleBookingParamsSchema),
+  validateQuery(adminBookingMutationQuerySchema),
+  validateBody(adminRescheduleBookingBodySchema),
+  adminBookingController.rescheduleBooking,
+);
 router.patch(
   '/bookings/:id/payment',
   validateParams(confirmPaymentParamsSchema),

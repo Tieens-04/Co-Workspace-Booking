@@ -70,12 +70,22 @@ export interface AdminCancelBookingPayload {
   reason: string;
 }
 
+export interface AdminRescheduleBookingPayload {
+  startTime: string;
+  endTime: string;
+  roomId?: string;
+  reason: string;
+  note?: string | null;
+  acknowledgePriceDelta?: boolean;
+}
+
 export type AdminBookingsApiResponse = ApiResponse<AdminBookingListResponseData>;
 export type AdminGuestBookingApiResponse = ApiResponse<AdminBookingItem>;
 export type ConfirmPaymentApiResponse = ApiResponse<AdminBookingItem>;
 export type AdminCancelBookingApiResponse = ApiResponse<AdminBookingItem>;
 export type AdminCompleteBookingApiResponse = ApiResponse<AdminBookingItem>;
 export type AdminNoShowBookingApiResponse = ApiResponse<AdminBookingItem>;
+export type AdminRescheduleBookingApiResponse = ApiResponse<AdminBookingItem>;
 
 export interface AdminRevenueData {
   period: {

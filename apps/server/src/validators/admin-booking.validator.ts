@@ -238,3 +238,34 @@ export const refundBookingBodySchema = z
   .strict();
 
 export type RefundBookingBodyInput = z.infer<typeof refundBookingBodySchema>;
+
+export const adminRescheduleBookingParamsSchema = z
+  .object({
+    id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),
+  })
+  .strict();
+
+export type AdminRescheduleBookingParamsInput = z.infer<typeof adminRescheduleBookingParamsSchema>;
+
+export const adminRescheduleBookingBodySchema = z
+  .object({
+    startTime: z.string().datetime({
+      offset: true,
+      message: 'Thời gian bắt đầu không đúng định dạng ISO 8601',
+    }),
+    endTime: z.string().datetime({
+      offset: true,
+      message: 'Thời gian kết thúc không đúng định dạng ISO 8601',
+    }),
+    roomId: z.string().uuid('ID phòng không đúng định dạng UUID').optional(),
+    reason: z
+      .string({ message: 'Lý do đổi lịch không được để trống' })
+      .trim()
+      .min(1, 'Lý do đổi lịch không được để trống')
+      .max(500, 'Lý do đổi lịch không được vượt quá 500 ký tự'),
+    note: noteSchema.optional(),
+    acknowledgePriceDelta: z.boolean().optional().default(false),
+  })
+  .strict();
+
+export type AdminRescheduleBookingBodyInput = z.infer<typeof adminRescheduleBookingBodySchema>;

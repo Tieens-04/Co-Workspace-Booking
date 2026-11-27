@@ -251,6 +251,7 @@ export function validateBookingSelection(
   now: Date = new Date(),
   note?: string,
   maxAdvanceDays?: number | null,
+  minLeadTimeMs: number = MIN_LEAD_TIME_MS,
 ): BookingValidationResult {
   const errors: BookingTimeErrors = {};
 
@@ -287,8 +288,9 @@ export function validateBookingSelection(
 
       if (startUtc <= now) {
         errors.startTime = 'Thời gian bắt đầu không được ở trong quá khứ';
-      } else if (startUtc.getTime() - now.getTime() < MIN_LEAD_TIME_MS) {
-        errors.startTime = 'Phải đặt phòng trước thời gian bắt đầu ít nhất 30 phút';
+      } else if (minLeadTimeMs > 0 && startUtc.getTime() - now.getTime() < minLeadTimeMs) {
+        const minLeadMinutes = Math.ceil(minLeadTimeMs / 60_000);
+        errors.startTime = `Phải đặt phòng trước thời gian bắt đầu ít nhất ${minLeadMinutes} phút`;
       } else if (maxAdvanceDays && startUtc > getBookingHorizonEnd(maxAdvanceDays, now)) {
         errors.startTime = bookingHorizonMessage(maxAdvanceDays);
       }

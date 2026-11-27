@@ -14,6 +14,8 @@ import {
   AdminRevenueApiResponse,
   RefundBookingPayload,
   AdminRefundBookingApiResponse,
+  AdminRescheduleBookingPayload,
+  AdminRescheduleBookingApiResponse,
 } from '../types/admin-booking';
 
 export const adminBookingApi = {
@@ -122,6 +124,19 @@ export const adminBookingApi = {
       {
         signal,
       },
+    );
+    return response.data;
+  },
+
+  rescheduleBooking: async (
+    bookingId: string,
+    payload: AdminRescheduleBookingPayload,
+    signal?: AbortSignal,
+  ): Promise<AdminRescheduleBookingApiResponse> => {
+    const response = await apiClient.patch<AdminRescheduleBookingApiResponse>(
+      `/admin/bookings/${bookingId}`,
+      payload,
+      { signal },
     );
     return response.data;
   },

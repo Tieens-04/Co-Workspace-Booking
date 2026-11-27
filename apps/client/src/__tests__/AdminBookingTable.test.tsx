@@ -202,4 +202,42 @@ describe('AdminBookingTable lifecycle actions', () => {
       'hover:bg-status-warning-bg',
     );
   });
+
+  it('shows Đổi lịch only for CONFIRMED un-checked-in bookings before endTime (CWB-98)', () => {
+    const onReschedule = vi.fn();
+    const eligiblePaid = {
+      ...booking('eligible-paid', NOW + 3_600_000),
+      paymentStatus: 'PAID',
+      paymentMethod: 'QR',
+    };
+    const ongoingUnchecked = {
+      ...booking('ongoing', NOW + 1_800_000),
+      startTime: new Date(NOW - 1_800_000).toISOString(),
+    };
+    const checkedIn = {
+      ...booking('checked-in', NOW + 3_600_000),
+      checkedInAt: new Date(NOW - 600_000).toISOString(),
+    };
+    const endedConfirmed = booking('ended', NOW - 1_000);
+    const completed = booking('completed', NOW + 3_600_000, 'COMPLETED');
+
+    render(
+      <AdminBookingTable
+        bookings={[eligiblePaid, ongoingUnchecked, checkedIn, endedConfirmed, completed]}
+        onCheckIn={vi.fn()}
+        onComplete={vi.fn()}
+        onNoShow={vi.fn()}
+        onConfirmPayment={vi.fn()}
+        onCancel={vi.fn()}
+        onReschedule={onReschedule}
+      />,
+    );
+
+    fireEvent.click(screen.getByTestId('reschedule-booking-btn-eligible-paid'));
+    expect(onReschedule).toHaveBeenCalledWith(eligiblePaid);
+    expect(screen.getByTestId('reschedule-booking-btn-ongoing')).toBeInTheDocument();
+    expect(screen.queryByTestId('reschedule-booking-btn-checked-in')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('reschedule-booking-btn-ended')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('reschedule-booking-btn-completed')).not.toBeInTheDocument();
+  });
 });

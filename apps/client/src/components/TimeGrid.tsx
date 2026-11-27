@@ -24,6 +24,8 @@ export interface TimeGridProps {
   now?: Date;
   /** CWB-75: slots starting after now + this many days are not bookable. */
   maxAdvanceDays?: number | null;
+  /** CWB-98: admin reschedule bypasses 30m lead time (0 = allow any future slot). */
+  minLeadTimeMs?: number;
 }
 
 type SlotState = 'available' | 'booked' | 'closed' | 'past' | 'selected';
@@ -64,7 +66,10 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
   disabled = false,
   now,
   maxAdvanceDays,
+  minLeadTimeMs = MIN_LEAD_TIME_MS,
 }) => {
+  const isBeforeLeadTime = (slotStartMs: number, refMs: number) =>
+    minLeadTimeMs > 0 ? slotStartMs - refMs < minLeadTimeMs : slotStartMs <= refMs;
   const slots = useMemo(
     () =>
       allSlots.filter((slot) =>
@@ -102,10 +107,8 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     let nextExpiryMs: number | null = null;
     for (const slot of slots) {
       const slotStartMs = new Date(slot.startTime).getTime();
-      // N3: A slot is currently not past if slotStartMs - currentMs >= MIN_LEAD_TIME_MS
-      if (slotStartMs - currentMs >= MIN_LEAD_TIME_MS) {
-        // It expires lead time at slotStartMs - MIN_LEAD_TIME_MS + 50ms buffer
-        const expiryMs = slotStartMs - MIN_LEAD_TIME_MS + 50;
+      if (!isBeforeLeadTime(slotStartMs, currentMs)) {
+        const expiryMs = slotStartMs - Math.max(0, minLeadTimeMs) + 50;
         if (nextExpiryMs === null || expiryMs < nextExpiryMs) {
           nextExpiryMs = expiryMs;
         }
@@ -124,7 +127,7 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     }, delay);
 
     return () => clearTimeout(timerId);
-  }, [slots, clockNow, now]);
+  }, [slots, clockNow, now, minLeadTimeMs]);
 
   const currentTime = now || clockNow;
   const currentMs = currentTime.getTime();
@@ -141,14 +144,14 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
       const s1 = slots[i];
       const s2 = slots[i + 1];
       const s1StartMs = new Date(s1.startTime).getTime();
-      const isS1Valid = s1.status === 'AVAILABLE' && s1StartMs - currentMs >= MIN_LEAD_TIME_MS;
+      const isS1Valid = s1.status === 'AVAILABLE' && !isBeforeLeadTime(s1StartMs, currentMs);
       const isS2Valid = s2.status === 'AVAILABLE';
       if (isS1Valid && isS2Valid) {
         return true;
       }
     }
     return false;
-  }, [slots, currentMs]);
+  }, [slots, currentMs, minLeadTimeMs]);
 
   // Display-only counts for the summary line; selection rules stay in handleSlotClick.
   const slotCounts = useMemo(() => {
@@ -158,10 +161,10 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     for (const slot of slots) {
       if (slot.status === 'CLOSED') closed += 1;
       else if (slot.status === 'BOOKED') booked += 1;
-      else if (new Date(slot.startTime).getTime() - currentMs >= MIN_LEAD_TIME_MS) open += 1;
+      else if (!isBeforeLeadTime(new Date(slot.startTime).getTime(), currentMs)) open += 1;
     }
     return { open, booked, closed };
-  }, [slots, currentMs]);
+  }, [slots, currentMs, minLeadTimeMs]);
 
   const handleSlotClick = (slot: RoomAvailabilitySlot) => {
     if (disabled) return;
@@ -181,8 +184,13 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     const slotEndMs = new Date(slot.endTime).getTime();
 
     // Check if clicked slot is past or under lead time at moment of click
-    if (slotStartMs - clickMs < MIN_LEAD_TIME_MS) {
-      setGridError('Khung giờ này đã quá thời gian đặt trước ít nhất 30 phút.');
+    if (isBeforeLeadTime(slotStartMs, clickMs)) {
+      const minLeadMinutes = Math.ceil(minLeadTimeMs / 60_000);
+      setGridError(
+        minLeadTimeMs > 0
+          ? `Khung giờ này đã quá thời gian đặt trước ít nhất ${minLeadMinutes} phút.`
+          : 'Khung giờ này đã qua.',
+      );
       return;
     }
 
@@ -197,9 +205,12 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
     }
 
     // If selecting an end slot, also verify selectingStartTime hasn't expired
-    if (selectingStartMs - clickMs < MIN_LEAD_TIME_MS) {
+    if (isBeforeLeadTime(selectingStartMs, clickMs)) {
+      const minLeadMinutes = Math.ceil(minLeadTimeMs / 60_000);
       setGridError(
-        'Khung giờ bắt đầu đã quá thời gian đặt trước ít nhất 30 phút. Vui lòng chọn lại.',
+        minLeadTimeMs > 0
+          ? `Khung giờ bắt đầu đã quá thời gian đặt trước ít nhất ${minLeadMinutes} phút. Vui lòng chọn lại.`
+          : 'Khung giờ bắt đầu đã qua. Vui lòng chọn lại.',
       );
       onSelectStart('');
       return;
@@ -238,6 +249,9 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
       new Date(selectingStartMs),
       new Date(slotEndMs),
       clickNow,
+      undefined,
+      undefined,
+      minLeadTimeMs,
     );
     if (!validation.isValid) {
       setGridError(validation.errors.startTime || validation.errors.endTime || null);
@@ -351,8 +365,8 @@ export const TimeGrid: React.FC<TimeGridProps> = ({
 
           const isClosed = slot.status === 'CLOSED';
           const isBooked = slot.status === 'BOOKED';
-          // Past or under 30m lead time
-          const isPast = slotStartMs - currentMs < MIN_LEAD_TIME_MS;
+          // Past or under lead time
+          const isPast = isBeforeLeadTime(slotStartMs, currentMs);
           // A slot past the horizon cannot start a booking, but may still end one started earlier.
           const isBeyondHorizon =
             Boolean(maxAdvanceDays) &&

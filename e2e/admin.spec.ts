@@ -323,3 +323,67 @@ test('admin dashboard formats fractional room-minutes as vi-VN hours without ove
   await expect(occupancyCard).not.toContainText('phút');
   await noOverflow(page);
 });
+
+test('admin reschedules a PAID booking across rooms with price-delta confirmation and keyboard dialog (CWB-98)', async ({
+  page,
+  scenario,
+}) => {
+  const targetRoom = await scenario.db.room.create({
+    data: {
+      name: `${scenario.prefix}-reschedule-vip`,
+      capacity: 8,
+      pricePerHour: '200000.00',
+      statusHistory: {
+        create: { status: 'AVAILABLE', effectiveAt: new Date(Date.now() - 48 * HOUR) },
+      },
+    },
+  });
+  scenario.rooms.push(targetRoom);
+
+  const paidBooking = await scenario.booking({
+    paymentStatus: 'PAID',
+    paymentMethod: 'QR',
+    paidAt: new Date(),
+  });
+
+  await login(page, scenario.admin);
+  await page.goto(`/admin/bookings?bookingCode=${paidBooking.bookingCode}`);
+
+  const trigger = page.getByTestId(`reschedule-booking-btn-${paidBooking.id}`);
+  await trigger.click();
+
+  const dialog = page.getByRole('dialog', { name: 'Đổi lịch đặt phòng' });
+  await dialogKeyboard(page, dialog, trigger);
+
+  await dialog.getByTestId('reschedule-room-select').selectOption(targetRoom.id);
+  await dialog.getByTestId('time-slot-14:00').click();
+  await dialog.getByTestId('time-slot-15:30').click();
+
+  await expect(dialog.getByTestId('reschedule-paid-delta-warning')).toBeVisible();
+  await expect(dialog.getByTestId('reschedule-confirm-btn')).toBeDisabled();
+
+  await dialog.getByTestId('reschedule-ack-price-delta').check();
+  await dialog.getByTestId('reschedule-reason-input').fill('Chuyển phòng lớn và thu thêm tại quầy');
+
+  const patchPromise = page.waitForResponse(
+    (r) =>
+      r.url().endsWith(`/admin/bookings/${paidBooking.id}`) && r.request().method() === 'PATCH',
+  );
+  await dialog.getByTestId('reschedule-confirm-btn').click();
+  const patchRes = await patchPromise;
+  expect(patchRes.status()).toBe(200);
+  await expect(dialog).toBeHidden();
+
+  const updated = await scenario.db.booking.findUniqueOrThrow({ where: { id: paidBooking.id } });
+  expect(updated.bookingCode).toBe(paidBooking.bookingCode);
+  expect(updated.roomId).toBe(targetRoom.id);
+  expect(updated.totalAmount.toFixed(2)).toBe('400000.00');
+  expect(updated.paymentStatus).toBe('PAID');
+
+  const audit = await scenario.db.auditEvent.findFirst({
+    where: { entityType: 'BOOKING', entityId: paidBooking.id, action: 'BOOKING_RESCHEDULED' },
+    orderBy: { sequence: 'desc' },
+  });
+  expect(audit?.actorRole).toBe('ADMIN');
+  await noOverflow(page);
+});

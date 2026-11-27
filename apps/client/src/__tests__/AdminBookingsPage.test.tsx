@@ -65,6 +65,7 @@ vi.mock('../services/admin-booking.api', () => ({
     markNoShow: vi.fn(),
     getRevenue: vi.fn(),
     recordRefund: vi.fn(),
+    rescheduleBooking: vi.fn(),
   },
 }));
 
@@ -1244,6 +1245,300 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
         expect.objectContaining({ date: '2027-02-31' }),
         expect.anything(),
       );
+    });
+
+    it('reschedules a PAID booking via dialog with required reason and price-delta confirmation (CWB-98)', async () => {
+      const user = userEvent.setup();
+      const futureDay = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      const vnDateStr = formatVnDate(futureDay);
+      const origStart = new Date(`${vnDateStr}T09:00:00.000+07:00`).toISOString();
+      const origEnd = new Date(`${vnDateStr}T11:00:00.000+07:00`).toISOString();
+
+      const paidBooking: AdminBookingItem = {
+        ...mockBookingsList[0],
+        id: 'booking-paid-resched',
+        bookingCode: 'CS-20261205-PAID',
+        room: { id: 'room-1', name: 'Phòng Hội Thảo A' },
+        startTime: origStart,
+        endTime: origEnd,
+        totalAmount: '400000.00',
+        status: 'CONFIRMED',
+        paymentStatus: 'PAID',
+        paymentMethod: 'QR',
+      };
+
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [paidBooking],
+          pagination: { page: 1, limit: 10, total: 1, totalPages: 1 },
+        },
+      });
+
+      vi.mocked(roomApi.getRooms).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [
+            {
+              id: 'room-1',
+              name: 'Phòng Hội Thảo A',
+              capacity: 6,
+              pricePerHour: '200000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+            {
+              id: 'room-2',
+              name: 'Phòng VIP B',
+              capacity: 10,
+              pricePerHour: '300000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+          ],
+          pagination: { page: 1, limit: 100, total: 2, totalPages: 1 },
+        },
+      });
+
+      vi.mocked(roomApi.getAvailability).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: {
+          roomId: 'room-2',
+          date: vnDateStr,
+          timezone: 'Asia/Ho_Chi_Minh',
+          slots: create48Slots(vnDateStr),
+          maxAdvanceDays: 60,
+        },
+      });
+
+      vi.mocked(adminBookingApi.rescheduleBooking).mockResolvedValue({
+        success: true,
+        message: 'Đổi lịch đặt phòng thành công',
+        data: {
+          ...paidBooking,
+          room: { id: 'room-2', name: 'Phòng VIP B' },
+          totalAmount: '600000.00',
+        },
+      });
+
+      renderComponent();
+
+      const trigger = await screen.findByTestId('reschedule-booking-btn-booking-paid-resched');
+      await user.click(trigger);
+
+      expect(await screen.findByTestId('reschedule-dialog-content')).toBeInTheDocument();
+      const roomSelect = await screen.findByTestId('reschedule-room-select');
+      await user.selectOptions(roomSelect, 'room-2');
+
+      const slot1300 = await screen.findByTestId('time-slot-13:00');
+      const slot1430 = await screen.findByTestId('time-slot-14:30');
+      await user.click(slot1300);
+      await user.click(slot1430);
+
+      expect(await screen.findByTestId('reschedule-paid-delta-warning')).toBeInTheDocument();
+      expect(screen.getByTestId('reschedule-confirm-btn')).toBeDisabled();
+
+      await user.click(screen.getByTestId('reschedule-ack-price-delta'));
+      await user.type(screen.getByTestId('reschedule-reason-input'), 'Khách nâng cấp phòng VIP');
+
+      const confirmBtn = screen.getByTestId('reschedule-confirm-btn');
+      expect(confirmBtn).toBeEnabled();
+      await user.click(confirmBtn);
+
+      await waitFor(() => {
+        expect(adminBookingApi.rescheduleBooking).toHaveBeenCalledWith(
+          'booking-paid-resched',
+          expect.objectContaining({
+            roomId: 'room-2',
+            reason: 'Khách nâng cấp phòng VIP',
+            acknowledgePriceDelta: true,
+          }),
+          expect.any(AbortSignal),
+        );
+      });
+
+      await waitFor(() => {
+        expect(adminBookingApi.getBookings).toHaveBeenCalledTimes(2);
+        expect(adminBookingApi.getRevenue).toHaveBeenCalledTimes(2);
+      });
+    });
+
+    it('blocks submit with whitespace-only reason and shows inline error (CWB-98)', async () => {
+      const user = userEvent.setup();
+      const futureDay = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      const vnDateStr = formatVnDate(futureDay);
+      const unpaidBooking: AdminBookingItem = {
+        ...mockBookingsList[0],
+        id: 'booking-unpaid-reason',
+        bookingCode: 'CS-20261205-RSN',
+        room: { id: 'room-1', name: 'Phòng Hội Thảo A' },
+        startTime: new Date(`${vnDateStr}T09:00:00.000+07:00`).toISOString(),
+        endTime: new Date(`${vnDateStr}T11:00:00.000+07:00`).toISOString(),
+        totalAmount: '400000.00',
+        status: 'CONFIRMED',
+        paymentStatus: 'UNPAID',
+      };
+
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(
+        mockBookingsResponse([unpaidBooking], 1),
+      );
+      vi.mocked(roomApi.getRooms).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [
+            {
+              id: 'room-1',
+              name: 'Phòng Hội Thảo A',
+              capacity: 6,
+              pricePerHour: '200000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+          ],
+          pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+        },
+      });
+      vi.mocked(roomApi.getAvailability).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: {
+          roomId: 'room-1',
+          date: vnDateStr,
+          timezone: 'Asia/Ho_Chi_Minh',
+          slots: create48Slots(vnDateStr),
+          maxAdvanceDays: 60,
+        },
+      });
+
+      renderComponent();
+
+      await user.click(await screen.findByTestId('reschedule-booking-btn-booking-unpaid-reason'));
+      await user.click(await screen.findByTestId('time-slot-13:00'));
+      await user.click(await screen.findByTestId('time-slot-14:30'));
+      await user.type(screen.getByTestId('reschedule-reason-input'), '   ');
+      await user.click(screen.getByTestId('reschedule-confirm-btn'));
+
+      expect(await screen.findByText('Vui lòng nhập lý do đổi lịch')).toBeInTheDocument();
+      expect(adminBookingApi.rescheduleBooking).not.toHaveBeenCalled();
+    });
+
+    it('handles 409 PAID_BOOKING_PRICE_MISMATCH fallback with server previousTotal and negative PAID delta (CWB-98)', async () => {
+      const user = userEvent.setup();
+      const futureDay = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+      const vnDateStr = formatVnDate(futureDay);
+      const paidBooking: AdminBookingItem = {
+        ...mockBookingsList[0],
+        id: 'booking-paid-409',
+        bookingCode: 'CS-20261205-P409',
+        room: { id: 'room-1', name: 'Phòng Hội Thảo A' },
+        startTime: new Date(`${vnDateStr}T09:00:00.000+07:00`).toISOString(),
+        endTime: new Date(`${vnDateStr}T11:00:00.000+07:00`).toISOString(),
+        totalAmount: '400000.00',
+        status: 'CONFIRMED',
+        paymentStatus: 'PAID',
+        paymentMethod: 'QR',
+      };
+
+      vi.mocked(adminBookingApi.getBookings).mockResolvedValue(
+        mockBookingsResponse([paidBooking], 1),
+      );
+      vi.mocked(roomApi.getRooms).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: {
+          items: [
+            {
+              id: 'room-1',
+              name: 'Phòng Hội Thảo A',
+              capacity: 6,
+              pricePerHour: '200000.00',
+              status: 'AVAILABLE',
+              coverImage: null,
+              amenities: [],
+            },
+          ],
+          pagination: { page: 1, limit: 100, total: 1, totalPages: 1 },
+        },
+      });
+      vi.mocked(roomApi.getAvailability).mockResolvedValue({
+        success: true,
+        message: 'OK',
+        data: {
+          roomId: 'room-1',
+          date: vnDateStr,
+          timezone: 'Asia/Ho_Chi_Minh',
+          slots: create48Slots(vnDateStr),
+          maxAdvanceDays: 60,
+        },
+      });
+
+      vi.mocked(adminBookingApi.rescheduleBooking)
+        .mockRejectedValueOnce({
+          response: {
+            status: 409,
+            data: {
+              code: 'PAID_BOOKING_PRICE_MISMATCH',
+              message: 'Tổng tiền mới khác số tiền đã thanh toán',
+              details: {
+                previousTotal: '450000.00',
+                newTotal: '600000.00',
+                difference: '150000.00',
+              },
+            },
+          },
+        })
+        .mockResolvedValueOnce({
+          success: true,
+          message: 'OK',
+          data: { ...paidBooking, totalAmount: '600000.00' },
+        });
+
+      renderComponent();
+
+      await user.click(await screen.findByTestId('reschedule-booking-btn-booking-paid-409'));
+      // First check negative delta wording (1h on 200k/h = 200k vs 400k paid -> -200k)
+      await user.click(await screen.findByTestId('time-slot-12:00'));
+      await user.click(await screen.findByTestId('time-slot-12:30'));
+      const negWarning = await screen.findByTestId('reschedule-paid-delta-warning');
+      expect(negWarning).toHaveTextContent('Cần hoàn trả cho khách tại quầy:');
+      expect(negWarning).toHaveTextContent(/-\s*200\.000/);
+      expect(screen.getByTestId('reschedule-confirm-btn')).toBeDisabled();
+
+      // Switch to 2h slot (same client estimate 400k -> no pre-submit delta warning), then hit server 409 fallback
+      await user.click(await screen.findByTestId('time-slot-13:00'));
+      await user.click(await screen.findByTestId('time-slot-14:30'));
+      expect(screen.queryByTestId('reschedule-paid-delta-warning')).not.toBeInTheDocument();
+
+      await user.type(screen.getByTestId('reschedule-reason-input'), 'Đổi sang buổi chiều');
+      await user.click(screen.getByTestId('reschedule-confirm-btn'));
+
+      const fallbackWarning = await screen.findByTestId('reschedule-paid-delta-warning');
+      expect(fallbackWarning).toHaveTextContent('450.000');
+      expect(fallbackWarning).toHaveTextContent(/\+\s*150\.000/);
+      expect(screen.getByTestId('reschedule-confirm-btn')).toBeDisabled();
+
+      await user.click(screen.getByTestId('reschedule-ack-price-delta'));
+      expect(screen.getByTestId('reschedule-confirm-btn')).toBeEnabled();
+      await user.click(screen.getByTestId('reschedule-confirm-btn'));
+
+      await waitFor(() => {
+        expect(adminBookingApi.rescheduleBooking).toHaveBeenNthCalledWith(
+          2,
+          'booking-paid-409',
+          expect.objectContaining({
+            reason: 'Đổi sang buổi chiều',
+            acknowledgePriceDelta: true,
+          }),
+          expect.any(AbortSignal),
+        );
+      });
     });
   });
 });

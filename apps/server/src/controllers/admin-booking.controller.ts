@@ -15,6 +15,8 @@ import {
   CompleteBookingParamsInput,
   CheckInBookingParamsInput,
   MarkNoShowParamsInput,
+  AdminRescheduleBookingParamsInput,
+  AdminRescheduleBookingBodyInput,
   GetRevenueQueryInput,
 } from '../validators/admin-booking.validator.js';
 
@@ -111,6 +113,17 @@ export class AdminBookingController {
       const { id } = req.params as unknown as MarkNoShowParamsInput;
       const data = await this.service.markNoShow(id, auditActorOf(req));
       return sendSuccess(res, data, 'Đánh dấu khách không đến thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  rescheduleBooking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { id } = req.params as unknown as AdminRescheduleBookingParamsInput;
+      const body = req.body as AdminRescheduleBookingBodyInput;
+      const data = await this.service.rescheduleBooking(id, body, auditActorOf(req));
+      return sendSuccess(res, data, 'Đổi lịch đặt phòng thành công', 200);
     } catch (err) {
       return next(err);
     }

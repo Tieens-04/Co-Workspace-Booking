@@ -180,6 +180,32 @@ describe('bookingTime utility', () => {
       expect(res.errors.startTime).toContain('trước thời gian bắt đầu ít nhất 30 phút');
     });
 
+    it('allows under-30m future slots when minLeadTimeMs is 0 while still rejecting past slots (CWB-98)', () => {
+      // 00:20 UTC = 07:20 VN; 00:30 UTC = 07:30 VN (10 min ahead)
+      const now = new Date('2026-10-25T00:20:00.000Z');
+      const startFuture10m = new Date('2026-10-25T00:30:00.000Z');
+      const endFuture = new Date('2026-10-25T01:30:00.000Z');
+      const ok = validateBookingSelection(startFuture10m, endFuture, now, undefined, null, 0);
+      expect(ok.isValid).toBe(true);
+
+      const pastStart = new Date('2026-10-25T00:00:00.000Z');
+      const pastEnd = new Date('2026-10-25T01:00:00.000Z');
+      const pastRes = validateBookingSelection(pastStart, pastEnd, now, undefined, null, 0);
+      expect(pastRes.isValid).toBe(false);
+      expect(pastRes.errors.startTime).toBe('Thời gian bắt đầu không được ở trong quá khứ');
+
+      const customLead = validateBookingSelection(
+        startFuture10m,
+        endFuture,
+        now,
+        undefined,
+        null,
+        60 * 60_000,
+      );
+      expect(customLead.isValid).toBe(false);
+      expect(customLead.errors.startTime).toContain('ít nhất 60 phút');
+    });
+
     it('validates start is not in the past', () => {
       const start = new Date('2026-10-24T23:00:00.000Z');
       const end = new Date('2026-10-25T02:00:00.000Z');
