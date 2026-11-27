@@ -80,6 +80,10 @@ describe('Booking notification triggers (outbox)', () => {
     };
     mockAdminBookingRepo = {
       cancelBookingForAdmin: vi.fn().mockResolvedValue(adminCancelled({ isNewlyCancelled: true })),
+      createAdminCustomerBooking: vi.fn().mockResolvedValue({
+        ...adminCancelled({ status: BookingStatus.CONFIRMED }),
+        idempotentReplay: false,
+      }),
     };
   });
 
@@ -128,6 +132,40 @@ describe('Booking notification triggers (outbox)', () => {
       }),
     );
     await admin.cancelBooking('booking-2', 'Khách vãng lai');
+    expect(outbox.kick).toHaveBeenCalledTimes(1);
+  });
+
+  it('delegates admin customer booking to AdminBookingRepositoryContract and skips kick on replay', async () => {
+    const { admin } = services();
+    await admin.createCustomerBooking(
+      {
+        customerId: userId,
+        roomId: validRoomId,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        note: null,
+      },
+      now,
+      { adminId: 'admin-1', idempotencyKey: 'admin-key-123' },
+    );
+    expect(mockAdminBookingRepo.createAdminCustomerBooking).toHaveBeenCalledTimes(1);
+    expect(outbox.kick).toHaveBeenCalledTimes(1);
+
+    mockAdminBookingRepo.createAdminCustomerBooking.mockResolvedValueOnce({
+      ...adminCancelled({ status: BookingStatus.CONFIRMED }),
+      idempotentReplay: true,
+    });
+    await admin.createCustomerBooking(
+      {
+        customerId: userId,
+        roomId: validRoomId,
+        startTime: input.startTime,
+        endTime: input.endTime,
+        note: null,
+      },
+      now,
+      { adminId: 'admin-1', idempotencyKey: 'admin-key-123' },
+    );
     expect(outbox.kick).toHaveBeenCalledTimes(1);
   });
 

@@ -4,6 +4,7 @@ import { useToast } from '../hooks/useToast';
 import { useIdempotencyKey } from '../hooks/useIdempotencyKey';
 import { roomApi } from '../services/room.api';
 import { adminBookingApi } from '../services/admin-booking.api';
+import { adminUserApi, AdminUserItem } from '../services/admin-user.api';
 import { RoomListItem, RoomAvailabilitySlot } from '../types/room';
 import { AdminBookingItem } from '../types/admin-booking';
 import { useRoomAvailability } from '../hooks/useRoomAvailability';
@@ -11,12 +12,13 @@ import { TimeGrid } from './TimeGrid';
 import { GuestBookingSuccess } from './admin/bookings/GuestBookingSuccess';
 import { formatCurrency } from '../utils/format';
 import { normalizePhoneNumber, phoneRule } from '../utils/validation';
-import { ChevronDown, ChevronUp, CircleAlert, Loader2, UserPlus } from 'lucide-react';
+import { ChevronDown, ChevronUp, CircleAlert, Loader2, UserCheck, UserPlus, X } from 'lucide-react';
 import { ErrorState } from '@/components/common/EmptyState';
 import { Field } from '@/components/common/Field';
 import { NativeSelect } from '@/components/common/NativeSelect';
 import { Pagination } from '@/components/common/Pagination';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -39,7 +41,10 @@ export interface AdminGuestBookingFormProps {
   principalId?: string;
 }
 
+type AdminBookingMode = 'GUEST' | 'CUSTOMER';
+
 export interface GuestFormErrors {
+  customerId?: string;
   guestName?: string;
   guestPhone?: string;
   roomId?: string;
@@ -69,9 +74,17 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     onBookingCreatedRef.current = onBookingCreated;
   }, [onBookingCreated]);
 
-  // Guest contact state
+  // Customer mode & identity state
+  const [bookingMode, setBookingMode] = useState<AdminBookingMode>('GUEST');
   const [guestName, setGuestName] = useState<string>('');
   const [guestPhone, setGuestPhone] = useState<string>('');
+  const [customerQuery, setCustomerQuery] = useState<string>('');
+  const [customerResults, setCustomerResults] = useState<AdminUserItem[]>([]);
+  const [hasSearchedCustomers, setHasSearchedCustomers] = useState<boolean>(false);
+  const [isSearchingCustomers, setIsSearchingCustomers] = useState<boolean>(false);
+  const [customerSearchError, setCustomerSearchError] = useState<string | null>(null);
+  const [selectedCustomer, setSelectedCustomer] = useState<AdminUserItem | null>(null);
+  const [customerSearchNonce, setCustomerSearchNonce] = useState<number>(0);
 
   // Room selection state
   const [rooms, setRooms] = useState<RoomListItem[]>([]);
@@ -100,6 +113,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
   const abortControllerRef = useRef<AbortController | null>(null);
   const { keyFor, reset: resetIdempotencyKey } = useIdempotencyKey();
   const roomsRequestRef = useRef<AbortController | null>(null);
+  const customerSearchRequestRef = useRef<AbortController | null>(null);
 
   // Periodic clock update
   useEffect(() => {
@@ -120,11 +134,23 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     setRoomsError(null);
   }
 
+  function resetCustomerSearchState() {
+    setCustomerQuery('');
+    setCustomerResults([]);
+    setHasSearchedCustomers(false);
+    setIsSearchingCustomers(false);
+    setCustomerSearchError(null);
+    setSelectedCustomer(null);
+  }
+
   useEffect(() => {
     abortControllerRef.current?.abort();
+    customerSearchRequestRef.current?.abort();
 
+    setBookingMode('GUEST');
     setGuestName('');
     setGuestPhone('');
+    resetCustomerSearchState();
     setSelectedRoomId('');
     setSelectedRoom(null);
     setStartTime('');
@@ -140,8 +166,97 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     return () => {
       abortControllerRef.current?.abort();
       roomsRequestRef.current?.abort();
+      customerSearchRequestRef.current?.abort();
     };
   }, [effectivePrincipalId]);
+
+  useEffect(() => {
+    if (!isOpen || bookingMode !== 'CUSTOMER' || selectedCustomer) {
+      customerSearchRequestRef.current?.abort();
+      customerSearchRequestRef.current = null;
+      setIsSearchingCustomers(false);
+      return;
+    }
+
+    const trimmed = customerQuery.trim();
+    if (!trimmed) {
+      customerSearchRequestRef.current?.abort();
+      customerSearchRequestRef.current = null;
+      setCustomerResults([]);
+      setHasSearchedCustomers(false);
+      setCustomerSearchError(null);
+      setIsSearchingCustomers(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    customerSearchRequestRef.current?.abort();
+    customerSearchRequestRef.current = controller;
+    const requestingPrincipal = activePrincipalRef.current;
+    const isStale = () =>
+      controller.signal.aborted ||
+      customerSearchRequestRef.current !== controller ||
+      activePrincipalRef.current !== requestingPrincipal;
+
+    setIsSearchingCustomers(true);
+    setCustomerSearchError(null);
+
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await adminUserApi.list(
+          { q: trimmed, role: 'CUSTOMER', limit: 10 },
+          controller.signal,
+        );
+        if (isStale()) return;
+        if (res.success) {
+          setCustomerResults(res.data.items);
+          setHasSearchedCustomers(true);
+        } else {
+          setCustomerSearchError(res.message || 'Không thể tìm kiếm tài khoản khách hàng.');
+        }
+      } catch (err: any) {
+        if (isStale()) return;
+        setCustomerSearchError(
+          err.response?.data?.message ||
+            'Không thể tìm kiếm tài khoản khách hàng. Vui lòng thử lại.',
+        );
+      } finally {
+        if (customerSearchRequestRef.current === controller) {
+          customerSearchRequestRef.current = null;
+          setIsSearchingCustomers(false);
+        }
+      }
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [
+    isOpen,
+    bookingMode,
+    customerQuery,
+    selectedCustomer,
+    customerSearchNonce,
+    effectivePrincipalId,
+  ]);
+
+  const handleBookingModeChange = (nextMode: AdminBookingMode) => {
+    if (nextMode === bookingMode || isSubmitting) return;
+    customerSearchRequestRef.current?.abort();
+    setBookingMode(nextMode);
+    setGuestName('');
+    setGuestPhone('');
+    resetCustomerSearchState();
+    setHasBookingConflict(false);
+    setErrors((prev) => ({
+      ...prev,
+      customerId: undefined,
+      guestName: undefined,
+      guestPhone: undefined,
+      general: undefined,
+    }));
+  };
 
   // Fetch rooms for selector; only the latest request for the current session may apply.
   const fetchRoomsForSelector = useCallback(async (page: number) => {
@@ -351,15 +466,21 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     const newErrors: GuestFormErrors = {};
 
     const trimmedName = guestName.trim();
-    if (!trimmedName) {
-      newErrors.guestName = 'Tên khách hàng không được để trống';
-    } else if (trimmedName.length > 191) {
-      newErrors.guestName = 'Tên khách hàng không được vượt quá 191 ký tự';
-    }
+    if (bookingMode === 'CUSTOMER') {
+      if (!selectedCustomer) {
+        newErrors.customerId = 'Vui lòng chọn tài khoản khách hàng';
+      }
+    } else {
+      if (!trimmedName) {
+        newErrors.guestName = 'Tên khách hàng không được để trống';
+      } else if (trimmedName.length > 191) {
+        newErrors.guestName = 'Tên khách hàng không được vượt quá 191 ký tự';
+      }
 
-    const phoneValidation = phoneRule.safeParse(guestPhone);
-    if (!phoneValidation.success) {
-      newErrors.guestPhone = phoneValidation.error.issues[0].message;
+      const phoneValidation = phoneRule.safeParse(guestPhone);
+      if (!phoneValidation.success) {
+        newErrors.guestPhone = phoneValidation.error.issues[0].message;
+      }
     }
 
     if (!selectedRoomId) {
@@ -454,21 +575,34 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
         return;
       }
 
-      // 4. Send request
-      const payload = {
-        roomId: selectedRoomId,
-        startTime: startUtc!.toISOString(),
-        endTime: endUtc!.toISOString(),
-        guestName: trimmedName,
-        guestPhone: normalizePhoneNumber(guestPhone.trim()),
-        note: note.trim() === '' ? null : note.trim(),
-      };
-      // Same intent reuses its key, so a retry after a lost response returns the same booking.
-      const res = await adminBookingApi.createGuestBooking(
-        payload,
-        controller.signal,
-        keyFor(payload),
-      );
+      // 4. Send request (guest walk-in vs registered customer)
+      const trimmedNote = note.trim() === '' ? null : note.trim();
+      let res;
+      if (bookingMode === 'CUSTOMER') {
+        const payload = {
+          customerId: selectedCustomer!.id,
+          roomId: selectedRoomId,
+          startTime: startUtc!.toISOString(),
+          endTime: endUtc!.toISOString(),
+          note: trimmedNote,
+        };
+        res = await adminBookingApi.createCustomerBooking(
+          payload,
+          controller.signal,
+          keyFor(payload),
+        );
+      } else {
+        const payload = {
+          roomId: selectedRoomId,
+          startTime: startUtc!.toISOString(),
+          endTime: endUtc!.toISOString(),
+          guestName: trimmedName,
+          guestPhone: normalizePhoneNumber(guestPhone.trim()),
+          note: trimmedNote,
+        };
+        // Same intent reuses its key, so a retry after a lost response returns the same booking.
+        res = await adminBookingApi.createGuestBooking(payload, controller.signal, keyFor(payload));
+      }
 
       if (
         controller.signal.aborted ||
@@ -480,7 +614,12 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
 
       if (res.success) {
         resetIdempotencyKey();
-        showToast('Đặt phòng cho khách vãng lai thành công!', 'success');
+        showToast(
+          bookingMode === 'CUSTOMER'
+            ? 'Đặt phòng hộ khách hàng thành công!'
+            : 'Đặt phòng cho khách vãng lai thành công!',
+          'success',
+        );
         setCreatedBooking(res.data);
         onBookingCreatedRef.current?.(res.data);
         // Refresh availability grid
@@ -522,10 +661,21 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
         });
         showToast(msg, 'error');
         availability.refresh().catch(() => {});
+      } else if (
+        code === 'ACTIVE_BOOKING_LIMIT' ||
+        code === 'ACCOUNT_LOCKED' ||
+        code === 'EMAIL_NOT_VERIFIED' ||
+        code === 'CUSTOMER_NOT_FOUND' ||
+        code === 'INVALID_CUSTOMER_ROLE'
+      ) {
+        const msg = message || 'Không thể đặt phòng cho tài khoản khách hàng đã chọn.';
+        setErrors({ general: msg });
+        showToast(msg, 'error');
       } else if (code === 'VALIDATION_ERROR' && Array.isArray(details) && details.length > 0) {
         const fieldErrors: GuestFormErrors = {};
         for (const item of details) {
-          if (item.field === 'guestName') fieldErrors.guestName = item.message;
+          if (item.field === 'customerId') fieldErrors.customerId = item.message;
+          else if (item.field === 'guestName') fieldErrors.guestName = item.message;
           else if (item.field === 'guestPhone') fieldErrors.guestPhone = item.message;
           else if (item.field === 'startTime') fieldErrors.startTime = item.message;
           else if (item.field === 'endTime') fieldErrors.endTime = item.message;
@@ -535,7 +685,11 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
         setErrors(fieldErrors);
         showToast('Dữ liệu nhập không hợp lệ, vui lòng kiểm tra lại.', 'error');
       } else {
-        const msg = message || 'Không thể tạo đơn đặt phòng cho khách vãng lai. Vui lòng thử lại.';
+        const msg =
+          message ||
+          (bookingMode === 'CUSTOMER'
+            ? 'Không thể tạo đơn đặt phòng hộ khách hàng. Vui lòng thử lại.'
+            : 'Không thể tạo đơn đặt phòng cho khách vãng lai. Vui lòng thử lại.');
         setErrors({
           general: msg,
         });
@@ -556,6 +710,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
     setCreatedBooking(null);
     setGuestName('');
     setGuestPhone('');
+    resetCustomerSearchState();
     setStartTime('');
     setEndTime('');
     setSelectingStartTime(null);
@@ -578,7 +733,7 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
             <UserPlus className="size-4" />
           </span>
           <h2 id="guest-booking-title" className="text-lg leading-snug font-semibold sm:text-h3">
-            Đặt Phòng Hộ Khách Vãng Lai
+            Đặt Phòng Hộ Khách Hàng
           </h2>
         </div>
         <Button
@@ -614,60 +769,269 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                 </Alert>
               )}
 
-              {/* Guest Information */}
+              {/* Customer Type & Identity */}
               <fieldset className={FIELDSET_CLASS}>
-                <legend className={LEGEND_CLASS}>Thông tin khách vãng lai</legend>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Field
-                    id="guestName"
-                    label={
-                      <>
-                        Họ và tên khách <span className="text-destructive">*</span>
-                      </>
-                    }
-                    error={errors.guestName}
+                <legend className={LEGEND_CLASS}>
+                  {bookingMode === 'CUSTOMER' ? 'Khách có tài khoản' : 'Thông tin khách vãng lai'}
+                </legend>
+                <div
+                  className="mb-4 flex flex-wrap gap-2"
+                  role="group"
+                  aria-label="Loại khách hàng"
+                >
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={bookingMode === 'GUEST' ? 'default' : 'outline'}
+                    aria-pressed={bookingMode === 'GUEST'}
+                    disabled={isSubmitting}
+                    onClick={() => handleBookingModeChange('GUEST')}
+                    data-testid="booking-mode-guest"
                   >
-                    <Input
-                      type="text"
-                      value={guestName}
-                      onChange={(e) => {
-                        setGuestName(e.target.value);
-                        if (errors.guestName)
-                          setErrors((prev) => ({ ...prev, guestName: undefined }));
-                      }}
-                      placeholder="Ví dụ: Nguyễn Văn A"
-                      maxLength={191}
-                      disabled={isSubmitting}
-                      data-testid="guest-name-input"
-                    />
-                  </Field>
-
-                  <Field
-                    id="guestPhone"
-                    label={
-                      <>
-                        Số điện thoại <span className="text-destructive">*</span>
-                      </>
-                    }
-                    error={errors.guestPhone}
+                    <UserPlus aria-hidden="true" />
+                    Khách vãng lai
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={bookingMode === 'CUSTOMER' ? 'default' : 'outline'}
+                    aria-pressed={bookingMode === 'CUSTOMER'}
+                    disabled={isSubmitting}
+                    onClick={() => handleBookingModeChange('CUSTOMER')}
+                    data-testid="booking-mode-customer"
                   >
-                    <Input
-                      type="tel"
-                      inputMode="tel"
-                      className="tabular-nums"
-                      value={guestPhone}
-                      onChange={(e) => {
-                        setGuestPhone(e.target.value);
-                        if (errors.guestPhone)
-                          setErrors((prev) => ({ ...prev, guestPhone: undefined }));
-                      }}
-                      placeholder="Ví dụ: 0912345678"
-                      maxLength={191}
-                      disabled={isSubmitting}
-                      data-testid="guest-phone-input"
-                    />
-                  </Field>
+                    <UserCheck aria-hidden="true" />
+                    Khách có tài khoản
+                  </Button>
                 </div>
+
+                {bookingMode === 'GUEST' ? (
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <Field
+                      id="guestName"
+                      label={
+                        <>
+                          Họ và tên khách <span className="text-destructive">*</span>
+                        </>
+                      }
+                      error={errors.guestName}
+                    >
+                      <Input
+                        type="text"
+                        value={guestName}
+                        onChange={(e) => {
+                          setGuestName(e.target.value);
+                          if (errors.guestName)
+                            setErrors((prev) => ({ ...prev, guestName: undefined }));
+                        }}
+                        placeholder="Ví dụ: Nguyễn Văn A"
+                        maxLength={191}
+                        disabled={isSubmitting}
+                        data-testid="guest-name-input"
+                      />
+                    </Field>
+
+                    <Field
+                      id="guestPhone"
+                      label={
+                        <>
+                          Số điện thoại <span className="text-destructive">*</span>
+                        </>
+                      }
+                      error={errors.guestPhone}
+                    >
+                      <Input
+                        type="tel"
+                        inputMode="tel"
+                        className="tabular-nums"
+                        value={guestPhone}
+                        onChange={(e) => {
+                          setGuestPhone(e.target.value);
+                          if (errors.guestPhone)
+                            setErrors((prev) => ({ ...prev, guestPhone: undefined }));
+                        }}
+                        placeholder="Ví dụ: 0912345678"
+                        maxLength={191}
+                        disabled={isSubmitting}
+                        data-testid="guest-phone-input"
+                      />
+                    </Field>
+                  </div>
+                ) : (
+                  <div className="grid gap-3">
+                    {selectedCustomer ? (
+                      <div
+                        data-testid="selected-customer-card"
+                        className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3"
+                      >
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-sm font-semibold">{selectedCustomer.fullName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedCustomer.email}
+                            {selectedCustomer.phoneNumber
+                              ? ` • ${selectedCustomer.phoneNumber}`
+                              : ''}
+                          </p>
+                          {selectedCustomer.upcomingBookingCount > 0 && (
+                            <Badge
+                              variant={
+                                selectedCustomer.upcomingBookingCount >= 5
+                                  ? 'destructive'
+                                  : 'secondary'
+                              }
+                            >
+                              Đang có {selectedCustomer.upcomingBookingCount}/5 đơn sắp tới
+                            </Badge>
+                          )}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={isSubmitting}
+                          onClick={() => {
+                            setSelectedCustomer(null);
+                            setErrors((prev) => ({
+                              ...prev,
+                              customerId: undefined,
+                              general: undefined,
+                            }));
+                          }}
+                          data-testid="clear-selected-customer-btn"
+                        >
+                          <X aria-hidden="true" />
+                          Đổi khách
+                        </Button>
+                      </div>
+                    ) : (
+                      <>
+                        <Field
+                          id="customerSearch"
+                          label={
+                            <>
+                              Tìm tài khoản khách (email, SĐT hoặc họ tên){' '}
+                              <span className="text-destructive">*</span>
+                            </>
+                          }
+                          error={errors.customerId}
+                        >
+                          <Input
+                            type="search"
+                            value={customerQuery}
+                            onChange={(e) => {
+                              setCustomerQuery(e.target.value);
+                              if (errors.customerId)
+                                setErrors((prev) => ({ ...prev, customerId: undefined }));
+                            }}
+                            placeholder="Nhập email hoặc số điện thoại khách..."
+                            maxLength={191}
+                            disabled={isSubmitting}
+                            data-testid="customer-search-input"
+                          />
+                        </Field>
+
+                        {isSearchingCustomers && (
+                          <div
+                            aria-live="polite"
+                            className="flex items-center gap-2 text-sm text-muted-foreground"
+                            data-testid="customer-search-loading"
+                          >
+                            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
+                            <span>Đang tìm khách hàng...</span>
+                          </div>
+                        )}
+
+                        {!isSearchingCustomers && customerSearchError && (
+                          <ErrorState
+                            className="p-3"
+                            data-testid="customer-search-error"
+                            title={customerSearchError}
+                            onRetry={() => setCustomerSearchNonce((n) => n + 1)}
+                            retryTestId="retry-customer-search-btn"
+                          />
+                        )}
+
+                        {!isSearchingCustomers &&
+                          !customerSearchError &&
+                          hasSearchedCustomers &&
+                          customerResults.length === 0 && (
+                            <p
+                              className="text-sm text-muted-foreground"
+                              data-testid="customer-search-empty"
+                            >
+                              Không tìm thấy tài khoản CUSTOMER phù hợp.
+                            </p>
+                          )}
+
+                        {!isSearchingCustomers &&
+                          !customerSearchError &&
+                          customerResults.length > 0 && (
+                            <ul
+                              aria-label="Danh sách tài khoản khách hàng"
+                              data-testid="customer-search-results"
+                              className="grid max-h-60 list-none gap-2 overflow-y-auto rounded-lg border p-2"
+                            >
+                              {customerResults.map((user) => {
+                                const isLocked = user.status === 'LOCKED';
+                                const isUnverified = !user.emailVerified;
+                                const isDisabled = isLocked || isUnverified || isSubmitting;
+                                return (
+                                  <li key={user.id}>
+                                    <button
+                                      type="button"
+                                      disabled={isDisabled}
+                                      onClick={() => {
+                                        setSelectedCustomer(user);
+                                        setErrors((prev) => ({
+                                          ...prev,
+                                          customerId: undefined,
+                                          general: undefined,
+                                        }));
+                                      }}
+                                      data-testid={`customer-option-${user.id}`}
+                                      className="flex w-full flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-left transition-colors hover:bg-muted/50 disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      <div className="min-w-0">
+                                        <p className="truncate text-sm font-medium">
+                                          {user.fullName}
+                                        </p>
+                                        <p className="truncate text-xs text-muted-foreground">
+                                          {user.email}
+                                          {user.phoneNumber ? ` • ${user.phoneNumber}` : ''}
+                                        </p>
+                                      </div>
+                                      <div className="flex flex-wrap items-center gap-1.5">
+                                        {isLocked && <Badge variant="destructive">Đã khóa</Badge>}
+                                        {isUnverified && (
+                                          <Badge variant="outline">Chưa xác thực email</Badge>
+                                        )}
+                                        {user.upcomingBookingCount > 0 && (
+                                          <Badge
+                                            variant={
+                                              user.upcomingBookingCount >= 5
+                                                ? 'destructive'
+                                                : 'secondary'
+                                            }
+                                          >
+                                            {user.upcomingBookingCount}/5 đơn sắp tới
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    </button>
+                                  </li>
+                                );
+                              })}
+                            </ul>
+                          )}
+                      </>
+                    )}
+                    {selectedCustomer && errors.customerId && (
+                      <p role="alert" className="text-sm text-destructive">
+                        {errors.customerId}
+                      </p>
+                    )}
+                  </div>
+                )}
               </fieldset>
 
               {/* Room Selection */}
@@ -924,7 +1288,9 @@ export const AdminGuestBookingForm: React.FC<AdminGuestBookingFormProps> = ({
                     ? 'Đang kiểm tra lịch trống...'
                     : isSubmitting
                       ? 'Đang xử lý...'
-                      : 'Xác nhận đặt phòng vãng lai'}
+                      : bookingMode === 'CUSTOMER'
+                        ? 'Xác nhận đặt phòng hộ khách'
+                        : 'Xác nhận đặt phòng vãng lai'}
                 </Button>
               </div>
             </form>

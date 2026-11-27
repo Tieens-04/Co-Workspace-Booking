@@ -77,6 +77,24 @@ export const createGuestBookingSchema = z
 
 export type CreateGuestBookingInput = z.infer<typeof createGuestBookingSchema>;
 
+export const createAdminCustomerBookingSchema = z
+  .object({
+    customerId: z.string().uuid('ID khách hàng không đúng định dạng UUID'),
+    roomId: z.string().uuid('ID phòng không đúng định dạng UUID'),
+    startTime: z.string().datetime({
+      offset: true,
+      message: 'Thời gian bắt đầu không đúng định dạng ISO 8601',
+    }),
+    endTime: z.string().datetime({
+      offset: true,
+      message: 'Thời gian kết thúc không đúng định dạng ISO 8601',
+    }),
+    note: noteSchema.default(null),
+  })
+  .strict();
+
+export type CreateAdminCustomerBookingInput = z.infer<typeof createAdminCustomerBookingSchema>;
+
 export const confirmPaymentParamsSchema = z
   .object({
     id: z.string().uuid('ID đặt phòng không đúng định dạng UUID'),

@@ -12,6 +12,7 @@ export interface AdminUserDto {
   phoneNumber: string | null;
   role: Role;
   status: AccountStatus;
+  emailVerified: boolean;
   lockedAt: Date | null;
   lockReason: string | null;
   createdAt: Date;

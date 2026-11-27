@@ -2,6 +2,7 @@ import type { AuditEvent } from '../services/admin-audit.api';
 import { formatVnDate, formatVnTime } from './bookingTime';
 
 const FIELD_LABELS: Record<string, string> = {
+  customerId: 'ID khách hàng',
   bookingCode: 'Mã đặt phòng',
   status: 'Trạng thái',
   paymentStatus: 'Thanh toán',

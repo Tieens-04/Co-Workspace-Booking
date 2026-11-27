@@ -5,6 +5,7 @@ import { auditActorOf } from '../utils/audit-actor.util.js';
 import { parseIdempotencyKey } from '../utils/idempotency.util.js';
 import {
   GetAdminBookingsQueryInput,
+  CreateAdminCustomerBookingInput,
   CreateGuestBookingInput,
   ConfirmPaymentParamsInput,
   ConfirmPaymentBodyInput,
@@ -28,6 +29,28 @@ export class AdminBookingController {
       const query = req.query as unknown as GetAdminBookingsQueryInput;
       const data = await this.service.getBookings(query);
       return sendSuccess(res, data, 'Lấy danh sách đặt phòng thành công', 200);
+    } catch (err) {
+      return next(err);
+    }
+  };
+
+  createCustomerBooking = async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const body = req.body as CreateAdminCustomerBookingInput;
+      const key = parseIdempotencyKey(req.get('Idempotency-Key'));
+      const { idempotentReplay, ...data } = await this.service.createCustomerBooking(
+        body,
+        new Date(),
+        key ? { adminId: req.user!.sub, idempotencyKey: key } : undefined,
+        auditActorOf(req),
+      );
+      if (idempotentReplay) res.setHeader('Idempotent-Replayed', 'true');
+      return sendSuccess(
+        res,
+        data,
+        'Đặt phòng hộ khách hàng thành công',
+        idempotentReplay ? 200 : 201,
+      );
     } catch (err) {
       return next(err);
     }

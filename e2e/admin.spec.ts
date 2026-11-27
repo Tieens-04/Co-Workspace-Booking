@@ -115,6 +115,55 @@ test('admin creates guest booking without creating a user', async ({ page, scena
   await noOverflow(page);
 });
 
+test('admin books for an existing verified customer and attaches to customer history', async ({
+  page,
+  scenario,
+}) => {
+  await login(page, scenario.admin);
+  await page.goto('/admin/bookings');
+  await page.getByTestId('toggle-guest-form-btn').click();
+  await page.getByTestId('booking-mode-customer').click();
+  await page.getByTestId('customer-search-input').fill(scenario.customer.email);
+  const option = page.getByTestId(`customer-option-${scenario.customer.id}`);
+  await expect(option).toBeEnabled();
+  await option.click();
+  await expect(page.getByTestId('selected-customer-card')).toContainText(scenario.customer.email);
+
+  await page.getByTestId('guest-room-select').selectOption(scenario.room.id);
+  const start = tomorrowAt(13);
+  await page.getByTestId('guest-start-time-input').fill(localInput(start));
+  await page.getByTestId('guest-end-time-input').fill(localInput(new Date(start.getTime() + HOUR)));
+  await expect(page.getByTestId('guest-submit-btn')).toBeEnabled();
+
+  const responsePromise = page.waitForResponse(
+    (r) => r.url().endsWith('/admin/bookings') && r.request().method() === 'POST',
+  );
+  await page.getByTestId('guest-submit-btn').click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
+  const body = await response.json();
+  await expect(page.getByTestId('guest-booking-success-box')).toContainText(
+    scenario.customer.email,
+  );
+  await expect(page.getByText(body.data.bookingCode, { exact: true }).first()).toBeVisible();
+
+  const persisted = await scenario.db.booking.findUniqueOrThrow({ where: { id: body.data.id } });
+  expect(persisted.userId).toBe(scenario.customer.id);
+  expect(persisted.guestName).toBeNull();
+  expect(persisted.guestPhone).toBeNull();
+
+  const audit = await scenario.db.auditEvent.findFirst({
+    where: { entityType: 'BOOKING', entityId: body.data.id, action: 'BOOKING_CREATED_BY_ADMIN' },
+  });
+  expect(audit).not.toBeNull();
+
+  const outbox = await scenario.db.emailOutbox.findFirst({
+    where: { bookingId: body.data.id, kind: 'BOOKING_CONFIRMATION' },
+  });
+  expect(outbox).not.toBeNull();
+  await noOverflow(page);
+});
+
 test('admin cancels with reason using keyboard dialog', async ({ page, scenario }) => {
   const booking = await scenario.booking();
   await login(page, scenario.admin);

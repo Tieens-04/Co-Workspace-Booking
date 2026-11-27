@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { AdminGuestBookingForm } from '../components/AdminGuestBookingForm';
 import { roomApi } from '../services/room.api';
 import { adminBookingApi } from '../services/admin-booking.api';
+import { adminUserApi, AdminUserItem } from '../services/admin-user.api';
 import { RoomListItem, RoomAvailabilitySlot } from '../types/room';
 import { AdminBookingItem } from '../types/admin-booking';
 import {
@@ -24,6 +25,13 @@ vi.mock('../services/room.api', () => ({
 vi.mock('../services/admin-booking.api', () => ({
   adminBookingApi: {
     createGuestBooking: vi.fn(),
+    createCustomerBooking: vi.fn(),
+  },
+}));
+
+vi.mock('../services/admin-user.api', () => ({
+  adminUserApi: {
+    list: vi.fn(),
   },
 }));
 
@@ -651,5 +659,237 @@ describe('AdminGuestBookingForm Component Tests', () => {
     expect(vi.mocked(roomApi.getAvailability).mock.calls.length).toBeGreaterThanOrEqual(
       callsBefore + 2,
     );
+  });
+
+  it('switches to registered customer mode, preserves room/time, disables locked/unverified users, and submits createCustomerBooking', async () => {
+    const user = userEvent.setup();
+    const slot = getFutureSlot(4, 2);
+
+    const eligibleUser: AdminUserItem = {
+      id: 'cust-uuid-1',
+      email: 'alice@example.com',
+      fullName: 'Nguyễn Thị Alice',
+      phoneNumber: null,
+      role: 'CUSTOMER',
+      status: 'ACTIVE',
+      emailVerified: true,
+      lockedAt: null,
+      lockReason: null,
+      createdAt: '2026-10-01T00:00:00.000Z',
+      bookingCount: 2,
+      noShowCount: 0,
+      upcomingBookingCount: 1,
+      lastBookingAt: null,
+    };
+    const lockedUser: AdminUserItem = {
+      ...eligibleUser,
+      id: 'cust-uuid-locked',
+      email: 'locked@example.com',
+      fullName: 'Khách Bị Khóa',
+      status: 'LOCKED',
+      lockedAt: '2026-10-02T00:00:00.000Z',
+    };
+    const unverifiedUser: AdminUserItem = {
+      ...eligibleUser,
+      id: 'cust-uuid-unverified',
+      email: 'unverified@example.com',
+      fullName: 'Khách Chưa Xác Thực',
+      emailVerified: false,
+      upcomingBookingCount: 5,
+    };
+
+    vi.mocked(adminUserApi.list).mockResolvedValue({
+      success: true,
+      message: 'OK',
+      data: {
+        items: [eligibleUser, lockedUser, unverifiedUser],
+        pagination: { page: 1, limit: 10, total: 3, totalPages: 1 },
+      },
+    });
+
+    const mockCreated: AdminBookingItem = {
+      id: 'booking-cust-1',
+      bookingCode: 'CS-20261128-C991',
+      room: { id: 'room-uuid-1', name: 'Phòng Hội Thảo Alpha' },
+      startTime: slot.startDate.toISOString(),
+      endTime: slot.endDate.toISOString(),
+      checkedInAt: null,
+      attendanceTrackingEnabled: true,
+      totalAmount: '400.00',
+      note: 'Đặt qua quầy',
+      status: 'CONFIRMED',
+      paymentStatus: 'UNPAID',
+      paymentMethod: null,
+      customer: {
+        kind: 'USER',
+        id: eligibleUser.id,
+        name: eligibleUser.fullName,
+        email: eligibleUser.email,
+        phone: null,
+      },
+    };
+    vi.mocked(adminBookingApi.createCustomerBooking).mockResolvedValueOnce({
+      success: true,
+      message: 'Đặt phòng hộ khách hàng thành công',
+      data: mockCreated,
+    });
+
+    render(<AdminGuestBookingForm isOpen={true} onToggleOpen={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-room-select')).toBeInTheDocument();
+    });
+
+    // Pick room, times, and note in default GUEST mode first
+    await user.selectOptions(screen.getByTestId('guest-room-select'), 'room-uuid-1');
+    await waitFor(() => {
+      expect(screen.getByTestId('guest-start-time-input')).toBeInTheDocument();
+    });
+    fireEvent.change(screen.getByTestId('guest-start-time-input'), {
+      target: { value: slot.startTime },
+    });
+    fireEvent.change(screen.getByTestId('guest-end-time-input'), {
+      target: { value: slot.endTime },
+    });
+    await user.type(screen.getByTestId('guest-note-input'), 'Đặt qua quầy');
+
+    // Switch to registered customer mode and verify room/time/note are preserved
+    await user.click(screen.getByTestId('booking-mode-customer'));
+    expect((screen.getByTestId('guest-room-select') as HTMLSelectElement).value).toBe(
+      'room-uuid-1',
+    );
+    expect((screen.getByTestId('guest-start-time-input') as HTMLInputElement).value).toBe(
+      slot.startTime,
+    );
+    expect((screen.getByTestId('guest-end-time-input') as HTMLInputElement).value).toBe(
+      slot.endTime,
+    );
+    expect((screen.getByTestId('guest-note-input') as HTMLTextAreaElement).value).toBe(
+      'Đặt qua quầy',
+    );
+
+    // Verify label associates directly to search input (R1-01) and submit without customer fails
+    const searchInput = screen.getByLabelText(/Tìm tài khoản khách/i);
+    expect(searchInput).toBe(screen.getByTestId('customer-search-input'));
+    await user.click(screen.getByTestId('guest-submit-btn'));
+    expect(await screen.findByText('Vui lòng chọn tài khoản khách hàng')).toBeInTheDocument();
+
+    // Search customer via CWB-79 adminUserApi.list
+    await user.type(searchInput, 'example.com');
+    await waitFor(() => {
+      expect(adminUserApi.list).toHaveBeenCalledWith(
+        { q: 'example.com', role: 'CUSTOMER', limit: 10 },
+        expect.any(AbortSignal),
+      );
+    });
+
+    const resultsList = screen.getByTestId('customer-search-results');
+    expect(resultsList.tagName).toBe('UL');
+    expect(resultsList).not.toHaveAttribute('role', 'listbox');
+
+    expect(screen.getByTestId('customer-option-cust-uuid-locked')).toBeDisabled();
+    expect(screen.getByTestId('customer-option-cust-uuid-unverified')).toBeDisabled();
+    expect(screen.getByText('Đã khóa')).toBeInTheDocument();
+    expect(screen.getByText('Chưa xác thực email')).toBeInTheDocument();
+    expect(screen.getByText('5/5 đơn sắp tới')).toBeInTheDocument();
+
+    // Select eligible customer and submit
+    await user.click(screen.getByTestId('customer-option-cust-uuid-1'));
+    expect(screen.getByTestId('selected-customer-card')).toHaveTextContent('alice@example.com');
+
+    await user.click(screen.getByTestId('guest-submit-btn'));
+
+    await waitFor(() => {
+      expect(adminBookingApi.createCustomerBooking).toHaveBeenCalledWith(
+        {
+          customerId: 'cust-uuid-1',
+          roomId: 'room-uuid-1',
+          startTime: slot.startDate.toISOString(),
+          endTime: slot.endDate.toISOString(),
+          note: 'Đặt qua quầy',
+        },
+        expect.any(AbortSignal),
+        expect.stringMatching(/^[A-Za-z0-9_-]{8,64}$/),
+      );
+    });
+
+    const successBox = await screen.findByTestId('guest-booking-success-box');
+    expect(successBox).toHaveTextContent('Đặt phòng hộ khách có tài khoản thành công!');
+    expect(successBox).toHaveTextContent('alice@example.com');
+    expect(successBox).toHaveTextContent(
+      'Đơn đã gắn vào lịch sử đặt phòng của khách và email xác nhận đang được gửi qua hàng đợi.',
+    );
+    expect(successBox).not.toHaveTextContent('()');
+    expect(screen.getByTestId('create-another-guest-booking-btn')).toHaveTextContent(
+      'Đặt đơn khác hộ khách hàng',
+    );
+  });
+
+  it('surfaces 409 ACTIVE_BOOKING_LIMIT once and clears alert when switching customer', async () => {
+    const user = userEvent.setup();
+    const slot = getFutureSlot(4, 2);
+    vi.mocked(adminUserApi.list).mockResolvedValue({
+      success: true,
+      message: 'OK',
+      data: {
+        items: [
+          {
+            id: 'cust-cap-1',
+            email: 'cap@example.com',
+            fullName: 'Khách Đầy Quota',
+            phoneNumber: '0911223344',
+            role: 'CUSTOMER',
+            status: 'ACTIVE',
+            emailVerified: true,
+            lockedAt: null,
+            lockReason: null,
+            createdAt: '2026-10-01T00:00:00.000Z',
+            bookingCount: 5,
+            noShowCount: 0,
+            upcomingBookingCount: 5,
+            lastBookingAt: null,
+          },
+        ],
+        pagination: { page: 1, limit: 10, total: 1, totalPages: 1 },
+      },
+    });
+    vi.mocked(adminBookingApi.createCustomerBooking).mockRejectedValueOnce({
+      response: {
+        status: 409,
+        data: {
+          code: 'ACTIVE_BOOKING_LIMIT',
+          message: 'Bạn đã đạt giới hạn 5 lượt đặt phòng sắp tới.',
+        },
+      },
+    });
+
+    render(<AdminGuestBookingForm isOpen={true} onToggleOpen={vi.fn()} />);
+    await waitFor(() => expect(screen.getByTestId('guest-room-select')).toBeInTheDocument());
+
+    await user.click(screen.getByTestId('booking-mode-customer'));
+    await user.type(screen.getByTestId('customer-search-input'), 'cap@example.com');
+    await waitFor(() =>
+      expect(screen.getByTestId('customer-option-cust-cap-1')).toBeInTheDocument(),
+    );
+    await user.click(screen.getByTestId('customer-option-cust-cap-1'));
+
+    await user.selectOptions(screen.getByTestId('guest-room-select'), 'room-uuid-1');
+    await waitFor(() => expect(screen.getByTestId('guest-start-time-input')).toBeInTheDocument());
+    fireEvent.change(screen.getByTestId('guest-start-time-input'), {
+      target: { value: slot.startTime },
+    });
+    fireEvent.change(screen.getByTestId('guest-end-time-input'), {
+      target: { value: slot.endTime },
+    });
+    await waitFor(() => expect(screen.getByTestId('guest-submit-btn')).not.toBeDisabled());
+    await user.click(screen.getByTestId('guest-submit-btn'));
+
+    expect(await screen.findByTestId('guest-booking-error-general')).toHaveTextContent(
+      'Bạn đã đạt giới hạn 5 lượt đặt phòng sắp tới.',
+    );
+    expect(screen.getAllByText('Bạn đã đạt giới hạn 5 lượt đặt phòng sắp tới.')).toHaveLength(1);
+
+    await user.click(screen.getByTestId('clear-selected-customer-btn'));
+    expect(screen.queryByTestId('guest-booking-error-general')).not.toBeInTheDocument();
   });
 });
