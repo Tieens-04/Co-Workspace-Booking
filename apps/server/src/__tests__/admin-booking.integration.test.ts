@@ -316,6 +316,8 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
     let noShowNextDayCode: string;
     let overnightPrevDayCode: string;
     let targetDateStr: string;
+    let nextDateStr: string;
+    const compact = (d: string) => d.replace(/-/g, '');
 
     beforeAll(async () => {
       const DAY_MS = 24 * 60 * 60 * 1000;
@@ -324,13 +326,12 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
         new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh' }).format(
           new Date(anchorMs + daysAhead * DAY_MS),
         );
-      const compact = (d: string) => d.replace(/-/g, '');
 
       // Use +24/+25/+26 days in Vietnam (+07:00) so CONFIRMED fixtures stay active in the future
       // (never auto-transitioned to NO_SHOW by lazy evaluation) and never collide with +60h..+360h tests.
       const prevDateStr = vnDateAt(24);
       targetDateStr = vnDateAt(25);
-      const nextDateStr = vnDateAt(26);
+      nextDateStr = vnDateAt(26);
 
       // Create user booking at 09:00–11:00 VN (+07:00) -> 02:00–04:00 UTC
       const userStart = new Date(`${targetDateStr}T09:00:00.000+07:00`);
@@ -423,7 +424,7 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       overnightPrevDayCode = overnightBooking.bookingCode;
     });
 
-    it('searches booking by exact bookingCode with whitespace and case insensitivity', async () => {
+    it('searches booking by exact or partial (>= 4 chars) bookingCode with whitespace, case insensitivity, and wildcard escaping', async () => {
       // Query with spaces and lowercase
       const queryCode = `  ${userBookingCode.toLowerCase()}  `;
       const res = await request(app)
@@ -436,21 +437,52 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(res.body.data.items[0].customer).toEqual(expectedUserCustomer());
       expectPublicBooking(res.body.data.items[0]);
 
-      // Partial prefix does NOT match (exact match only)
       const prefixRes = await request(app)
         .get(
           `/api/v1/admin/bookings?bookingCode=${encodeURIComponent(userBookingCode.slice(0, 10))}`,
         )
         .set('Authorization', `Bearer ${adminToken}`);
       expect(prefixRes.status).toBe(200);
-      expect(prefixRes.body.data.items).toHaveLength(0);
+      expect(
+        prefixRes.body.data.items.some(
+          (b: { bookingCode: string }) => b.bookingCode === userBookingCode,
+        ),
+      ).toBe(true);
 
-      // Substring suffix does NOT match
+      const suffix4 = userBookingCode.slice(-4).toLowerCase();
       const suffixRes = await request(app)
-        .get(`/api/v1/admin/bookings?bookingCode=${encodeURIComponent(userBookingCode.slice(-4))}`)
+        .get(`/api/v1/admin/bookings?bookingCode=${encodeURIComponent(` ${suffix4} `)}`)
         .set('Authorization', `Bearer ${adminToken}`);
       expect(suffixRes.status).toBe(200);
-      expect(suffixRes.body.data.items).toHaveLength(0);
+      expect(
+        suffixRes.body.data.items.some(
+          (b: { bookingCode: string }) => b.bookingCode === userBookingCode,
+        ),
+      ).toBe(true);
+
+      const wildcardRes = await request(app)
+        .get(`/api/v1/admin/bookings?bookingCode=${encodeURIComponent('%%%%')}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(wildcardRes.status).toBe(200);
+      expect(wildcardRes.body.data.items).toHaveLength(0);
+
+      const underscoreRes = await request(app)
+        .get(`/api/v1/admin/bookings?bookingCode=${encodeURIComponent('____')}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(underscoreRes.status).toBe(200);
+      expect(underscoreRes.body.data.items).toHaveLength(0);
+
+      const backslashRes = await request(app)
+        .get(`/api/v1/admin/bookings?bookingCode=${encodeURIComponent('\\\\\\\\')}`)
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(backslashRes.status).toBe(200);
+      expect(backslashRes.body.data.items).toHaveLength(0);
+
+      const shortRes = await request(app)
+        .get('/api/v1/admin/bookings?bookingCode=OU3')
+        .set('Authorization', `Bearer ${adminToken}`);
+      expect(shortRes.status).toBe(400);
+      expect(shortRes.body.code).toBe('VALIDATION_ERROR');
     });
 
     it('returns the complete USER contract when the account has no phone', async () => {
@@ -568,6 +600,184 @@ describe('Admin Booking Management & Guest Booking Integration Tests (Real MySQL
       expect(resMismatch.status).toBe(200);
       expect(resMismatch.body.data.items).toHaveLength(0);
       expect(resMismatch.body.data.pagination.total).toBe(0);
+    });
+
+    it('filters by roomId, paymentStatus, from/to VN range, needsRefund, and their combinations (CWB-100)', async () => {
+      const paidCancelled = await prisma.booking.create({
+        data: {
+          bookingCode: testBookingCode(compact(targetDateStr)),
+          roomId: maintenanceRoomId,
+          startTime: new Date(`${targetDateStr}T10:00:00.000+07:00`),
+          endTime: new Date(`${targetDateStr}T12:00:00.000+07:00`),
+          totalAmount: new Prisma.Decimal('200.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+          guestName: 'Khách Cần Hoàn Tiền',
+          guestPhone: '0911000111',
+        },
+      });
+      const partialRefundCancelled = await prisma.booking.create({
+        data: {
+          bookingCode: testBookingCode(compact(nextDateStr)),
+          roomId: maintenanceRoomId,
+          startTime: new Date(`${nextDateStr}T10:00:00.000+07:00`),
+          endTime: new Date(`${nextDateStr}T12:00:00.000+07:00`),
+          totalAmount: new Prisma.Decimal('200.00'),
+          refundedAmount: new Prisma.Decimal('100.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          paymentMethod: PaymentMethod.QR,
+          guestName: 'Khách Hoàn Một Phần',
+          guestPhone: '0911000222',
+        },
+      });
+      const paidConfirmed = await prisma.booking.create({
+        data: {
+          bookingCode: testBookingCode(compact(targetDateStr)),
+          roomId: availableRoomId,
+          startTime: new Date(`${targetDateStr}T14:00:00.000+07:00`),
+          endTime: new Date(`${targetDateStr}T16:00:00.000+07:00`),
+          totalAmount: new Prisma.Decimal('400.00'),
+          status: BookingStatus.CONFIRMED,
+          paymentStatus: PaymentStatus.PAID,
+          paymentMethod: PaymentMethod.CASH,
+          guestName: 'Khách Đã Trả',
+          guestPhone: '0911000333',
+        },
+      });
+      const fullyRefundedCancelled = await prisma.booking.create({
+        data: {
+          bookingCode: testBookingCode(compact(targetDateStr)),
+          roomId: maintenanceRoomId,
+          startTime: new Date(`${targetDateStr}T16:00:00.000+07:00`),
+          endTime: new Date(`${targetDateStr}T18:00:00.000+07:00`),
+          totalAmount: new Prisma.Decimal('200.00'),
+          refundedAmount: new Prisma.Decimal('200.00'),
+          status: BookingStatus.CANCELLED,
+          paymentStatus: PaymentStatus.REFUNDED,
+          paymentMethod: PaymentMethod.CASH,
+          guestName: 'Khách Đã Hoàn Đủ',
+          guestPhone: '0911000444',
+        },
+      });
+
+      try {
+        const roomRes = await request(app)
+          .get(`/api/v1/admin/bookings?roomId=${maintenanceRoomId}&limit=100`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(roomRes.status).toBe(200);
+        const roomCodes = roomRes.body.data.items.map(
+          (b: { bookingCode: string }) => b.bookingCode,
+        );
+        expect(roomCodes).toContain(paidCancelled.bookingCode);
+        expect(roomCodes).toContain(partialRefundCancelled.bookingCode);
+        expect(roomCodes).toContain(fullyRefundedCancelled.bookingCode);
+        expect(roomCodes).not.toContain(userBookingCode);
+
+        const paymentRes = await request(app)
+          .get('/api/v1/admin/bookings?paymentStatus=PARTIALLY_REFUNDED&limit=100')
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(paymentRes.status).toBe(200);
+        const partialCodes = paymentRes.body.data.items.map(
+          (b: { bookingCode: string }) => b.bookingCode,
+        );
+        expect(partialCodes).toContain(partialRefundCancelled.bookingCode);
+        expect(partialCodes).not.toContain(paidCancelled.bookingCode);
+
+        const singleDayRangeRes = await request(app)
+          .get(`/api/v1/admin/bookings?from=${targetDateStr}&to=${targetDateStr}&limit=100`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(singleDayRangeRes.status).toBe(200);
+        const singleDayCodes = singleDayRangeRes.body.data.items.map(
+          (b: { bookingCode: string }) => b.bookingCode,
+        );
+        expect(singleDayCodes).toContain(userBookingCode);
+        expect(singleDayCodes).toContain(guestBookingCode);
+        expect(singleDayCodes).toContain(cancelledMidnightCode);
+        expect(singleDayCodes).not.toContain(overnightPrevDayCode);
+        expect(singleDayCodes).not.toContain(noShowNextDayCode);
+
+        const twoDayRangeRes = await request(app)
+          .get(`/api/v1/admin/bookings?from=${targetDateStr}&to=${nextDateStr}&limit=100`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(twoDayRangeRes.status).toBe(200);
+        const twoDayCodes = twoDayRangeRes.body.data.items.map(
+          (b: { bookingCode: string }) => b.bookingCode,
+        );
+        expect(twoDayCodes).toContain(userBookingCode);
+        expect(twoDayCodes).toContain(noShowNextDayCode);
+        expect(twoDayCodes).not.toContain(overnightPrevDayCode);
+
+        const comboRes = await request(app)
+          .get(
+            `/api/v1/admin/bookings?roomId=${maintenanceRoomId}&paymentStatus=PAID&from=${targetDateStr}&to=${nextDateStr}&limit=100`,
+          )
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(comboRes.status).toBe(200);
+        const comboCodes = comboRes.body.data.items.map(
+          (b: { bookingCode: string }) => b.bookingCode,
+        );
+        expect(comboCodes).toContain(paidCancelled.bookingCode);
+        expect(comboCodes).not.toContain(partialRefundCancelled.bookingCode);
+        expect(comboCodes).not.toContain(paidConfirmed.bookingCode);
+
+        const refundRes = await request(app)
+          .get('/api/v1/admin/bookings?needsRefund=true&limit=100')
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(refundRes.status).toBe(200);
+        const refundCodes = refundRes.body.data.items.map(
+          (b: { bookingCode: string }) => b.bookingCode,
+        );
+        expect(refundCodes).toContain(paidCancelled.bookingCode);
+        expect(refundCodes).toContain(partialRefundCancelled.bookingCode);
+        expect(refundCodes).not.toContain(fullyRefundedCancelled.bookingCode);
+        expect(refundCodes).not.toContain(cancelledMidnightCode);
+        expect(refundCodes).not.toContain(paidConfirmed.bookingCode);
+
+        const nonRefundRes = await request(app)
+          .get('/api/v1/admin/bookings?needsRefund=false&limit=100')
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(nonRefundRes.status).toBe(200);
+        const nonRefundCodes = nonRefundRes.body.data.items.map(
+          (b: { bookingCode: string }) => b.bookingCode,
+        );
+        expect(nonRefundCodes).toContain(fullyRefundedCancelled.bookingCode);
+        expect(nonRefundCodes).toContain(paidConfirmed.bookingCode);
+        expect(nonRefundCodes).toContain(cancelledMidnightCode);
+        expect(nonRefundCodes).not.toContain(paidCancelled.bookingCode);
+        expect(nonRefundCodes).not.toContain(partialRefundCancelled.bookingCode);
+
+        const conflictRes = await request(app)
+          .get('/api/v1/admin/bookings?needsRefund=true&status=CONFIRMED&limit=100')
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(conflictRes.status).toBe(200);
+        expect(conflictRes.body.data.items).toHaveLength(0);
+
+        for (const qs of [
+          `date=${targetDateStr}&from=${targetDateStr}&to=${nextDateStr}`,
+          `from=${targetDateStr}`,
+          'from=2026-01-01&to=2026-04-03',
+        ]) {
+          const badRes = await request(app)
+            .get(`/api/v1/admin/bookings?${qs}`)
+            .set('Authorization', `Bearer ${adminToken}`);
+          expect(badRes.status).toBe(400);
+        }
+      } finally {
+        await prisma.booking.deleteMany({
+          where: {
+            id: {
+              in: [
+                paidCancelled.id,
+                partialRefundCancelled.id,
+                paidConfirmed.id,
+                fullyRefundedCancelled.id,
+              ],
+            },
+          },
+        });
+      }
     });
 
     it('handles pagination properly with stable order and returns empty array on out-of-range page', async () => {

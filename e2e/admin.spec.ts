@@ -436,3 +436,73 @@ test('admin reschedules a PAID booking across rooms with price-delta confirmatio
   expect(audit?.actorRole).toBe('ADMIN');
   await noOverflow(page);
 });
+
+test('admin filters bookings by room, paymentStatus, date range, partial 4-char bookingCode, and needsRefund with URL persistence (CWB-100)', async ({
+  page,
+  scenario,
+}) => {
+  const otherRoom = await scenario.db.room.create({
+    data: {
+      name: `${scenario.prefix}-filter-room-2`,
+      capacity: 6,
+      pricePerHour: '150000.00',
+      statusHistory: {
+        create: { status: 'AVAILABLE', effectiveAt: new Date(Date.now() - 48 * HOUR) },
+      },
+    },
+  });
+  scenario.rooms.push(otherRoom);
+
+  const unpaidBooking = await scenario.booking({
+    paymentStatus: 'UNPAID',
+    status: 'CONFIRMED',
+  });
+  const refundableBooking = await scenario.booking({
+    roomId: otherRoom.id,
+    status: 'CANCELLED',
+    paymentStatus: 'PAID',
+    paymentMethod: 'QR',
+    paidAt: new Date(),
+    cancelledAt: new Date(),
+    cancellationReason: 'Khách đổi kế hoạch',
+  });
+
+  const vnDay = new Date(unpaidBooking.startTime.getTime() + 7 * HOUR).toISOString().slice(0, 10);
+
+  await login(page, scenario.admin);
+  await page.goto('/admin/bookings');
+
+  await page.getByTestId('filter-room-select').selectOption(scenario.room.id);
+  await page.getByTestId('filter-payment-status-select').selectOption('UNPAID');
+  await page.getByTestId('filter-from-input').fill(vnDay);
+  await page.getByTestId('filter-to-input').fill(vnDay);
+  const partialSuffix = unpaidBooking.bookingCode.slice(-4);
+  await page.getByTestId('filter-booking-code-input').fill(partialSuffix.toLowerCase());
+  await page.getByTestId('apply-filters-btn').click();
+
+  await expect(page.getByText(unpaidBooking.bookingCode, { exact: true }).first()).toBeVisible();
+  await expect(page.getByText(refundableBooking.bookingCode, { exact: true })).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByTestId('filter-room-select')).toHaveValue(scenario.room.id);
+  await expect(page.getByTestId('filter-payment-status-select')).toHaveValue('UNPAID');
+  await expect(page.getByTestId('filter-from-input')).toHaveValue(vnDay);
+  await expect(page.getByTestId('filter-to-input')).toHaveValue(vnDay);
+  await expect(page.getByTestId('filter-booking-code-input')).toHaveValue(
+    partialSuffix.toUpperCase(),
+  );
+  await expect(page.getByText(unpaidBooking.bookingCode, { exact: true }).first()).toBeVisible();
+
+  await page.getByTestId('clear-filters-btn').click();
+  await page.getByTestId('filter-room-select').selectOption(otherRoom.id);
+  await page.getByTestId('filter-needs-refund').check();
+
+  await expect(
+    page.getByText(refundableBooking.bookingCode, { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText(unpaidBooking.bookingCode, { exact: true })).toHaveCount(0);
+
+  await noOverflow(page);
+  await page.setViewportSize({ width: 375, height: 812 });
+  await noOverflow(page);
+});

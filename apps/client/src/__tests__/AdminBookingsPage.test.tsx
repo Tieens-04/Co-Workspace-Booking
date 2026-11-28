@@ -1,9 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { AdminBookingsPage } from '../pages/AdminBookingsPage';
 import { adminBookingApi } from '../services/admin-booking.api';
+import { adminRoomApi } from '../services/admin-room.api';
 import { roomApi } from '../services/room.api';
 import { AdminBookingItem } from '../types/admin-booking';
 import { RoomAvailabilitySlot } from '../types/room';
@@ -73,6 +74,12 @@ vi.mock('../services/room.api', () => ({
   roomApi: {
     getRooms: vi.fn(),
     getAvailability: vi.fn(),
+  },
+}));
+
+vi.mock('../services/admin-room.api', () => ({
+  adminRoomApi: {
+    getAdminRooms: vi.fn(),
   },
 }));
 
@@ -189,6 +196,33 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
         pagination: { page: 1, limit: 10, total: 0, totalPages: 1 },
       },
     });
+    vi.mocked(adminRoomApi.getAdminRooms).mockResolvedValue({
+      success: true,
+      message: 'OK',
+      data: {
+        items: [
+          {
+            id: '11111111-1111-4111-8111-111111111111',
+            name: 'Phòng Hội Thảo A',
+            capacity: 10,
+            pricePerHour: '200000.00',
+            status: 'AVAILABLE',
+            coverImage: null,
+            amenities: [],
+          },
+          {
+            id: '22222222-2222-4222-8222-222222222222',
+            name: 'Phòng Họp Nhóm B',
+            capacity: 6,
+            pricePerHour: '150000.00',
+            status: 'MAINTENANCE',
+            coverImage: null,
+            amenities: [],
+          },
+        ],
+        pagination: { page: 1, limit: 100, total: 2, totalPages: 1 },
+      },
+    });
   });
 
   const renderComponent = (initialPath = '/admin/bookings') => {
@@ -213,8 +247,9 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
     expect(screen.getByText('Lê Vãng Lai')).toBeInTheDocument();
     expect(screen.getByText('Tài khoản')).toBeInTheDocument();
     expect(screen.getByText('Vãng lai')).toBeInTheDocument();
-    expect(screen.getByText('Phòng Hội Thảo A')).toBeInTheDocument();
-    expect(screen.getByText('Phòng Họp Nhóm B')).toBeInTheDocument();
+    const table = screen.getByRole('table');
+    expect(within(table).getByText('Phòng Hội Thảo A')).toBeInTheDocument();
+    expect(within(table).getByText('Phòng Họp Nhóm B')).toBeInTheDocument();
     expect(screen.getByTestId('total-bookings-count')).toHaveTextContent('(2 đơn)');
   });
 
@@ -293,7 +328,7 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
     expect(screen.getByTestId('filter-customer-input')).toHaveValue('');
   });
 
-  it('submits search filter by date and status', async () => {
+  it('submits search filter by date range (from/to), room, paymentStatus, and status, syncing RevenueSummary', async () => {
     const user = userEvent.setup();
     renderComponent();
 
@@ -301,21 +336,41 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       expect(screen.getByText('CS-20261003-USER')).toBeInTheDocument();
     });
 
-    const dateInput = screen.getByTestId('filter-date-input');
-    fireEvent.change(dateInput, { target: { value: '2026-10-03' } });
+    const roomSelect = screen.getByTestId('filter-room-select');
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: 'Phòng Hội Thảo A' })).toBeInTheDocument();
+    });
+    await user.selectOptions(roomSelect, '11111111-1111-4111-8111-111111111111');
 
-    const statusSelect = screen.getByTestId('filter-status-select');
-    await user.selectOptions(statusSelect, 'CONFIRMED');
+    fireEvent.change(screen.getByTestId('filter-from-input'), {
+      target: { value: '2026-10-01' },
+    });
+    fireEvent.change(screen.getByTestId('filter-to-input'), {
+      target: { value: '2026-10-03' },
+    });
 
-    const searchBtn = screen.getByTestId('apply-filters-btn');
-    await user.click(searchBtn);
+    await user.selectOptions(screen.getByTestId('filter-status-select'), 'CONFIRMED');
+    await user.selectOptions(screen.getByTestId('filter-payment-status-select'), 'UNPAID');
+
+    await user.click(screen.getByTestId('apply-filters-btn'));
 
     await waitFor(() => {
       expect(adminBookingApi.getBookings).toHaveBeenCalledWith(
         expect.objectContaining({
-          date: '2026-10-03',
+          roomId: '11111111-1111-4111-8111-111111111111',
+          from: '2026-10-01',
+          to: '2026-10-03',
           status: 'CONFIRMED',
+          paymentStatus: 'UNPAID',
           page: 1,
+        }),
+        expect.any(AbortSignal),
+      );
+      expect(adminBookingApi.getRevenue).toHaveBeenCalledWith(
+        expect.objectContaining({
+          startDate: '2026-10-01',
+          endDate: '2026-10-03',
+          roomId: '11111111-1111-4111-8111-111111111111',
         }),
         expect.any(AbortSignal),
       );
@@ -324,7 +379,9 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
 
   it('clears all filters when "Xóa bộ lọc" is clicked', async () => {
     const user = userEvent.setup();
-    renderComponent('/admin/bookings?bookingCode=CS-20261003-USER&status=CONFIRMED&page=2');
+    renderComponent(
+      '/admin/bookings?bookingCode=CS-20261003-USER&roomId=11111111-1111-4111-8111-111111111111&from=2026-10-01&to=2026-10-03&status=CONFIRMED&paymentStatus=PAID&needsRefund=true&page=2',
+    );
 
     await waitFor(() => {
       expect(screen.getByTestId('clear-filters-btn')).toBeInTheDocument();
@@ -337,9 +394,53 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       expect(adminBookingApi.getBookings).toHaveBeenCalledWith(
         expect.objectContaining({
           bookingCode: undefined,
+          roomId: undefined,
+          from: undefined,
+          to: undefined,
           status: undefined,
-          date: undefined,
+          paymentStatus: undefined,
           page: 1,
+        }),
+        expect.any(AbortSignal),
+      );
+    });
+    const lastBookingsCall = vi.mocked(adminBookingApi.getBookings).mock.calls.at(-1)?.[0];
+    expect(lastBookingsCall).not.toHaveProperty('needsRefund');
+    expect(adminBookingApi.getRevenue).toHaveBeenLastCalledWith(
+      {
+        startDate: undefined,
+        endDate: undefined,
+        roomId: undefined,
+      },
+      expect.any(AbortSignal),
+    );
+    expect(screen.getByTestId('filter-needs-refund')).not.toBeChecked();
+  });
+
+  it('supports partial 4-char bookingCode, legacy ?date= URL normalization, and needsRefund checkbox (CWB-100)', async () => {
+    const user = userEvent.setup();
+    renderComponent('/admin/bookings?date=2026-10-03');
+
+    await waitFor(() => {
+      expect(adminBookingApi.getBookings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          from: '2026-10-03',
+          to: '2026-10-03',
+        }),
+        expect.any(AbortSignal),
+      );
+    });
+    expect(screen.getByTestId('filter-from-input')).toHaveValue('2026-10-03');
+    expect(screen.getByTestId('filter-to-input')).toHaveValue('2026-10-03');
+
+    await user.type(screen.getByTestId('filter-booking-code-input'), 'ou3q');
+    await user.click(screen.getByTestId('filter-needs-refund'));
+
+    await waitFor(() => {
+      expect(adminBookingApi.getBookings).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          bookingCode: 'OU3Q',
+          needsRefund: true,
         }),
         expect.any(AbortSignal),
       );
@@ -1221,13 +1322,13 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
       expect(codeInput.value).toBe('CS-DRAFT-01');
     });
 
-    it('cleanses impossible calendar date query params and blocks invalid date submission (CWB-120)', async () => {
+    it('cleanses impossible/invalid filter query params and blocks invalid code/date-range submission (CWB-100, CWB-120)', async () => {
       const user = userEvent.setup();
-      renderComponent('/admin/bookings?date=2027-02-31');
+      renderComponent('/admin/bookings?date=2027-02-31&bookingCode=ABC');
 
       await screen.findByText('CS-20261003-USER');
       expect(adminBookingApi.getBookings).not.toHaveBeenCalledWith(
-        expect.objectContaining({ date: '2027-02-31' }),
+        expect.objectContaining({ bookingCode: 'ABC' }),
         expect.anything(),
       );
       expect(adminBookingApi.getRevenue).not.toHaveBeenCalledWith(
@@ -1235,16 +1336,95 @@ describe('AdminBookingsPage - Booking Management & Search', () => {
         expect.anything(),
       );
 
-      const dateInput = screen.getByTestId('filter-date-input');
-      dateInput.setAttribute('type', 'text');
-      fireEvent.change(dateInput, { target: { value: '2027-02-31' } });
+      await user.type(screen.getByTestId('filter-booking-code-input'), 'ab');
+      await user.click(screen.getByTestId('apply-filters-btn'));
+      expect(await screen.findByText('Mã đặt phòng phải có ít nhất 4 ký tự')).toBeInTheDocument();
+
+      await user.clear(screen.getByTestId('filter-booking-code-input'));
+
+      const fromInput = screen.getByTestId('filter-from-input');
+      const toInput = screen.getByTestId('filter-to-input');
+      fireEvent.change(fromInput, { target: { value: '2026-10-01' } });
+      await user.click(screen.getByTestId('apply-filters-btn'));
+      expect(await screen.findByText('Vui lòng chọn cả Từ ngày và Đến ngày')).toBeInTheDocument();
+      expect(toInput).toHaveAttribute('aria-invalid', 'true');
+      expect(toInput).toHaveAttribute('aria-describedby', 'filter-date-range-error');
+
+      fireEvent.change(fromInput, { target: { value: '' } });
+      fireEvent.change(toInput, { target: { value: '2026-10-01' } });
+      await user.click(screen.getByTestId('apply-filters-btn'));
+      expect(await screen.findByText('Vui lòng chọn cả Từ ngày và Đến ngày')).toBeInTheDocument();
+
+      fireEvent.change(fromInput, { target: { value: '2026-10-05' } });
+      fireEvent.change(toInput, { target: { value: '2026-10-01' } });
+      await user.click(screen.getByTestId('apply-filters-btn'));
+      expect(await screen.findByText('Từ ngày không được sau Đến ngày')).toBeInTheDocument();
+
+      fromInput.setAttribute('type', 'text');
+      fireEvent.change(fromInput, { target: { value: '2027-02-31' } });
+      fireEvent.change(toInput, { target: { value: '2027-03-01' } });
       await user.click(screen.getByTestId('apply-filters-btn'));
 
-      expect(await screen.findByText('Ngày bắt đầu không hợp lệ')).toBeInTheDocument();
+      expect(await screen.findByText('Ngày lọc không hợp lệ')).toBeInTheDocument();
+
+      fireEvent.change(fromInput, { target: { value: '2026-01-01' } });
+      fireEvent.change(toInput, { target: { value: '2026-04-03' } });
+      await user.click(screen.getByTestId('apply-filters-btn'));
+      expect(await screen.findByText('Khoảng ngày lọc tối đa 92 ngày')).toBeInTheDocument();
+    });
+
+    it('keeps quick-filter checkbox unchecked when another draft filter fails validation (R1-02)', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await screen.findByText('CS-20261003-USER');
+      await user.type(screen.getByTestId('filter-booking-code-input'), 'ab');
+      const refundCheckbox = screen.getByTestId('filter-needs-refund');
+      await user.click(refundCheckbox);
+
+      expect(await screen.findByText('Mã đặt phòng phải có ít nhất 4 ký tự')).toBeInTheDocument();
+      expect(refundCheckbox).not.toBeChecked();
       expect(adminBookingApi.getBookings).not.toHaveBeenCalledWith(
-        expect.objectContaining({ date: '2027-02-31' }),
+        expect.objectContaining({ needsRefund: true }),
         expect.anything(),
       );
+    });
+
+    it('normalizes uppercase roomId and preserves selection via fallback option if room loading fails (R1-03)', async () => {
+      const uppercaseId = '11111111-1111-4111-8111-111111111111'.toUpperCase();
+      vi.mocked(adminRoomApi.getAdminRooms).mockRejectedValueOnce(new Error('Network down'));
+
+      renderComponent(`/admin/bookings?roomId=${uppercaseId}`);
+
+      await waitFor(() => {
+        expect(adminBookingApi.getBookings).toHaveBeenCalledWith(
+          expect.objectContaining({ roomId: uppercaseId.toLowerCase() }),
+          expect.any(AbortSignal),
+        );
+      });
+      expect(screen.getByTestId('filter-room-select')).toHaveValue(uppercaseId.toLowerCase());
+    });
+
+    it('clears stale revenue figures when getRevenue fails on filter change (R1-04)', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      expect(await screen.findByTestId('revenue-summary-card')).toBeInTheDocument();
+
+      vi.mocked(adminBookingApi.getRevenue).mockRejectedValueOnce({
+        response: { data: { message: 'Lỗi tải doanh thu mới' } },
+      });
+
+      await user.selectOptions(
+        screen.getByTestId('filter-room-select'),
+        '11111111-1111-4111-8111-111111111111',
+      );
+      await user.click(screen.getByTestId('apply-filters-btn'));
+
+      expect(await screen.findByTestId('revenue-error-message')).toHaveTextContent(
+        'Lỗi tải doanh thu mới',
+      );
+      expect(screen.queryByTestId('revenue-summary-card')).not.toBeInTheDocument();
     });
 
     it('reschedules a PAID booking via dialog with required reason and price-delta confirmation (CWB-98)', async () => {
