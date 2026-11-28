@@ -1437,7 +1437,7 @@ export class BookingRepository
     const skip = (filter.page - 1) * filter.limit;
     const take = filter.limit;
 
-    const where: Prisma.BookingWhereInput = {};
+    const andConditions: Prisma.BookingWhereInput[] = [];
 
     if (filter.needsAttention !== undefined) {
       const attentionRows = await prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
@@ -1462,39 +1462,75 @@ export class BookingRepository
         if (attentionIds.length === 0) {
           return [0, []];
         }
-        where.id = { in: attentionIds };
+        andConditions.push({ id: { in: attentionIds } });
       } else if (attentionIds.length > 0) {
-        where.id = { notIn: attentionIds };
+        andConditions.push({ id: { notIn: attentionIds } });
       }
     }
 
     if (filter.bookingCode) {
-      where.bookingCode = filter.bookingCode;
+      const escapedCode = escapeMysqlLike(filter.bookingCode);
+      andConditions.push({
+        bookingCode: filter.bookingCode.startsWith('CS-')
+          ? { startsWith: escapedCode }
+          : { contains: escapedCode },
+      });
+    }
+
+    if (filter.roomId) {
+      andConditions.push({ roomId: filter.roomId });
     }
 
     if (filter.status) {
-      where.status = filter.status;
+      andConditions.push({ status: filter.status });
+    }
+
+    if (filter.paymentStatus) {
+      andConditions.push({ paymentStatus: filter.paymentStatus });
+    }
+
+    if (filter.needsRefund !== undefined) {
+      const refundable: Prisma.BookingWhereInput = {
+        status: BookingStatus.CANCELLED,
+        paymentStatus: { in: [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED] },
+      };
+      andConditions.push(filter.needsRefund ? refundable : { NOT: refundable });
     }
 
     if (filter.date) {
       const { dayStart, dayEnd } = getDayBounds(filter.date);
-      where.startTime = {
-        gte: dayStart,
-        lt: dayEnd,
-      };
+      andConditions.push({
+        startTime: {
+          gte: dayStart,
+          lt: dayEnd,
+        },
+      });
+    } else if (filter.from && filter.to) {
+      const { dayStart } = getDayBounds(filter.from);
+      const { dayEnd } = getDayBounds(filter.to);
+      andConditions.push({
+        startTime: {
+          gte: dayStart,
+          lt: dayEnd,
+        },
+      });
     }
 
     if (filter.customer) {
       // CWB-79 / CWB-94: registered customers and walk-in guests; *_ci collation = case-insensitive.
       const q = escapeMysqlLike(filter.customer);
-      where.OR = [
-        { user: { email: { contains: q } } },
-        { user: { fullName: { contains: q } } },
-        { user: { phoneNumber: { contains: q } } },
-        { guestName: { contains: q } },
-        { guestPhone: { contains: q } },
-      ];
+      andConditions.push({
+        OR: [
+          { user: { email: { contains: q } } },
+          { user: { fullName: { contains: q } } },
+          { user: { phoneNumber: { contains: q } } },
+          { guestName: { contains: q } },
+          { guestPhone: { contains: q } },
+        ],
+      });
     }
+
+    const where: Prisma.BookingWhereInput = andConditions.length > 0 ? { AND: andConditions } : {};
 
     const [total, records] = await Promise.all([
       prisma.booking.count({ where }),
