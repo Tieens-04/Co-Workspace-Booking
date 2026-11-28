@@ -3,8 +3,16 @@ import { useSearchParams } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { usePageTitle } from '../hooks/usePageTitle';
 import { adminBookingApi } from '../services/admin-booking.api';
-import { AdminBookingItem, AdminRevenueData } from '../types/admin-booking';
-import { PaginationMeta } from '../types/room';
+import { adminRoomApi } from '../services/admin-room.api';
+import {
+  ADMIN_BOOKING_STATUSES,
+  ADMIN_PAYMENT_STATUSES,
+  AdminBookingItem,
+  AdminBookingStatus,
+  AdminPaymentStatus,
+  AdminRevenueData,
+} from '../types/admin-booking';
+import { PaginationMeta, RoomListItem } from '../types/room';
 import { AdminGuestBookingForm } from '../components/AdminGuestBookingForm';
 import { BookingFilters } from '../components/admin/bookings/BookingFilters';
 import { RevenueSummary } from '../components/admin/bookings/RevenueSummary';
@@ -33,7 +41,11 @@ import { Button } from '@/components/ui/button';
 import { isValidVnCalendarDate } from '../utils/bookingTime';
 
 const PAGE_LIMIT = 10;
-const VALID_STATUSES = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+const MAX_FILTER_DAYS = 92;
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+const isValidRangeDays = (from: string, to: string): boolean =>
+  from <= to && (Date.parse(to) - Date.parse(from)) / 86_400_000 < MAX_FILTER_DAYS;
 
 const DEFAULT_PAGINATION: PaginationMeta = {
   page: 1,
@@ -55,24 +67,33 @@ export const AdminBookingsPage: React.FC = () => {
   const {
     appliedCode,
     appliedCustomer,
-    appliedDate,
+    appliedRoomId,
+    appliedFrom,
+    appliedTo,
     appliedStatus,
+    appliedPaymentStatus,
     appliedNeedsAttention,
+    appliedNeedsRefund,
     currentPage,
     normalizedParams,
     hasParamDiscrepancy,
   } = useMemo(() => {
     const rawCode = searchParams.get('bookingCode');
     const rawCustomer = searchParams.get('customer');
+    const rawRoomId = searchParams.get('roomId');
     const rawDate = searchParams.get('date');
+    const rawFrom = searchParams.get('from');
+    const rawTo = searchParams.get('to');
     const rawStatus = searchParams.get('status');
+    const rawPaymentStatus = searchParams.get('paymentStatus');
     const rawNeedsAttention = searchParams.get('needsAttention');
+    const rawNeedsRefund = searchParams.get('needsRefund');
     const rawPage = searchParams.get('page');
 
     let code: string | undefined = undefined;
     if (rawCode) {
-      const cleaned = rawCode.replace(/\s+/g, '').toUpperCase();
-      if (cleaned.length > 0) code = cleaned;
+      const cleaned = rawCode.replace(/\s+/g, '').toUpperCase().slice(0, 191);
+      if (cleaned.length >= 4) code = cleaned;
     }
 
     let customer: string | undefined = undefined;
@@ -81,17 +102,37 @@ export const AdminBookingsPage: React.FC = () => {
       if (cleaned.length > 0) customer = cleaned;
     }
 
-    let date: string | undefined = undefined;
-    if (rawDate && isValidVnCalendarDate(rawDate)) {
-      date = rawDate;
+    let roomId: string | undefined = undefined;
+    if (rawRoomId && UUID_REGEX.test(rawRoomId)) {
+      roomId = rawRoomId.toLowerCase();
     }
 
-    let status: string | undefined = undefined;
-    if (rawStatus && VALID_STATUSES.includes(rawStatus)) {
-      status = rawStatus;
+    let from: string | undefined = undefined;
+    let to: string | undefined = undefined;
+    if (
+      rawFrom &&
+      rawTo &&
+      isValidVnCalendarDate(rawFrom) &&
+      isValidVnCalendarDate(rawTo) &&
+      isValidRangeDays(rawFrom, rawTo)
+    ) {
+      from = rawFrom;
+      to = rawTo;
+    } else if (!rawFrom && !rawTo && rawDate && isValidVnCalendarDate(rawDate)) {
+      from = rawDate;
+      to = rawDate;
     }
+
+    const status: AdminBookingStatus | undefined = rawStatus
+      ? ADMIN_BOOKING_STATUSES.find((s) => s === rawStatus)
+      : undefined;
+
+    const paymentStatus: AdminPaymentStatus | undefined = rawPaymentStatus
+      ? ADMIN_PAYMENT_STATUSES.find((s) => s === rawPaymentStatus)
+      : undefined;
 
     const needsAttention = rawNeedsAttention === 'true' ? true : undefined;
+    const needsRefund = rawNeedsRefund === 'true' ? true : undefined;
 
     let page = 1;
     if (rawPage && /^[1-9]\d*$/.test(rawPage)) {
@@ -104,9 +145,15 @@ export const AdminBookingsPage: React.FC = () => {
     const nextParams = new URLSearchParams();
     if (code) nextParams.set('bookingCode', code);
     if (customer) nextParams.set('customer', customer);
-    if (date) nextParams.set('date', date);
+    if (roomId) nextParams.set('roomId', roomId);
+    if (from && to) {
+      nextParams.set('from', from);
+      nextParams.set('to', to);
+    }
     if (status) nextParams.set('status', status);
+    if (paymentStatus) nextParams.set('paymentStatus', paymentStatus);
     if (needsAttention) nextParams.set('needsAttention', 'true');
+    if (needsRefund) nextParams.set('needsRefund', 'true');
     if (page > 1) nextParams.set('page', page.toString());
 
     const isDifferent = searchParams.toString() !== nextParams.toString();
@@ -114,9 +161,13 @@ export const AdminBookingsPage: React.FC = () => {
     return {
       appliedCode: code,
       appliedCustomer: customer,
-      appliedDate: date,
+      appliedRoomId: roomId,
+      appliedFrom: from,
+      appliedTo: to,
       appliedStatus: status,
+      appliedPaymentStatus: paymentStatus,
       appliedNeedsAttention: needsAttention,
+      appliedNeedsRefund: needsRefund,
       currentPage: page,
       normalizedParams: nextParams,
       hasParamDiscrepancy: isDifferent,
@@ -130,24 +181,80 @@ export const AdminBookingsPage: React.FC = () => {
   }, [hasParamDiscrepancy, normalizedParams, setSearchParams]);
 
   // Draft search form inputs
+  const [rooms, setRooms] = useState<RoomListItem[]>([]);
   const [draftCode, setDraftCode] = useState<string>(appliedCode || '');
   const [draftCustomer, setDraftCustomer] = useState<string>(appliedCustomer || '');
-  const [draftDate, setDraftDate] = useState<string>(appliedDate || '');
+  const [draftRoomId, setDraftRoomId] = useState<string>(appliedRoomId || '');
+  const [draftFrom, setDraftFrom] = useState<string>(appliedFrom || '');
+  const [draftTo, setDraftTo] = useState<string>(appliedTo || '');
   const [draftStatus, setDraftStatus] = useState<string>(appliedStatus || '');
+  const [draftPaymentStatus, setDraftPaymentStatus] = useState<string>(appliedPaymentStatus || '');
   const [draftNeedsAttention, setDraftNeedsAttention] = useState<boolean>(
     Boolean(appliedNeedsAttention),
   );
-  const [dateFilterError, setDateFilterError] = useState<string | null>(null);
+  const [draftNeedsRefund, setDraftNeedsRefund] = useState<boolean>(Boolean(appliedNeedsRefund));
+  const [codeFilterError, setCodeFilterError] = useState<string | null>(null);
+  const [dateRangeFilterError, setDateRangeFilterError] = useState<string | null>(null);
 
   // Keep draft in sync when URL changes (e.g. back/forward navigation)
   useEffect(() => {
     setDraftCode(appliedCode || '');
     setDraftCustomer(appliedCustomer || '');
-    setDraftDate(appliedDate || '');
+    setDraftRoomId(appliedRoomId || '');
+    setDraftFrom(appliedFrom || '');
+    setDraftTo(appliedTo || '');
     setDraftStatus(appliedStatus || '');
+    setDraftPaymentStatus(appliedPaymentStatus || '');
     setDraftNeedsAttention(Boolean(appliedNeedsAttention));
-    setDateFilterError(null);
-  }, [appliedCode, appliedCustomer, appliedDate, appliedStatus, appliedNeedsAttention]);
+    setDraftNeedsRefund(Boolean(appliedNeedsRefund));
+    setCodeFilterError(null);
+    setDateRangeFilterError(null);
+  }, [
+    appliedCode,
+    appliedCustomer,
+    appliedRoomId,
+    appliedFrom,
+    appliedTo,
+    appliedStatus,
+    appliedPaymentStatus,
+    appliedNeedsAttention,
+    appliedNeedsRefund,
+  ]);
+
+  // Load all admin rooms (including MAINTENANCE / ARCHIVED) for historical room filter
+  useEffect(() => {
+    const controller = new AbortController();
+    const loadRooms = async () => {
+      try {
+        const first = await adminRoomApi.getAdminRooms({ page: 1, limit: 100 }, controller.signal);
+        if (controller.signal.aborted || !first?.success || !first.data?.items) return;
+        const collected = [...first.data.items];
+        const totalPages = Math.min(first.data.pagination?.totalPages ?? 1, 10);
+        for (let nextPage = 2; nextPage <= totalPages; nextPage++) {
+          if (controller.signal.aborted) break;
+          try {
+            const nextRes = await adminRoomApi.getAdminRooms(
+              { page: nextPage, limit: 100 },
+              controller.signal,
+            );
+            if (!nextRes?.success || !nextRes.data?.items) break;
+            collected.push(...nextRes.data.items);
+          } catch {
+            break;
+          }
+        }
+        if (!controller.signal.aborted) {
+          setRooms(collected);
+        }
+      } catch {
+        // Non-critical room list failure
+      }
+    };
+    void loadRooms();
+    return () => {
+      controller.abort();
+    };
+  }, []);
 
   // Request & list state
   const [bookings, setBookings] = useState<AdminBookingItem[] | null>(null);
@@ -457,7 +564,7 @@ export const AdminBookingsPage: React.FC = () => {
     (preserveList = false) => {
       const currentRequestId = ++requestIdRef.current;
       const requestingUser = principal?.id;
-      const requestFilterKey = `${appliedCode}|${appliedCustomer}|${appliedDate}|${appliedStatus}|${appliedNeedsAttention ? '1' : '0'}|${currentPage}|${requestingUser}`;
+      const requestFilterKey = `${appliedCode}|${appliedCustomer}|${appliedRoomId}|${appliedFrom}|${appliedTo}|${appliedStatus}|${appliedPaymentStatus}|${appliedNeedsAttention ? '1' : '0'}|${appliedNeedsRefund ? '1' : '0'}|${currentPage}|${requestingUser}`;
       activeFilterKeyRef.current = requestFilterKey;
 
       abortControllerRef.current?.abort();
@@ -468,30 +575,37 @@ export const AdminBookingsPage: React.FC = () => {
       setErrorMessage(null);
       setRevenueError(null);
 
+      const isStale = () =>
+        controller.signal.aborted ||
+        requestIdRef.current !== currentRequestId ||
+        activeSessionUserRef.current !== requestingUser ||
+        activeFilterKeyRef.current !== requestFilterKey;
+
       adminBookingApi
         .getRevenue(
           {
-            startDate: appliedDate,
-            endDate: appliedDate,
+            startDate: appliedFrom,
+            endDate: appliedTo,
+            roomId: appliedRoomId,
           },
           controller.signal,
         )
         .then((revRes) => {
-          if (!controller.signal.aborted) {
-            if (revRes.success) {
-              setRevenueData(revRes.data);
-            } else {
-              setRevenueError(revRes.message || 'Không thể tải dữ liệu doanh thu.');
-            }
+          if (isStale()) return;
+          if (revRes.success) {
+            setRevenueData(revRes.data);
+          } else {
+            if (!preserveList) setRevenueData(null);
+            setRevenueError(revRes.message || 'Không thể tải dữ liệu doanh thu.');
           }
         })
         .catch((err) => {
-          if (!controller.signal.aborted) {
-            console.error('Không thể tải dữ liệu doanh thu', err);
-            setRevenueError(
-              err.response?.data?.message || 'Không thể tải dữ liệu doanh thu. Vui lòng thử lại.',
-            );
-          }
+          if (isStale()) return;
+          console.error('Không thể tải dữ liệu doanh thu', err);
+          if (!preserveList) setRevenueData(null);
+          setRevenueError(
+            err.response?.data?.message || 'Không thể tải dữ liệu doanh thu. Vui lòng thử lại.',
+          );
         });
 
       adminBookingApi
@@ -501,21 +615,18 @@ export const AdminBookingsPage: React.FC = () => {
             limit: PAGE_LIMIT,
             bookingCode: appliedCode,
             customer: appliedCustomer,
-            date: appliedDate,
+            roomId: appliedRoomId,
+            from: appliedFrom,
+            to: appliedTo,
             status: appliedStatus,
+            paymentStatus: appliedPaymentStatus,
             ...(appliedNeedsAttention ? { needsAttention: true } : {}),
+            ...(appliedNeedsRefund ? { needsRefund: true } : {}),
           },
           controller.signal,
         )
         .then((res) => {
-          if (
-            controller.signal.aborted ||
-            requestIdRef.current !== currentRequestId ||
-            activeSessionUserRef.current !== requestingUser ||
-            activeFilterKeyRef.current !== requestFilterKey
-          ) {
-            return;
-          }
+          if (isStale()) return;
 
           if (res.success) {
             setBookings(res.data.items);
@@ -530,14 +641,7 @@ export const AdminBookingsPage: React.FC = () => {
           }
         })
         .catch((err: any) => {
-          if (
-            controller.signal.aborted ||
-            requestIdRef.current !== currentRequestId ||
-            activeSessionUserRef.current !== requestingUser ||
-            activeFilterKeyRef.current !== requestFilterKey
-          ) {
-            return;
-          }
+          if (isStale()) return;
 
           const msg =
             err.response?.data?.message || 'Không thể tải danh sách đặt phòng. Vui lòng thử lại.';
@@ -550,9 +654,13 @@ export const AdminBookingsPage: React.FC = () => {
       currentPage,
       appliedCode,
       appliedCustomer,
-      appliedDate,
+      appliedRoomId,
+      appliedFrom,
+      appliedTo,
       appliedStatus,
+      appliedPaymentStatus,
       appliedNeedsAttention,
+      appliedNeedsRefund,
       principal?.id,
     ],
   );
@@ -565,45 +673,88 @@ export const AdminBookingsPage: React.FC = () => {
     };
   }, [fetchAdminBookings, refreshIndex]);
 
-  const applyDraftFiltersToParams = (needsAttentionValue: boolean) => {
-    const cleanedDate = draftDate.trim();
-    if (cleanedDate && !isValidVnCalendarDate(cleanedDate)) {
-      setDateFilterError('Ngày bắt đầu không hợp lệ');
-      return;
+  const applyDraftFiltersToParams = (
+    needsAttentionValue: boolean,
+    needsRefundValue: boolean,
+  ): boolean => {
+    const cleanedCode = draftCode.replace(/\s+/g, '').toUpperCase().slice(0, 191);
+    if (cleanedCode.length > 0 && cleanedCode.length < 4) {
+      setCodeFilterError('Mã đặt phòng phải có ít nhất 4 ký tự');
+      return false;
     }
-    setDateFilterError(null);
+
+    const cleanedFrom = draftFrom.trim();
+    const cleanedTo = draftTo.trim();
+    if ((cleanedFrom !== '') !== (cleanedTo !== '')) {
+      setDateRangeFilterError('Vui lòng chọn cả Từ ngày và Đến ngày');
+      return false;
+    }
+    if (cleanedFrom && (!isValidVnCalendarDate(cleanedFrom) || !isValidVnCalendarDate(cleanedTo))) {
+      setDateRangeFilterError('Ngày lọc không hợp lệ');
+      return false;
+    }
+    if (cleanedFrom && cleanedFrom > cleanedTo) {
+      setDateRangeFilterError('Từ ngày không được sau Đến ngày');
+      return false;
+    }
+    if (cleanedFrom && !isValidRangeDays(cleanedFrom, cleanedTo)) {
+      setDateRangeFilterError(`Khoảng ngày lọc tối đa ${MAX_FILTER_DAYS} ngày`);
+      return false;
+    }
+
+    setCodeFilterError(null);
+    setDateRangeFilterError(null);
+
     const nextParams = new URLSearchParams();
-    const cleanedCode = draftCode.replace(/\s+/g, '').toUpperCase();
     if (cleanedCode) nextParams.set('bookingCode', cleanedCode);
     const cleanedCustomer = draftCustomer.trim().slice(0, 191);
     if (cleanedCustomer) nextParams.set('customer', cleanedCustomer);
-    if (cleanedDate) nextParams.set('date', cleanedDate);
+    if (draftRoomId) nextParams.set('roomId', draftRoomId);
+    if (cleanedFrom && cleanedTo) {
+      nextParams.set('from', cleanedFrom);
+      nextParams.set('to', cleanedTo);
+    }
     if (draftStatus) nextParams.set('status', draftStatus);
+    if (draftPaymentStatus) nextParams.set('paymentStatus', draftPaymentStatus);
     if (needsAttentionValue) nextParams.set('needsAttention', 'true');
+    if (needsRefundValue) nextParams.set('needsRefund', 'true');
     // Reset to page 1 on filter change
     setSearchParams(nextParams);
+    return true;
   };
 
   // Handle filter submission
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    applyDraftFiltersToParams(draftNeedsAttention);
+    applyDraftFiltersToParams(draftNeedsAttention, draftNeedsRefund);
   };
 
-  // Toggle needsAttention immediately while preserving current draft filter inputs
+  // Toggle quick checkboxes immediately while preserving current draft filter inputs
   const handleNeedsAttentionChange = (checked: boolean) => {
-    setDraftNeedsAttention(checked);
-    applyDraftFiltersToParams(checked);
+    if (applyDraftFiltersToParams(checked, draftNeedsRefund)) {
+      setDraftNeedsAttention(checked);
+    }
+  };
+
+  const handleNeedsRefundChange = (checked: boolean) => {
+    if (applyDraftFiltersToParams(draftNeedsAttention, checked)) {
+      setDraftNeedsRefund(checked);
+    }
   };
 
   // Handle clearing all filters
   const handleClearFilters = () => {
     setDraftCode('');
     setDraftCustomer('');
-    setDraftDate('');
+    setDraftRoomId('');
+    setDraftFrom('');
+    setDraftTo('');
     setDraftStatus('');
+    setDraftPaymentStatus('');
     setDraftNeedsAttention(false);
-    setDateFilterError(null);
+    setDraftNeedsRefund(false);
+    setCodeFilterError(null);
+    setDateRangeFilterError(null);
     setSearchParams(new URLSearchParams());
   };
 
@@ -671,19 +822,35 @@ export const AdminBookingsPage: React.FC = () => {
       {/* Filter and Search Section */}
       <BookingFilters
         code={draftCode}
+        codeError={codeFilterError}
         customer={draftCustomer}
-        date={draftDate}
-        dateError={dateFilterError}
+        roomId={draftRoomId}
+        rooms={rooms}
+        from={draftFrom}
+        to={draftTo}
+        dateRangeError={dateRangeFilterError}
         status={draftStatus}
+        paymentStatus={draftPaymentStatus}
         needsAttention={draftNeedsAttention}
-        onCodeChange={setDraftCode}
+        needsRefund={draftNeedsRefund}
+        onCodeChange={(value) => {
+          setDraftCode(value);
+          setCodeFilterError(null);
+        }}
         onCustomerChange={setDraftCustomer}
-        onDateChange={(value) => {
-          setDraftDate(value);
-          setDateFilterError(null);
+        onRoomIdChange={setDraftRoomId}
+        onFromChange={(value) => {
+          setDraftFrom(value);
+          setDateRangeFilterError(null);
+        }}
+        onToChange={(value) => {
+          setDraftTo(value);
+          setDateRangeFilterError(null);
         }}
         onStatusChange={setDraftStatus}
+        onPaymentStatusChange={setDraftPaymentStatus}
         onNeedsAttentionChange={handleNeedsAttentionChange}
+        onNeedsRefundChange={handleNeedsRefundChange}
         onSubmit={handleSearchSubmit}
         onClear={handleClearFilters}
       />

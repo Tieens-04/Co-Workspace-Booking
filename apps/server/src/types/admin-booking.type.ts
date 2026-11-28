@@ -66,11 +66,17 @@ export interface FindAdminBookingsFilter {
   limit: number;
   bookingCode?: string;
   date?: string;
+  from?: string;
+  to?: string;
+  roomId?: string;
+  paymentStatus?: PaymentStatus;
   status?: BookingStatus;
   /** CWB-79: substring of the account email/name/phone or the guest name/phone. */
   customer?: string;
   /** CWB-91: filter CONFIRMED bookings impacted by closure or non-AVAILABLE room. */
   needsAttention?: boolean;
+  /** CWB-100: filter CANCELLED bookings with PAID or PARTIALLY_REFUNDED paymentStatus. */
+  needsRefund?: boolean;
 }
 
 export interface AdminBookingListResponseData {

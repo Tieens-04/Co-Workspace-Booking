@@ -25,7 +25,9 @@ test('a 191-character unbroken room name never overflows customer or admin pages
 
   const check = async (path: string) => {
     await page.goto(path);
-    await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText(name, { exact: true }).and(page.locator(':visible')).first(),
+    ).toBeVisible();
     await noOverflow(page);
     await nameFits();
   };

@@ -12,6 +12,14 @@ const noteSchema = z
     return trimmed === '' ? null : trimmed;
   });
 
+export const MAX_EXPORT_DAYS = 92;
+
+const calendarDateSchema = (label: string) =>
+  z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, `${label} phải có định dạng YYYY-MM-DD`)
+    .refine(isValidCalendarDate, `${label} phải là ngày thực tế hợp lệ`);
+
 export const getAdminBookingsQuerySchema = z
   .object({
     page: positiveIntSchema('page').default(1),
@@ -25,14 +33,19 @@ export const getAdminBookingsQuerySchema = z
         const normalized = val.replace(/\s+/g, '').toUpperCase();
         return normalized.length === 0 ? undefined : normalized;
       })
+      .refine((val) => val === undefined || val.length >= 4, 'Mã đặt phòng phải có ít nhất 4 ký tự')
       .optional(),
-    date: z
-      .string()
-      .regex(/^\d{4}-\d{2}-\d{2}$/, 'date phải có định dạng YYYY-MM-DD')
-      .refine(isValidCalendarDate, 'date phải là ngày thực tế hợp lệ')
-      .optional(),
+    date: calendarDateSchema('date').optional(),
+    from: calendarDateSchema('from').optional(),
+    to: calendarDateSchema('to').optional(),
+    roomId: z.string().uuid('ID phòng không đúng định dạng UUID').optional(),
+    paymentStatus: z.nativeEnum(PaymentStatus).optional(),
     status: z.nativeEnum(BookingStatus).optional(),
     needsAttention: z
+      .enum(['true', 'false'])
+      .transform((val) => val === 'true')
+      .optional(),
+    needsRefund: z
       .enum(['true', 'false'])
       .transform((val) => val === 'true')
       .optional(),
@@ -47,9 +60,46 @@ export const getAdminBookingsQuerySchema = z
       .optional(),
   })
   .strict()
-  .refine((data) => (data.page - 1) * data.limit <= MYSQL_INT_MAX, {
-    message: 'page và limit tạo offset vượt quá giới hạn cho phép',
-    path: ['page'],
+  .superRefine((data, ctx) => {
+    if ((data.page - 1) * data.limit > MYSQL_INT_MAX) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'page và limit tạo offset vượt quá giới hạn cho phép',
+        path: ['page'],
+      });
+    }
+
+    if (data.date !== undefined && (data.from !== undefined || data.to !== undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Không thể dùng đồng thời date với from/to',
+        path: ['date'],
+      });
+    }
+
+    if ((data.from !== undefined) !== (data.to !== undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Cần truyền đủ cả from và to để lọc theo khoảng ngày',
+        path: [data.from === undefined ? 'from' : 'to'],
+      });
+    }
+
+    if (data.from !== undefined && data.to !== undefined) {
+      if (data.from > data.to) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'from không được sau to',
+          path: ['from'],
+        });
+      } else if ((Date.parse(data.to) - Date.parse(data.from)) / 86_400_000 >= MAX_EXPORT_DAYS) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Khoảng ngày lọc tối đa ${MAX_EXPORT_DAYS} ngày`,
+          path: ['to'],
+        });
+      }
+    }
   });
 
 export type GetAdminBookingsQueryInput = z.infer<typeof getAdminBookingsQuerySchema>;
@@ -193,19 +243,11 @@ export const checkInBookingParamsSchema = completeBookingParamsSchema;
 export type CheckInBookingParamsInput = z.infer<typeof checkInBookingParamsSchema>;
 export const checkInBookingBodySchema = z.object({}).strict().optional();
 
-export const MAX_EXPORT_DAYS = 92;
-
-const exportDate = (label: string) =>
-  z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, `${label} phải có định dạng YYYY-MM-DD`)
-    .refine(isValidCalendarDate, `${label} phải là ngày thực tế hợp lệ`);
-
 /** CSV export filters (CWB-69): a bounded period is required. */
 export const exportReportQuerySchema = z
   .object({
-    startDate: exportDate('startDate'),
-    endDate: exportDate('endDate'),
+    startDate: calendarDateSchema('startDate'),
+    endDate: calendarDateSchema('endDate'),
     roomId: z.string().uuid('ID phòng không đúng định dạng UUID').optional(),
     paymentStatus: z.nativeEnum(PaymentStatus).optional(),
   })

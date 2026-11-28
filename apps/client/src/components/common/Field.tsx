@@ -42,7 +42,7 @@ export function Field({
   });
 
   return (
-    <div className={cn('grid min-w-0 content-start gap-1.5', className)}>
+    <div className={cn('grid min-w-0 grid-cols-[minmax(0,1fr)] content-start gap-1.5', className)}>
       <Label htmlFor={id} className="text-sm font-medium">
         {label}
       </Label>

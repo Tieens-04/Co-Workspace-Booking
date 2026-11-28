@@ -36,16 +36,29 @@ export interface AdminBookingItem {
   customer: AdminBookingCustomer;
 }
 
+export const ADMIN_BOOKING_STATUSES = ['CONFIRMED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] as const;
+
+export const ADMIN_PAYMENT_STATUSES = ['UNPAID', 'PAID', 'PARTIALLY_REFUNDED', 'REFUNDED'] as const;
+
+export type AdminBookingStatus = (typeof ADMIN_BOOKING_STATUSES)[number];
+export type AdminPaymentStatus = (typeof ADMIN_PAYMENT_STATUSES)[number];
+
 export interface GetAdminBookingsParams {
   page?: number;
   limit?: number;
   bookingCode?: string;
   date?: string;
-  status?: string;
+  from?: string;
+  to?: string;
+  roomId?: string;
+  status?: AdminBookingStatus;
+  paymentStatus?: AdminPaymentStatus;
   /** CWB-79: account email/name/phone or walk-in guest name/phone. */
   customer?: string;
   /** CWB-91: filter CONFIRMED bookings affected by closure or unavailable room. */
   needsAttention?: boolean;
+  /** CWB-100: filter CANCELLED bookings with PAID or PARTIALLY_REFUNDED status. */
+  needsRefund?: boolean;
 }
 
 export interface AdminBookingListResponseData {

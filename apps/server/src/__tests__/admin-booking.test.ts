@@ -169,30 +169,31 @@ describe('Admin Booking Management API Unit Tests', () => {
     });
 
     it('rejects invalid query parameters with 400', async () => {
-      const res1 = await request(app)
-        .get('/api/v1/admin/bookings?limit=0')
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res1.status).toBe(400);
+      const invalidQueries = [
+        'limit=0',
+        'limit=101',
+        'status=INVALID_STATUS',
+        'paymentStatus=INVALID_PAYMENT',
+        'roomId=not-a-uuid',
+        'date=2026-02-30',
+        'from=2026-02-30&to=2026-03-01',
+        'from=2026-03-01',
+        'to=2026-03-01',
+        'from=2026-03-10&to=2026-03-01',
+        'from=2026-01-01&to=2026-04-03', // 93 inclusive days (> MAX_EXPORT_DAYS=92)
+        'date=2026-03-01&from=2026-03-01&to=2026-03-02',
+        'needsRefund=maybe',
+        'bookingCode=ABC', // < 4 chars after normalization
+        'bookingCode=%20ab%20c%20',
+        'unknownField=hello',
+      ];
 
-      const res2 = await request(app)
-        .get('/api/v1/admin/bookings?limit=101')
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res2.status).toBe(400);
-
-      const res3 = await request(app)
-        .get('/api/v1/admin/bookings?status=INVALID_STATUS')
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res3.status).toBe(400);
-
-      const res4 = await request(app)
-        .get('/api/v1/admin/bookings?date=2026-02-30')
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res4.status).toBe(400);
-
-      const res5 = await request(app)
-        .get('/api/v1/admin/bookings?unknownField=hello')
-        .set('Authorization', `Bearer ${adminToken}`);
-      expect(res5.status).toBe(400);
+      for (const qs of invalidQueries) {
+        const res = await request(app)
+          .get(`/api/v1/admin/bookings?${qs}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(res.status, `expected 400 for ?${qs}`).toBe(400);
+      }
     });
 
     it('normalizes bookingCode by stripping whitespace and uppercasing before repository query', async () => {
@@ -210,6 +211,47 @@ describe('Admin Booking Management API Unit Tests', () => {
           bookingCode: 'CS-20261003-ABCD',
         }),
       );
+    });
+
+    it('accepts partial 4-char bookingCode, roomId, paymentStatus, 92-day from/to range, and needsRefund', async () => {
+      const spy = vi
+        .spyOn(bookingRepository, 'findManyAndCountForAdmin')
+        .mockResolvedValue([0, []]);
+
+      const res = await request(app)
+        .get(
+          `/api/v1/admin/bookings?bookingCode=%20ou3q%20&roomId=${validRoomId}&paymentStatus=PARTIALLY_REFUNDED&from=2026-01-01&to=2026-04-02&needsRefund=true`,
+        )
+        .set('Authorization', `Bearer ${adminToken}`);
+
+      expect(res.status).toBe(200);
+      expect(spy).toHaveBeenCalledWith(
+        expect.objectContaining({
+          bookingCode: 'OU3Q',
+          roomId: validRoomId,
+          paymentStatus: PaymentStatus.PARTIALLY_REFUNDED,
+          from: '2026-01-01',
+          to: '2026-04-02',
+          needsRefund: true,
+        }),
+      );
+    });
+
+    it('normalizes empty or whitespace-only bookingCode to undefined and forwards needsRefund=false', async () => {
+      const spy = vi
+        .spyOn(bookingRepository, 'findManyAndCountForAdmin')
+        .mockResolvedValue([0, []]);
+
+      for (const qs of ['bookingCode=', 'bookingCode=%20%20', 'needsRefund=false']) {
+        const res = await request(app)
+          .get(`/api/v1/admin/bookings?${qs}`)
+          .set('Authorization', `Bearer ${adminToken}`);
+        expect(res.status).toBe(200);
+      }
+
+      expect(spy).toHaveBeenNthCalledWith(1, expect.objectContaining({ bookingCode: undefined }));
+      expect(spy).toHaveBeenNthCalledWith(2, expect.objectContaining({ bookingCode: undefined }));
+      expect(spy).toHaveBeenNthCalledWith(3, expect.objectContaining({ needsRefund: false }));
     });
   });
 

@@ -17,10 +17,10 @@ export function NativeSelect({
   ...props
 }: NativeSelectProps) {
   return (
-    <div className={cn('relative', wrapperClassName)}>
+    <div className={cn('relative min-w-0', wrapperClassName)}>
       <select
         className={cn(
-          'h-10 w-full appearance-none rounded-md border border-input bg-card pr-9 pl-3 text-[0.9375rem] text-foreground transition-colors duration-150 outline-none hover:border-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
+          'h-10 w-full min-w-0 max-w-full truncate appearance-none rounded-md border border-input bg-card pr-9 pl-3 text-[0.9375rem] text-foreground transition-colors duration-150 outline-none hover:border-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive',
           className,
         )}
         {...props}

@@ -236,6 +236,7 @@ model Booking {
   @@index([roomId, startTime, endTime, status])
   @@index([userId, status, startTime])
   @@index([startTime, id])
+  @@index([paymentStatus, startTime, id], map: "bookings_payment_status_start_time_id_idx")
   @@index([status, attendanceTrackingEnabled, checkedInAt, endTime], map: "bookings_attendance_no_show_idx")
   @@map("bookings")
 }
